@@ -114,8 +114,10 @@ function () {
   }
 
   function safeReload() {
-    return;
-  }
+  if (reloadingForAuth) return;
+  reloadingForAuth = true;
+  window.location.reload();
+}
 
   async function fetchCloudData(uid) {
     if (!cloudDb) return null;
