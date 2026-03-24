@@ -439,39 +439,10 @@ function normalizeText(text) {
     .trim();
 }
 
-
-function slugifyImageName(name) {
-  return normalizeText(name).replace(/\s+/g, '-').trim();
-}
-
-function buildImageCandidates(name) {
-  const slug = slugifyImageName(name);
-  if (!slug) return ['images/default.svg'];
-  return [
-    `images/${slug}.png`,
-    `images/${slug}.jpg`,
-    `images/${slug}.webp`,
-    `images/${slug}.svg`,
-    'images/default.svg'
-  ];
-}
-
 function getAutoImage(name) {
-  const candidates = buildImageCandidates(name);
-  return candidates[0] || 'images/default.svg';
-}
-
-function attachAutoImageFallback(imgEl, itemName) {
-  if (!imgEl) return;
-  const candidates = buildImageCandidates(itemName);
-  let idx = 1;
-  imgEl.onerror = function () {
-    if (idx < candidates.length) {
-      imgEl.src = candidates[idx++];
-    } else {
-      imgEl.onerror = null;
-    }
-  };
+  const slug = normalizeText(name).replace(/\s+/g, '-').trim();
+  if (!slug) return 'images/default.svg';
+  return `images/${slug}.png`;
 }
 
 
@@ -1097,7 +1068,7 @@ function createCard(item, source = 'items') {
 
   if (source === 'quick') {
     div.innerHTML = `
-      <img src="${img}" alt="${item.name}" onerror="attachAutoImageFallback(this, item.name)" onclick="showQuickImage(${realIndex})">
+      <img src="${img}" alt="${item.name}" onerror="attachAutoImageFallback(this, `${item.name}`)" onclick="showQuickImage(${realIndex})">
       <div class="info">
         <div class="top-tags">
           ${createCategorySelect(item.category || 'MAT', `changeQuickCategory(${realIndex}, this.value)`)}
@@ -1121,7 +1092,7 @@ function createCard(item, source = 'items') {
   }
 
   div.innerHTML = `
-    <img src="${img}" alt="${item.name}" onerror="attachAutoImageFallback(this, item.name)" onclick="showImage(${realIndex})">
+    <img src="${img}" alt="${item.name}" onerror="attachAutoImageFallback(this, `${item.name}`)" onclick="showImage(${realIndex})">
     <div class="info">
       <div class="top-tags">
         <div class="category">${item.category || 'MAT'}</div>
@@ -2835,3 +2806,29 @@ function toggleTheme() {
 document.addEventListener("DOMContentLoaded", () => {
   applyTheme(themes[currentThemeIndex]);
 });
+
+
+function attachAutoImageFallback(img, name) {
+  if (!img) return;
+  const slug = normalizeText(name).replace(/\s+/g, '-').trim();
+  const candidates = slug
+    ? [
+        `images/${slug}.png`,
+        `images/${slug}.jpg`,
+        `images/${slug}.jpeg`,
+        `images/${slug}.webp`,
+        `images/${slug}.svg`,
+        'images/default.svg'
+      ]
+    : ['images/default.svg'];
+
+  let index = 0;
+  img.onerror = function () {
+    index += 1;
+    if (index < candidates.length) {
+      img.src = candidates[index];
+    } else {
+      img.onerror = null;
+    }
+  };
+}
