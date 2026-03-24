@@ -114,7 +114,9 @@
   }
 
   function safeReload() {
-  return;
+  if (reloadingForAuth) return;
+  reloadingForAuth = false;
+  window.location.reload();
 }
 
   async function fetchCloudData(uid) {
