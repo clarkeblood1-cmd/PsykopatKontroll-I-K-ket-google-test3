@@ -26,7 +26,6 @@
   let ignoreNextSnapshot = false;
   let unsubscribeSnapshot = null;
   let lastAppliedCloudJson = '';
-  let reloadingForAuth = false;
 
   const cachedUid = sessionStorage.getItem('psk_last_uid');
   if (cachedUid) activeStoragePrefix = `user:${cachedUid}`;
@@ -89,8 +88,14 @@
     return data;
   }
 
-  function stableDataJson() {
-    return JSON.stringify(stableDataObject());
+  function refreshAppUI() {
+    try {
+      if (typeof window.hydrateData === 'function') window.hydrateData();
+      if (typeof window.render === 'function') window.render();
+      if (typeof window.refreshWeekPlannerUI === 'function') window.refreshWeekPlannerUI();
+    } catch (error) {
+      console.error('UI refresh failed:', error);
+    }
   }
 
   function updateAuthUI() {
@@ -111,12 +116,6 @@
     const hasFirebase = typeof window.firebase !== 'undefined';
     const hasConfig = !!(window.firebaseConfig && window.firebaseConfig.apiKey);
     if (help) help.style.display = hasFirebase && hasConfig ? 'none' : '';
-  }
-
-  function safeReload() {
-    if (reloadingForAuth) return;
-    reloadingForAuth = true;
-    window.location.reload();
   }
 
   async function fetchCloudData(uid) {
@@ -152,11 +151,15 @@
     const asJson = JSON.stringify(values);
     lastAppliedCloudJson = asJson;
     ignoreNextSnapshot = true;
+
     await cloudDb.collection('users').doc(currentUser.uid).collection('appData').doc('main').set({
       values,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
-    setTimeout(() => { ignoreNextSnapshot = false; }, 1200);
+
+    setTimeout(() => {
+      ignoreNextSnapshot = false;
+    }, 1200);
   }
 
   function scheduleCloudSave() {
@@ -172,14 +175,19 @@
   function startSnapshot(uid) {
     if (!cloudDb) return;
     if (unsubscribeSnapshot) unsubscribeSnapshot();
+
     const ref = cloudDb.collection('users').doc(uid).collection('appData').doc('main');
     unsubscribeSnapshot = ref.onSnapshot(snapshot => {
       if (!snapshot.exists) return;
+
       const data = snapshot.data() || {};
       const json = JSON.stringify((data && data.values) || {});
+
       if (ignoreNextSnapshot || json === lastAppliedCloudJson) return;
+
       applyCloudDataObject(data, uid);
-      safeReload();
+      updateAuthUI();
+      refreshAppUI();
     }, error => {
       console.error('Cloud sync snapshot failed:', error);
     });
@@ -194,7 +202,7 @@
     try {
       const provider = new firebase.auth.GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      await firebase.auth().signInWithRedirect(provider);
+      await firebase.auth().signInWithPopup(provider);
     } catch (error) {
       console.error(error);
       alert('Google-login misslyckades: ' + (error?.message || 'okänt fel'));
@@ -203,6 +211,7 @@
 
   window.logoutGoogle = async function logoutGoogle() {
     if (typeof window.firebase === 'undefined' || !firebase.auth) return;
+
     try {
       await firebase.auth().signOut();
     } catch (error) {
@@ -214,6 +223,9 @@
   async function handleAuthState(user) {
     authReady = true;
     currentUser = user || null;
+
+    const nextPrefix = currentUser?.uid ? `user:${currentUser.uid}` : 'guest';
+    activeStoragePrefix = nextPrefix;
     updateAuthUI();
 
     const currentUid = currentUser?.uid || '';
@@ -239,16 +251,20 @@
         }
         sessionStorage.removeItem('psk_last_uid');
       }
-      safeReload();
+
+      updateAuthUI();
+      refreshAppUI();
       return;
     }
 
     if (currentUid) {
       startSnapshot(currentUid);
     } else if (unsubscribeSnapshot) {
-      unsubscribeSnapshot();
       unsubscribeSnapshot = null;
     }
+
+    updateAuthUI();
+    refreshAppUI();
   }
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -260,6 +276,7 @@
     if (!hasFirebase || !hasConfig) {
       authReady = true;
       updateAuthUI();
+      refreshAppUI();
       return;
     }
 
@@ -273,11 +290,6 @@
     } catch (error) {
       console.error('Firebase init failed:', error);
     }
-
-    firebase.auth().getRedirectResult().catch(error => {
-      console.error('Redirect login error:', error);
-      alert('Google-login misslyckades: ' + (error?.message || 'okänt fel'));
-    });
 
     firebase.auth().onAuthStateChanged(user => {
       handleAuthState(user).catch(err => {
