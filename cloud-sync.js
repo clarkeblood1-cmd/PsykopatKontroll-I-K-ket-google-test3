@@ -1,4 +1,4 @@
-function () {
+(function () {
   const STORAGE_SCOPE = 'psykopatkontroll';
   const APP_KEYS = [
     'matlista',
@@ -114,10 +114,10 @@ function () {
   }
 
   function safeReload() {
-  if (reloadingForAuth) return;
-  reloadingForAuth = true;
-  window.location.reload();
-}
+    if (reloadingForAuth) return;
+    reloadingForAuth = true;
+    window.location.reload();
+  }
 
   async function fetchCloudData(uid) {
     if (!cloudDb) return null;
@@ -179,7 +179,7 @@ function () {
       const json = JSON.stringify((data && data.values) || {});
       if (ignoreNextSnapshot || json === lastAppliedCloudJson) return;
       applyCloudDataObject(data, uid);
-      updateAuthUI();
+      safeReload();
     }, error => {
       console.error('Cloud sync snapshot failed:', error);
     });
@@ -194,7 +194,7 @@ function () {
     try {
       const provider = new firebase.auth.GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      await firebase.auth().signInWithPopup(provider);
+      await firebase.auth().signInWithRedirect(provider);
     } catch (error) {
       console.error(error);
       alert('Google-login misslyckades: ' + (error?.message || 'okänt fel'));
@@ -239,7 +239,7 @@ function () {
         }
         sessionStorage.removeItem('psk_last_uid');
       }
-      updateAuthUI();
+      safeReload();
       return;
     }
 
@@ -273,6 +273,11 @@ function () {
     } catch (error) {
       console.error('Firebase init failed:', error);
     }
+
+    firebase.auth().getRedirectResult().catch(error => {
+      console.error('Redirect login error:', error);
+      alert('Google-login misslyckades: ' + (error?.message || 'okänt fel'));
+    });
 
     firebase.auth().onAuthStateChanged(user => {
       handleAuthState(user).catch(err => {
