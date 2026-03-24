@@ -1,6 +1,6 @@
 window.firebaseConfig = {
   apiKey: "AIzaSyBXqoG8ZaDbuY-KJwS5ClMovgy8Pb3vw54",
-  authDomain: "psykopatkontroll.web.app",
+  authDomain: "psykopatkontroll.firebaseapp.com",
   projectId: "psykopatkontroll",
   storageBucket: "psykopatkontroll.firebasestorage.app",
   messagingSenderId: "89089537506",
