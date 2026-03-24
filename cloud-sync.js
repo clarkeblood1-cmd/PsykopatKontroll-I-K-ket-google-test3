@@ -1,304 +1,240 @@
 (function () {
-  const STORAGE_SCOPE = 'psykopatkontroll';
-  const APP_KEYS = [
-    'matlista',
-    'matlista_snabb',
-    'matlista_recept',
-    'matlista_categories',
-    'matlista_places',
-    'homeOpenState',
-    'matlista_recipe_choices',
-    'matlista_household_size',
-    'matlista_weekplanner',
-    'matlista_weekplanner_selected'
-  ];
+  'use strict';
 
-  const rawGetItem = Storage.prototype.getItem;
-  const rawSetItem = Storage.prototype.setItem;
-  const rawRemoveItem = Storage.prototype.removeItem;
-
-  let activeStoragePrefix = 'guest';
+  let firebaseReady = false;
   let authReady = false;
-  let currentUser = null;
-  let cloudDb = null;
-  let cloudSaveTimer = null;
-  let suppressCloudSave = false;
-  let ignoreNextSnapshot = false;
-  let unsubscribeSnapshot = null;
-  let lastAppliedCloudJson = '';
+  let syncReady = false;
+  let cloudUnsubscribe = null;
+  let saveWrapped = false;
+  let remoteApplying = false;
+  let saveTimer = null;
+  let pendingInitialUpload = false;
 
-  const cachedUid = sessionStorage.getItem('psk_last_uid');
-  if (cachedUid) activeStoragePrefix = `user:${cachedUid}`;
-
-  function isScopedKey(key) {
-    return APP_KEYS.includes(String(key || ''));
+  function byId(id) {
+    return document.getElementById(id);
   }
 
-  function scopedKey(key, prefix = activeStoragePrefix) {
-    return `${STORAGE_SCOPE}:${prefix}:${key}`;
-  }
-
-  function getScopedRaw(key, prefix = activeStoragePrefix) {
-    return rawGetItem.call(localStorage, scopedKey(key, prefix));
-  }
-
-  function setScopedRaw(key, value, prefix = activeStoragePrefix) {
-    if (value === null || value === undefined) {
-      rawRemoveItem.call(localStorage, scopedKey(key, prefix));
-      return;
-    }
-    rawSetItem.call(localStorage, scopedKey(key, prefix), String(value));
-  }
-
-  function removeScopedRaw(key, prefix = activeStoragePrefix) {
-    rawRemoveItem.call(localStorage, scopedKey(key, prefix));
-  }
-
-  Storage.prototype.getItem = function (key) {
-    if (this === localStorage && isScopedKey(key)) {
-      return getScopedRaw(key);
-    }
-    return rawGetItem.call(this, key);
-  };
-
-  Storage.prototype.setItem = function (key, value) {
-    if (this === localStorage && isScopedKey(key)) {
-      setScopedRaw(key, value);
-      if (!suppressCloudSave) scheduleCloudSave();
-      return;
-    }
-    return rawSetItem.call(this, key, value);
-  };
-
-  Storage.prototype.removeItem = function (key) {
-    if (this === localStorage && isScopedKey(key)) {
-      removeScopedRaw(key);
-      if (!suppressCloudSave) scheduleCloudSave();
-      return;
-    }
-    return rawRemoveItem.call(this, key);
-  };
-
-  function stableDataObject() {
-    const data = {};
-    APP_KEYS.forEach(key => {
-      const raw = getScopedRaw(key);
-      if (raw !== null) data[key] = raw;
-    });
-    return data;
-  }
-
-  function refreshAppUI() {
-    try {
-      if (typeof window.hydrateData === 'function') window.hydrateData();
-      if (typeof window.render === 'function') window.render();
-      if (typeof window.refreshWeekPlannerUI === 'function') window.refreshWeekPlannerUI();
-    } catch (error) {
-      console.error('UI refresh failed:', error);
-    }
-  }
-
-  function updateAuthUI() {
-    const loginBtn = document.getElementById('googleLoginBtn');
-    const logoutBtn = document.getElementById('googleLogoutBtn');
-    const status = document.getElementById('authStatus');
-    const help = document.getElementById('firebaseHelp');
+  function setAuthUi(user, message) {
+    const status = byId('authStatus');
+    const loginBtn = byId('googleLoginBtn');
+    const logoutBtn = byId('googleLogoutBtn');
+    const help = byId('firebaseHelp');
 
     if (status) {
-      status.textContent = currentUser
-        ? `Inloggad som ${currentUser.displayName || currentUser.email || 'konto'}`
-        : 'Inte inloggad';
+      if (message) status.textContent = message;
+      else status.textContent = user ? `Inloggad: ${user.displayName || user.email || 'Google-konto'}` : 'Inte inloggad';
     }
 
-    if (loginBtn) loginBtn.style.display = currentUser ? 'none' : '';
-    if (logoutBtn) logoutBtn.style.display = currentUser ? '' : 'none';
-
-    const hasFirebase = typeof window.firebase !== 'undefined';
-    const hasConfig = !!(window.firebaseConfig && window.firebaseConfig.apiKey);
-    if (help) help.style.display = hasFirebase && hasConfig ? 'none' : '';
+    if (loginBtn) loginBtn.style.display = user ? 'none' : '';
+    if (logoutBtn) logoutBtn.style.display = user ? '' : 'none';
+    if (help) help.style.display = firebaseReady ? 'none' : '';
   }
 
-  async function fetchCloudData(uid) {
-    if (!cloudDb) return null;
-    const ref = cloudDb.collection('users').doc(uid).collection('appData').doc('main');
-    const snap = await ref.get();
-    if (!snap.exists) return null;
-    return snap.data() || null;
+  function safeCall(fnName) {
+    return typeof window[fnName] === 'function';
   }
 
-  function applyCloudDataObject(data, uid) {
-    suppressCloudSave = true;
+  function initFirebase() {
     try {
-      APP_KEYS.forEach(key => removeScopedRaw(key, `user:${uid}`));
-      if (data && typeof data === 'object' && data.values && typeof data.values === 'object') {
-        APP_KEYS.forEach(key => {
-          if (Object.prototype.hasOwnProperty.call(data.values, key) && data.values[key] !== null && data.values[key] !== undefined) {
-            setScopedRaw(key, data.values[key], `user:${uid}`);
-          }
-        });
-        lastAppliedCloudJson = JSON.stringify(data.values);
-      } else {
-        lastAppliedCloudJson = '';
-      }
-    } finally {
-      suppressCloudSave = false;
-    }
-  }
-
-  async function saveCloudNow() {
-    if (!authReady || !currentUser || !cloudDb) return;
-    const values = stableDataObject();
-    const asJson = JSON.stringify(values);
-    lastAppliedCloudJson = asJson;
-    ignoreNextSnapshot = true;
-
-    await cloudDb.collection('users').doc(currentUser.uid).collection('appData').doc('main').set({
-      values,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-
-    setTimeout(() => {
-      ignoreNextSnapshot = false;
-    }, 1200);
-  }
-
-  function scheduleCloudSave() {
-    if (!authReady || !currentUser || !cloudDb) return;
-    clearTimeout(cloudSaveTimer);
-    cloudSaveTimer = setTimeout(() => {
-      saveCloudNow().catch(error => {
-        console.error('Cloud sync save failed:', error);
-      });
-    }, 500);
-  }
-
-  function startSnapshot(uid) {
-    if (!cloudDb) return;
-    if (unsubscribeSnapshot) unsubscribeSnapshot();
-
-    const ref = cloudDb.collection('users').doc(uid).collection('appData').doc('main');
-    unsubscribeSnapshot = ref.onSnapshot(snapshot => {
-      if (!snapshot.exists) return;
-
-      const data = snapshot.data() || {};
-      const json = JSON.stringify((data && data.values) || {});
-
-      if (ignoreNextSnapshot || json === lastAppliedCloudJson) return;
-
-      applyCloudDataObject(data, uid);
-      updateAuthUI();
-      refreshAppUI();
-    }, error => {
-      console.error('Cloud sync snapshot failed:', error);
-    });
-  }
-
-  window.loginWithGoogle = async function loginWithGoogle() {
-    if (typeof window.firebase === 'undefined' || !window.firebaseConfig) {
-      alert('Firebase är inte konfigurerat än. Lägg till firebase-config.js först.');
-      return;
-    }
-
-    try {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
-      await firebase.auth().signInWithPopup(provider);
-    } catch (error) {
-      console.error(error);
-      alert('Google-login misslyckades: ' + (error?.message || 'okänt fel'));
-    }
-  };
-
-  window.logoutGoogle = async function logoutGoogle() {
-    if (typeof window.firebase === 'undefined' || !firebase.auth) return;
-
-    try {
-      await firebase.auth().signOut();
-    } catch (error) {
-      console.error(error);
-      alert('Kunde inte logga ut: ' + (error?.message || 'okänt fel'));
-    }
-  };
-
-  async function handleAuthState(user) {
-    authReady = true;
-    currentUser = user || null;
-
-    const nextPrefix = currentUser?.uid ? `user:${currentUser.uid}` : 'guest';
-    activeStoragePrefix = nextPrefix;
-    updateAuthUI();
-
-    const currentUid = currentUser?.uid || '';
-    const cached = sessionStorage.getItem('psk_last_uid') || '';
-
-    if (currentUser && typeof firebase !== 'undefined' && firebase.firestore) {
-      cloudDb = firebase.firestore();
-    }
-
-    if (currentUid !== cached) {
-      if (currentUid) {
-        try {
-          const data = await fetchCloudData(currentUid);
-          applyCloudDataObject(data, currentUid);
-        } catch (error) {
-          console.error('Cloud sync initial load failed:', error);
-        }
-        sessionStorage.setItem('psk_last_uid', currentUid);
-      } else {
-        if (unsubscribeSnapshot) {
-          unsubscribeSnapshot();
-          unsubscribeSnapshot = null;
-        }
-        sessionStorage.removeItem('psk_last_uid');
+      if (!window.firebase || !window.firebaseConfig) {
+        setAuthUi(null, 'Firebase ej redo');
+        return false;
       }
 
-      updateAuthUI();
-      refreshAppUI();
-      return;
-    }
-
-    if (currentUid) {
-      startSnapshot(currentUid);
-    } else if (unsubscribeSnapshot) {
-      unsubscribeSnapshot = null;
-    }
-
-    updateAuthUI();
-    refreshAppUI();
-  }
-
-  document.addEventListener('DOMContentLoaded', function () {
-    updateAuthUI();
-
-    const hasFirebase = typeof window.firebase !== 'undefined';
-    const hasConfig = !!(window.firebaseConfig && window.firebaseConfig.apiKey);
-
-    if (!hasFirebase || !hasConfig) {
-      authReady = true;
-      updateAuthUI();
-      refreshAppUI();
-      return;
-    }
-
-    try {
-      if (!firebase.apps.length) {
+      if (!firebase.apps || !firebase.apps.length) {
         firebase.initializeApp(window.firebaseConfig);
       }
-      if (firebase.firestore) {
-        cloudDb = firebase.firestore();
-      }
+
+      firebaseReady = true;
+      return true;
     } catch (error) {
-      console.error('Firebase init failed:', error);
+      console.error('Firebase init error:', error);
+      setAuthUi(null, 'Firebase-fel: ' + (error && error.message ? error.message : 'okänt fel'));
+      return false;
+    }
+  }
+
+  function getDocRef() {
+    const user = firebase.auth().currentUser;
+    if (!user) return null;
+    return firebase.firestore().collection('users').doc(user.uid).collection('appData').doc('main');
+  }
+
+  function collectState() {
+    return {
+      items: Array.isArray(window.items) ? window.items : [],
+      quickItems: Array.isArray(window.quickItems) ? window.quickItems : [],
+      recipes: Array.isArray(window.recipes) ? window.recipes : [],
+      categories: Array.isArray(window.categories) ? window.categories : ['MAT'],
+      places: Array.isArray(window.places) ? window.places : [],
+      homeOpenState: window.homeOpenState || {},
+      recipeIngredientChoices: window.recipeIngredientChoices || {},
+      householdSize: Number(window.householdSize || 1),
+      weekPlanner: window.weekPlanner || {},
+      selectedWeekDay: window.selectedWeekDay || 'mon',
+      theme: localStorage.getItem('theme') || 'scifi',
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAtMs: Date.now(),
+      appVersion: 'cloud-sync-popup-v1'
+    };
+  }
+
+  function applyRemoteState(data) {
+    remoteApplying = true;
+    try {
+      if (Array.isArray(data.items)) window.items = data.items;
+      if (Array.isArray(data.quickItems)) window.quickItems = data.quickItems;
+      if (Array.isArray(data.recipes)) window.recipes = data.recipes;
+      if (Array.isArray(data.categories) && data.categories.length) window.categories = data.categories;
+      if (Array.isArray(data.places) && data.places.length) window.places = data.places;
+      if (data.homeOpenState && typeof data.homeOpenState === 'object') window.homeOpenState = data.homeOpenState;
+      if (data.recipeIngredientChoices && typeof data.recipeIngredientChoices === 'object') window.recipeIngredientChoices = data.recipeIngredientChoices;
+      if (typeof data.householdSize !== 'undefined') window.householdSize = Math.max(1, Math.min(8, Number(data.householdSize || 1)));
+      if (data.weekPlanner && typeof data.weekPlanner === 'object') {
+        window.weekPlanner = data.weekPlanner;
+        localStorage.setItem('matlista_weekplanner', JSON.stringify(data.weekPlanner));
+      }
+      if (typeof data.selectedWeekDay === 'string' && data.selectedWeekDay) {
+        window.selectedWeekDay = data.selectedWeekDay;
+        localStorage.setItem('matlista_weekplanner_selected', data.selectedWeekDay);
+      }
+      if (typeof data.theme === 'string' && data.theme) {
+        localStorage.setItem('theme', data.theme);
+        if (safeCall('applyTheme')) {
+          window.applyTheme(data.theme);
+        }
+      }
+
+      if (safeCall('hydrateData')) window.hydrateData();
+      if (safeCall('save')) window.save();
+      if (safeCall('render')) window.render();
+      if (safeCall('refreshWeekPlannerUI')) window.refreshWeekPlannerUI();
+    } finally {
+      remoteApplying = false;
+    }
+  }
+
+  function saveToCloudNow() {
+    if (!firebaseReady) return Promise.resolve(false);
+    const ref = getDocRef();
+    if (!ref || remoteApplying) return Promise.resolve(false);
+    return ref.set(collectState(), { merge: true }).then(() => true).catch(error => {
+      console.error('Cloud save error:', error);
+      setAuthUi(firebase.auth().currentUser, 'Molnsynk-fel: ' + (error && error.message ? error.message : 'okänt fel'));
+      return false;
+    });
+  }
+
+  function saveToCloud() {
+    if (!firebaseReady || remoteApplying) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      saveToCloudNow();
+    }, 350);
+  }
+
+  function wrapSaveFunction() {
+    if (saveWrapped || !safeCall('save')) return;
+    const originalSave = window.save;
+    window.save = function wrappedSave() {
+      const result = originalSave.apply(this, arguments);
+      saveToCloud();
+      return result;
+    };
+    saveWrapped = true;
+  }
+
+  function startCloudSync() {
+    if (!firebaseReady || !safeCall('render')) return;
+    const ref = getDocRef();
+    if (!ref) return;
+
+    if (cloudUnsubscribe) {
+      cloudUnsubscribe();
+      cloudUnsubscribe = null;
     }
 
-    firebase.auth().onAuthStateChanged(user => {
-      handleAuthState(user).catch(err => {
-        console.error('Auth state error:', err);
-      });
-    });
-  });
+    syncReady = true;
+    setAuthUi(firebase.auth().currentUser, 'Inloggad – startar molnsynk...');
 
-  window.addEventListener('beforeunload', () => {
-    if (unsubscribeSnapshot) unsubscribeSnapshot();
+    cloudUnsubscribe = ref.onSnapshot(snapshot => {
+      if (!snapshot.exists) {
+        if (!pendingInitialUpload) {
+          pendingInitialUpload = true;
+          saveToCloudNow().finally(() => {
+            pendingInitialUpload = false;
+            setAuthUi(firebase.auth().currentUser, 'Inloggad – molnsynk aktiv');
+          });
+        }
+        return;
+      }
+
+      const data = snapshot.data() || {};
+      applyRemoteState(data);
+      setAuthUi(firebase.auth().currentUser, 'Inloggad – molnsynk aktiv');
+    }, error => {
+      console.error('Cloud sync snapshot error:', error);
+      setAuthUi(firebase.auth().currentUser, 'Molnsynk-fel: ' + (error && error.message ? error.message : 'okänt fel'));
+    });
+  }
+
+  function stopCloudSync() {
+    if (cloudUnsubscribe) {
+      cloudUnsubscribe();
+      cloudUnsubscribe = null;
+    }
+    syncReady = false;
+  }
+
+  window.loginWithGoogle = function loginWithGoogle() {
+    if (!initFirebase()) {
+      alert('Firebase är inte korrekt laddat ännu. Kontrollera firebase-config.js.');
+      return;
+    }
+
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+
+    firebase.auth().signInWithPopup(provider).catch(error => {
+      console.error('Google login error:', error);
+      const msg = error && error.message ? error.message : 'okänt fel';
+      setAuthUi(null, 'Login misslyckades');
+      alert('Google-login misslyckades: ' + msg);
+    });
+  };
+
+  window.logoutGoogle = function logoutGoogle() {
+    if (!firebaseReady) return;
+    firebase.auth().signOut().catch(error => {
+      console.error('Logout error:', error);
+      alert('Logout misslyckades: ' + (error && error.message ? error.message : 'okänt fel'));
+    });
+  };
+
+  window.saveToCloud = saveToCloud;
+  window.saveToCloudNow = saveToCloudNow;
+
+  function startAuthListener() {
+    if (authReady || !initFirebase()) return;
+    authReady = true;
+
+    firebase.auth().onAuthStateChanged(user => {
+      wrapSaveFunction();
+
+      if (user) {
+        setAuthUi(user, 'Inloggad – ansluter...');
+        startCloudSync();
+      } else {
+        stopCloudSync();
+        setAuthUi(null, 'Inte inloggad');
+      }
+    });
+  }
+
+  window.addEventListener('load', () => {
+    initFirebase();
+    wrapSaveFunction();
+    startAuthListener();
+    setTimeout(wrapSaveFunction, 0);
   });
 })();
