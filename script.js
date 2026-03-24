@@ -1,3 +1,4 @@
+
 let items = JSON.parse(localStorage.getItem('matlista') || '[]');
 let quickItems = JSON.parse(localStorage.getItem('matlista_snabb') || '[]');
 let recipes = JSON.parse(localStorage.getItem('matlista_recept') || '[]');
@@ -438,6 +439,55 @@ function normalizeText(text) {
     .trim();
 }
 
+function getImageNameVariants(name) {
+  const raw = String(name || '').trim().toLowerCase();
+  const normalized = normalizeText(name).replace(/\s+/g, '-').trim();
+  const rawSlug = raw
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9åäö\-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  const variants = [];
+  [rawSlug, normalized].forEach(v => {
+    if (v && !variants.includes(v)) variants.push(v);
+  });
+
+  return variants.length ? variants : ['default'];
+}
+
+function getAutoImage(name) {
+  const variants = getImageNameVariants(name);
+  return `images/${variants[0]}.png`;
+}
+
+function attachAutoImageFallback(img, name) {
+  if (!img) return;
+
+  const variants = getImageNameVariants(name);
+  const exts = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
+  const candidates = [];
+
+  variants.forEach(variant => {
+    exts.forEach(ext => {
+      candidates.push(`images/${variant}.${ext}`);
+    });
+  });
+
+  candidates.push('images/default.svg');
+
+  let index = 0;
+  img.onerror = function () {
+    index += 1;
+    if (index < candidates.length) {
+      img.src = candidates[index];
+    } else {
+      img.onerror = null;
+    }
+  };
+}
+
+
 function extractQuantity(text) {
   const match = String(text || '').match(/^(\d+)/);
   return match ? Number(match[1]) : 1;
@@ -529,19 +579,6 @@ function save() {
   localStorage.setItem('homeOpenState', JSON.stringify(homeOpenState));
   localStorage.setItem('matlista_recipe_choices', JSON.stringify(recipeIngredientChoices));
   localStorage.setItem('matlista_household_size', String(householdSize));
-  localStorage.setItem('matlista_weekplanner', JSON.stringify(weekPlanner));
-  localStorage.setItem('matlista_weekplanner_selected', selectedWeekDay);
-
-  window.items = items;
-  window.quickItems = quickItems;
-  window.recipes = recipes;
-  window.categories = categories;
-  window.places = places;
-  window.homeOpenState = homeOpenState;
-  window.recipeIngredientChoices = recipeIngredientChoices;
-  window.householdSize = householdSize;
-  window.weekPlanner = weekPlanner;
-  window.selectedWeekDay = selectedWeekDay;
 }
 
 function syncQuickItemFromItem(changedItem) {
@@ -1062,7 +1099,7 @@ function createPlaceSelect(current, onchangeCode) {
 
 function createCard(item, source = 'items') {
   const realIndex = source === 'quick' ? quickItems.indexOf(item) : items.indexOf(item);
-  const img = item.img || 'https://via.placeholder.com/100?text=Bild';
+  const img = item.img || getAutoImage(item.name);
   const moveText = item.type === 'home' ? '↔ Flytta 1 till köp' : '↔ Flytta 1 till hemma';
   const placeMeta = getPlaceMeta(item.place);
   const div = document.createElement('div');
@@ -1073,7 +1110,7 @@ function createCard(item, source = 'items') {
 
   if (source === 'quick') {
     div.innerHTML = `
-      <img src="${img}" alt="${item.name}" onclick="showQuickImage(${realIndex})">
+      <img src="${img}" alt="${item.name}" onerror="attachAutoImageFallback(this, `${item.name}`)" onclick="showQuickImage(${realIndex})">
       <div class="info">
         <div class="top-tags">
           ${createCategorySelect(item.category || 'MAT', `changeQuickCategory(${realIndex}, this.value)`)}
@@ -1097,7 +1134,7 @@ function createCard(item, source = 'items') {
   }
 
   div.innerHTML = `
-    <img src="${img}" alt="${item.name}" onclick="showImage(${realIndex})">
+    <img src="${img}" alt="${item.name}" onerror="attachAutoImageFallback(this, `${item.name}`)" onclick="showImage(${realIndex})">
     <div class="info">
       <div class="top-tags">
         <div class="category">${item.category || 'MAT'}</div>
@@ -2457,37 +2494,6 @@ const WEEK_DAYS = [
 
 let weekPlanner = JSON.parse(localStorage.getItem('matlista_weekplanner') || '{}');
 let selectedWeekDay = localStorage.getItem('matlista_weekplanner_selected') || getTodayWeekKey();
-
-
-function bindStateToWindow() {
-  const bindings = {
-    items: { get: () => items, set: value => { items = Array.isArray(value) ? value : []; } },
-    quickItems: { get: () => quickItems, set: value => { quickItems = Array.isArray(value) ? value : []; } },
-    recipes: { get: () => recipes, set: value => { recipes = Array.isArray(value) ? value : []; } },
-    categories: { get: () => categories, set: value => { categories = Array.isArray(value) && value.length ? value : ['MAT']; } },
-    places: { get: () => places, set: value => { places = Array.isArray(value) && value.length ? value : defaultPlaces.slice(); } },
-    homeOpenState: { get: () => homeOpenState, set: value => { homeOpenState = value && typeof value === 'object' ? value : {}; } },
-    recipeIngredientChoices: { get: () => recipeIngredientChoices, set: value => { recipeIngredientChoices = value && typeof value === 'object' ? value : {}; } },
-    householdSize: { get: () => householdSize, set: value => { householdSize = Math.max(1, Math.min(8, Number(value || 1))); } },
-    weekPlanner: { get: () => weekPlanner, set: value => { weekPlanner = value && typeof value === 'object' ? value : {}; } },
-    selectedWeekDay: { get: () => selectedWeekDay, set: value => { selectedWeekDay = String(value || getTodayWeekKey()); } }
-  };
-
-  Object.entries(bindings).forEach(([key, descriptor]) => {
-    try {
-      Object.defineProperty(window, key, {
-        configurable: true,
-        enumerable: true,
-        get: descriptor.get,
-        set: descriptor.set
-      });
-    } catch (error) {
-      window[key] = descriptor.get();
-    }
-  });
-}
-
-bindStateToWindow();
 
 function getTodayWeekKey() {
   const day = new Date().getDay();
