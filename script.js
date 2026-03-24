@@ -529,6 +529,19 @@ function save() {
   localStorage.setItem('homeOpenState', JSON.stringify(homeOpenState));
   localStorage.setItem('matlista_recipe_choices', JSON.stringify(recipeIngredientChoices));
   localStorage.setItem('matlista_household_size', String(householdSize));
+  localStorage.setItem('matlista_weekplanner', JSON.stringify(weekPlanner));
+  localStorage.setItem('matlista_weekplanner_selected', selectedWeekDay);
+
+  window.items = items;
+  window.quickItems = quickItems;
+  window.recipes = recipes;
+  window.categories = categories;
+  window.places = places;
+  window.homeOpenState = homeOpenState;
+  window.recipeIngredientChoices = recipeIngredientChoices;
+  window.householdSize = householdSize;
+  window.weekPlanner = weekPlanner;
+  window.selectedWeekDay = selectedWeekDay;
 }
 
 function syncQuickItemFromItem(changedItem) {
@@ -2431,19 +2444,6 @@ document.addEventListener('DOMContentLoaded', () => {
   render();
 });
 
-Object.defineProperties(window, {
-  items: { get: () => items, set: value => { items = Array.isArray(value) ? value : []; } },
-  quickItems: { get: () => quickItems, set: value => { quickItems = Array.isArray(value) ? value : []; } },
-  recipes: { get: () => recipes, set: value => { recipes = Array.isArray(value) ? value : []; } },
-  categories: { get: () => categories, set: value => { categories = Array.isArray(value) && value.length ? value : ['MAT']; } },
-  places: { get: () => places, set: value => { places = Array.isArray(value) ? value : []; } },
-  homeOpenState: { get: () => homeOpenState, set: value => { homeOpenState = value && typeof value === 'object' ? value : {}; } },
-  recipeIngredientChoices: { get: () => recipeIngredientChoices, set: value => { recipeIngredientChoices = value && typeof value === 'object' ? value : {}; } },
-  householdSize: { get: () => householdSize, set: value => { householdSize = Math.max(1, Math.min(8, Number(value || 1))); } },
-  weekPlanner: { get: () => weekPlanner, set: value => { weekPlanner = value && typeof value === 'object' ? value : {}; } },
-  selectedWeekDay: { get: () => selectedWeekDay, set: value => { selectedWeekDay = String(value || 'mon'); } }
-});
-
 
 const WEEK_DAYS = [
   { key: 'mon', short: 'Mån', long: 'Måndag' },
@@ -2457,6 +2457,37 @@ const WEEK_DAYS = [
 
 let weekPlanner = JSON.parse(localStorage.getItem('matlista_weekplanner') || '{}');
 let selectedWeekDay = localStorage.getItem('matlista_weekplanner_selected') || getTodayWeekKey();
+
+
+function bindStateToWindow() {
+  const bindings = {
+    items: { get: () => items, set: value => { items = Array.isArray(value) ? value : []; } },
+    quickItems: { get: () => quickItems, set: value => { quickItems = Array.isArray(value) ? value : []; } },
+    recipes: { get: () => recipes, set: value => { recipes = Array.isArray(value) ? value : []; } },
+    categories: { get: () => categories, set: value => { categories = Array.isArray(value) && value.length ? value : ['MAT']; } },
+    places: { get: () => places, set: value => { places = Array.isArray(value) && value.length ? value : defaultPlaces.slice(); } },
+    homeOpenState: { get: () => homeOpenState, set: value => { homeOpenState = value && typeof value === 'object' ? value : {}; } },
+    recipeIngredientChoices: { get: () => recipeIngredientChoices, set: value => { recipeIngredientChoices = value && typeof value === 'object' ? value : {}; } },
+    householdSize: { get: () => householdSize, set: value => { householdSize = Math.max(1, Math.min(8, Number(value || 1))); } },
+    weekPlanner: { get: () => weekPlanner, set: value => { weekPlanner = value && typeof value === 'object' ? value : {}; } },
+    selectedWeekDay: { get: () => selectedWeekDay, set: value => { selectedWeekDay = String(value || getTodayWeekKey()); } }
+  };
+
+  Object.entries(bindings).forEach(([key, descriptor]) => {
+    try {
+      Object.defineProperty(window, key, {
+        configurable: true,
+        enumerable: true,
+        get: descriptor.get,
+        set: descriptor.set
+      });
+    } catch (error) {
+      window[key] = descriptor.get();
+    }
+  });
+}
+
+bindStateToWindow();
 
 function getTodayWeekKey() {
   const day = new Date().getDay();
