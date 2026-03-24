@@ -1,3 +1,4 @@
+
 let items = JSON.parse(localStorage.getItem('matlista') || '[]');
 let quickItems = JSON.parse(localStorage.getItem('matlista_snabb') || '[]');
 let recipes = JSON.parse(localStorage.getItem('matlista_recept') || '[]');
@@ -529,19 +530,6 @@ function save() {
   localStorage.setItem('homeOpenState', JSON.stringify(homeOpenState));
   localStorage.setItem('matlista_recipe_choices', JSON.stringify(recipeIngredientChoices));
   localStorage.setItem('matlista_household_size', String(householdSize));
-  localStorage.setItem('matlista_weekplanner', JSON.stringify(weekPlanner));
-  localStorage.setItem('matlista_weekplanner_selected', selectedWeekDay);
-
-  window.items = items;
-  window.quickItems = quickItems;
-  window.recipes = recipes;
-  window.categories = categories;
-  window.places = places;
-  window.homeOpenState = homeOpenState;
-  window.recipeIngredientChoices = recipeIngredientChoices;
-  window.householdSize = householdSize;
-  window.weekPlanner = weekPlanner;
-  window.selectedWeekDay = selectedWeekDay;
 }
 
 function syncQuickItemFromItem(changedItem) {
@@ -1382,15 +1370,34 @@ function useQuickItem(index) {
   render();
 }
 
-function changeQuickImage(index) {
+async function changeQuickImage(index) {
   if (!quickItems[index]) return;
 
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/png, image/jpeg, image/webp';
-  input.onchange = event => {
+  input.onchange = async event => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    try {
+      let uploadedUrl = '';
+      if (typeof window.uploadImageFile === 'function') {
+        uploadedUrl = await window.uploadImageFile(file);
+      }
+
+      if (uploadedUrl) {
+        quickItems[index].img = uploadedUrl;
+        items.forEach(item => {
+          if (normalizeText(item.name) === normalizeText(quickItems[index].name)) item.img = uploadedUrl;
+        });
+        save();
+        render();
+        return;
+      }
+    } catch (error) {
+      console.error('Image upload failed, using local fallback:', error);
+    }
 
     resizeImage(file, dataUrl => {
       quickItems[index].img = dataUrl;
@@ -1574,7 +1581,7 @@ function clearInputs() {
   hideMainItemSuggestions();
 }
 
-function addItem() {
+async function addItem() {
   const nameInput = document.getElementById('itemName');
   const fileInput = document.getElementById('itemImage');
   const qtyInput = document.getElementById('itemQuantity');
@@ -1640,8 +1647,25 @@ function addItem() {
     clearInputs();
   };
 
-  if (file) resizeImage(file, saveItem);
-  else saveItem('');
+  if (file) {
+    try {
+      let uploadedUrl = '';
+      if (typeof window.uploadImageFile === 'function') {
+        uploadedUrl = await window.uploadImageFile(file);
+      }
+      if (uploadedUrl) {
+        saveItem(uploadedUrl);
+        return;
+      }
+    } catch (error) {
+      console.error('Image upload failed, using local fallback:', error);
+    }
+
+    resizeImage(file, saveItem);
+    return;
+  }
+
+  saveItem('');
 }
 
 function updateQuantity(index, value) {
@@ -2459,35 +2483,42 @@ let weekPlanner = JSON.parse(localStorage.getItem('matlista_weekplanner') || '{}
 let selectedWeekDay = localStorage.getItem('matlista_weekplanner_selected') || getTodayWeekKey();
 
 
-function bindStateToWindow() {
+function setupCloudSyncBridge() {
   const bindings = {
-    items: { get: () => items, set: value => { items = Array.isArray(value) ? value : []; } },
-    quickItems: { get: () => quickItems, set: value => { quickItems = Array.isArray(value) ? value : []; } },
-    recipes: { get: () => recipes, set: value => { recipes = Array.isArray(value) ? value : []; } },
-    categories: { get: () => categories, set: value => { categories = Array.isArray(value) && value.length ? value : ['MAT']; } },
-    places: { get: () => places, set: value => { places = Array.isArray(value) && value.length ? value : defaultPlaces.slice(); } },
-    homeOpenState: { get: () => homeOpenState, set: value => { homeOpenState = value && typeof value === 'object' ? value : {}; } },
-    recipeIngredientChoices: { get: () => recipeIngredientChoices, set: value => { recipeIngredientChoices = value && typeof value === 'object' ? value : {}; } },
-    householdSize: { get: () => householdSize, set: value => { householdSize = Math.max(1, Math.min(8, Number(value || 1))); } },
-    weekPlanner: { get: () => weekPlanner, set: value => { weekPlanner = value && typeof value === 'object' ? value : {}; } },
-    selectedWeekDay: { get: () => selectedWeekDay, set: value => { selectedWeekDay = String(value || getTodayWeekKey()); } }
+    items: { get: () => items, set: v => { items = Array.isArray(v) ? v : []; } },
+    quickItems: { get: () => quickItems, set: v => { quickItems = Array.isArray(v) ? v : []; } },
+    recipes: { get: () => recipes, set: v => { recipes = Array.isArray(v) ? v : []; } },
+    categories: { get: () => categories, set: v => { categories = Array.isArray(v) && v.length ? v : ['MAT']; } },
+    places: { get: () => places, set: v => { places = Array.isArray(v) ? v : defaultPlaces.slice(); } },
+    homeOpenState: { get: () => homeOpenState, set: v => { homeOpenState = v && typeof v === 'object' ? v : {}; } },
+    recipeIngredientChoices: { get: () => recipeIngredientChoices, set: v => { recipeIngredientChoices = v && typeof v === 'object' ? v : {}; } },
+    householdSize: { get: () => householdSize, set: v => { householdSize = Math.max(1, Math.min(8, Number(v || 1))); } },
+    weekPlanner: { get: () => weekPlanner, set: v => { weekPlanner = v && typeof v === 'object' ? v : {}; } },
+    selectedWeekDay: { get: () => selectedWeekDay, set: v => { selectedWeekDay = String(v || getTodayWeekKey()); } }
   };
 
-  Object.entries(bindings).forEach(([key, descriptor]) => {
+  Object.entries(bindings).forEach(([key, config]) => {
     try {
       Object.defineProperty(window, key, {
         configurable: true,
-        enumerable: true,
-        get: descriptor.get,
-        set: descriptor.set
+        enumerable: false,
+        get: config.get,
+        set: config.set
       });
     } catch (error) {
-      window[key] = descriptor.get();
+      window[key] = config.get();
     }
   });
+
+  window.hydrateData = hydrateData;
+  window.save = save;
+  window.render = render;
+  window.refreshWeekPlannerUI = refreshWeekPlannerUI;
+  window.applyTheme = applyTheme;
 }
 
-bindStateToWindow();
+setupCloudSyncBridge();
+
 
 function getTodayWeekKey() {
   const day = new Date().getDay();
