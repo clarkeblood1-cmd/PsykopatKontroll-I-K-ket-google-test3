@@ -194,7 +194,7 @@
     try {
       const provider = new firebase.auth.GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      await firebase.auth().signInWithRedirect(provider);
+      await firebase.auth().signInWithPopup(provider);
     } catch (error) {
       console.error(error);
       alert('Google-login misslyckades: ' + (error?.message || 'okänt fel'));
