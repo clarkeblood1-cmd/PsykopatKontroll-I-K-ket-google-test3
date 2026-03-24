@@ -274,6 +274,9 @@
       console.error('Firebase init failed:', error);
     }
 
+          alert('Google-login misslyckades: ' + (error?.message || 'okänt fel'));
+    });
+
     firebase.auth().onAuthStateChanged(user => {
       handleAuthState(user).catch(err => {
         console.error('Auth state error:', err);
