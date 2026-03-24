@@ -439,6 +439,42 @@ function normalizeText(text) {
     .trim();
 }
 
+
+function slugifyImageName(name) {
+  return normalizeText(name).replace(/\s+/g, '-').trim();
+}
+
+function buildImageCandidates(name) {
+  const slug = slugifyImageName(name);
+  if (!slug) return ['images/default.svg'];
+  return [
+    `images/${slug}.png`,
+    `images/${slug}.jpg`,
+    `images/${slug}.webp`,
+    `images/${slug}.svg`,
+    'images/default.svg'
+  ];
+}
+
+function getAutoImage(name) {
+  const candidates = buildImageCandidates(name);
+  return candidates[0] || 'images/default.svg';
+}
+
+function attachAutoImageFallback(imgEl, itemName) {
+  if (!imgEl) return;
+  const candidates = buildImageCandidates(itemName);
+  let idx = 1;
+  imgEl.onerror = function () {
+    if (idx < candidates.length) {
+      imgEl.src = candidates[idx++];
+    } else {
+      imgEl.onerror = null;
+    }
+  };
+}
+
+
 function extractQuantity(text) {
   const match = String(text || '').match(/^(\d+)/);
   return match ? Number(match[1]) : 1;
@@ -1050,7 +1086,7 @@ function createPlaceSelect(current, onchangeCode) {
 
 function createCard(item, source = 'items') {
   const realIndex = source === 'quick' ? quickItems.indexOf(item) : items.indexOf(item);
-  const img = item.img || 'https://via.placeholder.com/100?text=Bild';
+  const img = item.img || getAutoImage(item.name);
   const moveText = item.type === 'home' ? '↔ Flytta 1 till köp' : '↔ Flytta 1 till hemma';
   const placeMeta = getPlaceMeta(item.place);
   const div = document.createElement('div');
@@ -1061,7 +1097,7 @@ function createCard(item, source = 'items') {
 
   if (source === 'quick') {
     div.innerHTML = `
-      <img src="${img}" alt="${item.name}" onclick="showQuickImage(${realIndex})">
+      <img src="${img}" alt="${item.name}" onerror="attachAutoImageFallback(this, item.name)" onclick="showQuickImage(${realIndex})">
       <div class="info">
         <div class="top-tags">
           ${createCategorySelect(item.category || 'MAT', `changeQuickCategory(${realIndex}, this.value)`)}
@@ -1085,7 +1121,7 @@ function createCard(item, source = 'items') {
   }
 
   div.innerHTML = `
-    <img src="${img}" alt="${item.name}" onclick="showImage(${realIndex})">
+    <img src="${img}" alt="${item.name}" onerror="attachAutoImageFallback(this, item.name)" onclick="showImage(${realIndex})">
     <div class="info">
       <div class="top-tags">
         <div class="category">${item.category || 'MAT'}</div>
@@ -1370,34 +1406,15 @@ function useQuickItem(index) {
   render();
 }
 
-async function changeQuickImage(index) {
+function changeQuickImage(index) {
   if (!quickItems[index]) return;
 
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/png, image/jpeg, image/webp';
-  input.onchange = async event => {
+  input.onchange = event => {
     const file = event.target.files?.[0];
     if (!file) return;
-
-    try {
-      let uploadedUrl = '';
-      if (typeof window.uploadImageFile === 'function') {
-        uploadedUrl = await window.uploadImageFile(file);
-      }
-
-      if (uploadedUrl) {
-        quickItems[index].img = uploadedUrl;
-        items.forEach(item => {
-          if (normalizeText(item.name) === normalizeText(quickItems[index].name)) item.img = uploadedUrl;
-        });
-        save();
-        render();
-        return;
-      }
-    } catch (error) {
-      console.error('Image upload failed, using local fallback:', error);
-    }
 
     resizeImage(file, dataUrl => {
       quickItems[index].img = dataUrl;
@@ -1581,7 +1598,7 @@ function clearInputs() {
   hideMainItemSuggestions();
 }
 
-async function addItem() {
+function addItem() {
   const nameInput = document.getElementById('itemName');
   const fileInput = document.getElementById('itemImage');
   const qtyInput = document.getElementById('itemQuantity');
@@ -1647,25 +1664,8 @@ async function addItem() {
     clearInputs();
   };
 
-  if (file) {
-    try {
-      let uploadedUrl = '';
-      if (typeof window.uploadImageFile === 'function') {
-        uploadedUrl = await window.uploadImageFile(file);
-      }
-      if (uploadedUrl) {
-        saveItem(uploadedUrl);
-        return;
-      }
-    } catch (error) {
-      console.error('Image upload failed, using local fallback:', error);
-    }
-
-    resizeImage(file, saveItem);
-    return;
-  }
-
-  saveItem('');
+  if (file) resizeImage(file, saveItem);
+  else saveItem('');
 }
 
 function updateQuantity(index, value) {
@@ -2481,44 +2481,6 @@ const WEEK_DAYS = [
 
 let weekPlanner = JSON.parse(localStorage.getItem('matlista_weekplanner') || '{}');
 let selectedWeekDay = localStorage.getItem('matlista_weekplanner_selected') || getTodayWeekKey();
-
-
-function setupCloudSyncBridge() {
-  const bindings = {
-    items: { get: () => items, set: v => { items = Array.isArray(v) ? v : []; } },
-    quickItems: { get: () => quickItems, set: v => { quickItems = Array.isArray(v) ? v : []; } },
-    recipes: { get: () => recipes, set: v => { recipes = Array.isArray(v) ? v : []; } },
-    categories: { get: () => categories, set: v => { categories = Array.isArray(v) && v.length ? v : ['MAT']; } },
-    places: { get: () => places, set: v => { places = Array.isArray(v) ? v : defaultPlaces.slice(); } },
-    homeOpenState: { get: () => homeOpenState, set: v => { homeOpenState = v && typeof v === 'object' ? v : {}; } },
-    recipeIngredientChoices: { get: () => recipeIngredientChoices, set: v => { recipeIngredientChoices = v && typeof v === 'object' ? v : {}; } },
-    householdSize: { get: () => householdSize, set: v => { householdSize = Math.max(1, Math.min(8, Number(v || 1))); } },
-    weekPlanner: { get: () => weekPlanner, set: v => { weekPlanner = v && typeof v === 'object' ? v : {}; } },
-    selectedWeekDay: { get: () => selectedWeekDay, set: v => { selectedWeekDay = String(v || getTodayWeekKey()); } }
-  };
-
-  Object.entries(bindings).forEach(([key, config]) => {
-    try {
-      Object.defineProperty(window, key, {
-        configurable: true,
-        enumerable: false,
-        get: config.get,
-        set: config.set
-      });
-    } catch (error) {
-      window[key] = config.get();
-    }
-  });
-
-  window.hydrateData = hydrateData;
-  window.save = save;
-  window.render = render;
-  window.refreshWeekPlannerUI = refreshWeekPlannerUI;
-  window.applyTheme = applyTheme;
-}
-
-setupCloudSyncBridge();
-
 
 function getTodayWeekKey() {
   const day = new Date().getDay();
