@@ -1,4 +1,3 @@
-
 let items = JSON.parse(localStorage.getItem('matlista') || '[]');
 let quickItems = JSON.parse(localStorage.getItem('matlista_snabb') || '[]');
 let recipes = JSON.parse(localStorage.getItem('matlista_recept') || '[]');
@@ -2430,6 +2429,19 @@ document.addEventListener('DOMContentLoaded', () => {
   updateSizeSelect('editSize', document.getElementById('editUnit')?.value || 'st');
   updateSizeSelect('ingredientEditSize', document.getElementById('ingredientEditUnit')?.value || 'st', null, getRecipeIngredientContext(document.getElementById('ingredientEditName')?.value || ''));
   render();
+});
+
+Object.defineProperties(window, {
+  items: { get: () => items, set: value => { items = Array.isArray(value) ? value : []; } },
+  quickItems: { get: () => quickItems, set: value => { quickItems = Array.isArray(value) ? value : []; } },
+  recipes: { get: () => recipes, set: value => { recipes = Array.isArray(value) ? value : []; } },
+  categories: { get: () => categories, set: value => { categories = Array.isArray(value) && value.length ? value : ['MAT']; } },
+  places: { get: () => places, set: value => { places = Array.isArray(value) ? value : []; } },
+  homeOpenState: { get: () => homeOpenState, set: value => { homeOpenState = value && typeof value === 'object' ? value : {}; } },
+  recipeIngredientChoices: { get: () => recipeIngredientChoices, set: value => { recipeIngredientChoices = value && typeof value === 'object' ? value : {}; } },
+  householdSize: { get: () => householdSize, set: value => { householdSize = Math.max(1, Math.min(8, Number(value || 1))); } },
+  weekPlanner: { get: () => weekPlanner, set: value => { weekPlanner = value && typeof value === 'object' ? value : {}; } },
+  selectedWeekDay: { get: () => selectedWeekDay, set: value => { selectedWeekDay = String(value || 'mon'); } }
 });
 
 
