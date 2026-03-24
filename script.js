@@ -2799,3 +2799,14 @@ function toggleTheme() {
 document.addEventListener("DOMContentLoaded", () => {
   applyTheme(themes[currentThemeIndex]);
 });
+
+firebase.auth().onAuthStateChanged(user => {
+  const el = document.getElementById('authStatus');
+  if (!el) return;
+
+  if (user) {
+    el.textContent = "Inloggad som " + (user.displayName || user.email);
+  } else {
+    el.textContent = "Inte inloggad";
+  }
+});
