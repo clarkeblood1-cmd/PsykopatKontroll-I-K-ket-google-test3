@@ -1,4 +1,4 @@
-(function () {
+function () {
   const STORAGE_SCOPE = 'psykopatkontroll';
   const APP_KEYS = [
     'matlista',
@@ -114,10 +114,8 @@
   }
 
   function safeReload() {
-  if (reloadingForAuth) return;
-  reloadingForAuth = false;
-  window.location.reload();
-}
+    return;
+  }
 
   async function fetchCloudData(uid) {
     if (!cloudDb) return null;
@@ -179,7 +177,7 @@
       const json = JSON.stringify((data && data.values) || {});
       if (ignoreNextSnapshot || json === lastAppliedCloudJson) return;
       applyCloudDataObject(data, uid);
-      safeReload();
+      updateAuthUI();
     }, error => {
       console.error('Cloud sync snapshot failed:', error);
     });
@@ -239,7 +237,7 @@
         }
         sessionStorage.removeItem('psk_last_uid');
       }
-      safeReload();
+      updateAuthUI();
       return;
     }
 
@@ -273,9 +271,6 @@
     } catch (error) {
       console.error('Firebase init failed:', error);
     }
-
-          alert('Google-login misslyckades: ' + (error?.message || 'okänt fel'));
-    });
 
     firebase.auth().onAuthStateChanged(user => {
       handleAuthState(user).catch(err => {
