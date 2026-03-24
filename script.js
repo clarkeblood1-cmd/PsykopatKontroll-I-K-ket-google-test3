@@ -439,10 +439,52 @@ function normalizeText(text) {
     .trim();
 }
 
+function getImageNameVariants(name) {
+  const raw = String(name || '').trim().toLowerCase();
+  const normalized = normalizeText(name).replace(/\s+/g, '-').trim();
+  const rawSlug = raw
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9åäö\-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  const variants = [];
+  [rawSlug, normalized].forEach(v => {
+    if (v && !variants.includes(v)) variants.push(v);
+  });
+
+  return variants.length ? variants : ['default'];
+}
+
 function getAutoImage(name) {
-  const slug = normalizeText(name).replace(/\s+/g, '-').trim();
-  if (!slug) return 'images/default.svg';
-  return `images/${slug}.png`;
+  const variants = getImageNameVariants(name);
+  return `images/${variants[0]}.png`;
+}
+
+function attachAutoImageFallback(img, name) {
+  if (!img) return;
+
+  const variants = getImageNameVariants(name);
+  const exts = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
+  const candidates = [];
+
+  variants.forEach(variant => {
+    exts.forEach(ext => {
+      candidates.push(`images/${variant}.${ext}`);
+    });
+  });
+
+  candidates.push('images/default.svg');
+
+  let index = 0;
+  img.onerror = function () {
+    index += 1;
+    if (index < candidates.length) {
+      img.src = candidates[index];
+    } else {
+      img.onerror = null;
+    }
+  };
 }
 
 
@@ -2806,29 +2848,3 @@ function toggleTheme() {
 document.addEventListener("DOMContentLoaded", () => {
   applyTheme(themes[currentThemeIndex]);
 });
-
-
-function attachAutoImageFallback(img, name) {
-  if (!img) return;
-  const slug = normalizeText(name).replace(/\s+/g, '-').trim();
-  const candidates = slug
-    ? [
-        `images/${slug}.png`,
-        `images/${slug}.jpg`,
-        `images/${slug}.jpeg`,
-        `images/${slug}.webp`,
-        `images/${slug}.svg`,
-        'images/default.svg'
-      ]
-    : ['images/default.svg'];
-
-  let index = 0;
-  img.onerror = function () {
-    index += 1;
-    if (index < candidates.length) {
-      img.src = candidates[index];
-    } else {
-      img.onerror = null;
-    }
-  };
-}

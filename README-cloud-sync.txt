@@ -18,12 +18,8 @@ Gör så här:
 4. Commit + vänta på GitHub Pages.
 
 
-GitHub images-mapp:
-- Lägg produktbilder i /images i samma GitHub Pages-repo.
-- Appen provar automatiskt:
-  images/<normaliserat-namn>.png
-  images/<normaliserat-namn>.jpg
-  images/<normaliserat-namn>.webp
-  images/<normaliserat-namn>.svg
-- Exempel: "Mjölk" => images/mjolk.png eller images/mjolk.svg
-- Fallback: images/default.svg
+v8 öäå-support:
+- Appen provar både originalnamn och normaliserat namn.
+- Exempel: 'Mjölk' provar både images/mjölk.png och images/mjolk.png.
+- Samma för ägg/agg, smör/smor, bröd/brod.
+- Fortfarande fallback till images/default.svg.
