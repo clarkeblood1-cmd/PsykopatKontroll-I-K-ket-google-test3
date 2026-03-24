@@ -41,15 +41,6 @@
         return false;
       }
 
-      if (typeof firebase.firestore !== 'function') {
-        setAuthUi(null, 'Firestore saknas');
-        return false;
-      }
-
-      if (typeof firebase.storage !== 'function') {
-        console.warn('Firebase Storage saknas - bilder synkas inte till molnet ännu.');
-      }
-
       if (!firebase.apps || !firebase.apps.length) {
         firebase.initializeApp(window.firebaseConfig);
       }
@@ -84,7 +75,7 @@
       theme: localStorage.getItem('theme') || 'scifi',
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAtMs: Date.now(),
-      appVersion: 'cloud-sync-storage-v4'
+      appVersion: 'cloud-sync-popup-v1'
     };
   }
 
@@ -222,29 +213,6 @@
 
   window.saveToCloud = saveToCloud;
   window.saveToCloudNow = saveToCloudNow;
-  window.uploadImageFile = async function uploadImageFile(file) {
-    if (!file) return '';
-    if (!initFirebase()) return '';
-    const user = firebase.auth().currentUser;
-    if (!user) return '';
-    if (typeof firebase.storage !== 'function') return '';
-
-    try {
-      const extension = (file.name && file.name.split('.').pop()) ? file.name.split('.').pop().toLowerCase() : 'jpg';
-      const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(extension) ? extension : 'jpg';
-      const storageRef = firebase.storage().ref();
-      const path = `users/${user.uid}/images/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
-      const fileRef = storageRef.child(path);
-      await fileRef.put(file, {
-        contentType: file.type || `image/${safeExt === 'jpg' ? 'jpeg' : safeExt}`,
-        cacheControl: 'public,max-age=31536000'
-      });
-      return await fileRef.getDownloadURL();
-    } catch (error) {
-      console.error('Storage upload error:', error);
-      return '';
-    }
-  };
 
   function startAuthListener() {
     if (authReady || !initFirebase()) return;
