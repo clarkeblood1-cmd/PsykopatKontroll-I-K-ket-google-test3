@@ -425,6 +425,21 @@ function ensureCategoryExists(category) {
   return clean;
 }
 
+function getAutoImage(name) {
+  const clean = String(name || '')
+    .toLowerCase()
+    .replace(/å/g, 'a')
+    .replace(/ä/g, 'a')
+    .replace(/ö/g, 'o')
+    .replace(/[^a-z0-9]/g, '');
+
+  return clean ? `images/${clean}.png` : '';
+}
+
+function getItemImageSrc(item) {
+  return item?.img || getAutoImage(item?.name) || 'https://via.placeholder.com/100?text=Bild';
+}
+
 function normalizeText(text) {
   return String(text || '')
     .toLowerCase()
@@ -1062,7 +1077,7 @@ function createPlaceSelect(current, onchangeCode) {
 
 function createCard(item, source = 'items') {
   const realIndex = source === 'quick' ? quickItems.indexOf(item) : items.indexOf(item);
-  const img = item.img || 'https://via.placeholder.com/100?text=Bild';
+  const img = getItemImageSrc(item);
   const moveText = item.type === 'home' ? '↔ Flytta 1 till köp' : '↔ Flytta 1 till hemma';
   const placeMeta = getPlaceMeta(item.place);
   const div = document.createElement('div');
@@ -1073,7 +1088,7 @@ function createCard(item, source = 'items') {
 
   if (source === 'quick') {
     div.innerHTML = `
-      <img src="${img}" alt="${item.name}" onclick="showQuickImage(${realIndex})">
+      <img src="${img}" alt="${item.name}" onerror="this.onerror=null;this.src='https://via.placeholder.com/100?text=Bild'" onclick="showQuickImage(${realIndex})">
       <div class="info">
         <div class="top-tags">
           ${createCategorySelect(item.category || 'MAT', `changeQuickCategory(${realIndex}, this.value)`)}
@@ -1097,7 +1112,7 @@ function createCard(item, source = 'items') {
   }
 
   div.innerHTML = `
-    <img src="${img}" alt="${item.name}" onclick="showImage(${realIndex})">
+    <img src="${img}" alt="${item.name}" onerror="this.onerror=null;this.src='https://via.placeholder.com/100?text=Bild'" onclick="showImage(${realIndex})">
     <div class="info">
       <div class="top-tags">
         <div class="category">${item.category || 'MAT'}</div>
@@ -1530,7 +1545,7 @@ function suggestUnit() {
 }
 
 function showImage(index) {
-  const src = items[index]?.img;
+  const src = getItemImageSrc(items[index]);
   if (!src) return;
   const modal = document.getElementById('imageModal');
   const modalImg = document.getElementById('modalImg');
@@ -1539,7 +1554,7 @@ function showImage(index) {
 }
 
 function showQuickImage(index) {
-  const src = quickItems[index]?.img;
+  const src = getItemImageSrc(quickItems[index]);
   if (!src) return;
   const modal = document.getElementById('imageModal');
   const modalImg = document.getElementById('modalImg');
