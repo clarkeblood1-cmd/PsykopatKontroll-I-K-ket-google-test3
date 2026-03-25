@@ -438,73 +438,6 @@ function normalizeText(text) {
     .trim();
 }
 
-
-const AUTO_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'];
-const LOCAL_FALLBACK_IMAGE = 'images/default.png';
-const SVG_PLACEHOLDER_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent(`
-  <svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" viewBox="0 0 220 220">
-    <rect width="220" height="220" rx="28" fill="#0b122b"/>
-    <rect x="18" y="18" width="184" height="184" rx="22" fill="#ffffff"/>
-    <text x="110" y="102" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#0f172a">Ingen</text>
-    <text x="110" y="138" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#0f172a">bild</text>
-  </svg>
-`)}`;
-
-function normalizeImageName(name) {
-  return String(name || '')
-    .toLowerCase()
-    .replace(/å/g, 'a')
-    .replace(/ä/g, 'a')
-    .replace(/ö/g, 'o')
-    .replace(/[^a-z0-9]/g, '');
-}
-
-function getAutoImageCandidates(name) {
-  const clean = normalizeImageName(name);
-  if (!clean) return [];
-  return AUTO_IMAGE_EXTENSIONS.map(ext => `images/${clean}.${ext}`);
-}
-
-function getFallbackImageSrc() {
-  return LOCAL_FALLBACK_IMAGE || SVG_PLACEHOLDER_IMAGE;
-}
-
-function getItemImageSrc(item) {
-  if (item?.img) return item.img;
-  const candidates = getAutoImageCandidates(item?.name);
-  return candidates[0] || getFallbackImageSrc();
-}
-
-function getImageCandidatesAttribute(item) {
-  const candidates = item?.img ? [] : getAutoImageCandidates(item?.name);
-  return candidates.map(src => encodeURIComponent(src)).join('|');
-}
-
-function handleAutoImageError(img) {
-  if (!img) return;
-
-  const candidates = String(img.dataset.candidates || '')
-    .split('|')
-    .filter(Boolean)
-    .map(value => decodeURIComponent(value));
-
-  let index = Number(img.dataset.candidateIndex || 0);
-  index += 1;
-
-  if (index < candidates.length) {
-    img.dataset.candidateIndex = String(index);
-    img.src = candidates[index];
-    return;
-  }
-
-  const fallback = img.dataset.fallback ? decodeURIComponent(img.dataset.fallback) : getFallbackImageSrc();
-  if (img.src !== fallback) {
-    img.onerror = null;
-    img.src = fallback || SVG_PLACEHOLDER_IMAGE;
-  }
-}
-
-
 function extractQuantity(text) {
   const match = String(text || '').match(/^(\d+)/);
   return match ? Number(match[1]) : 1;
@@ -1129,9 +1062,7 @@ function createPlaceSelect(current, onchangeCode) {
 
 function createCard(item, source = 'items') {
   const realIndex = source === 'quick' ? quickItems.indexOf(item) : items.indexOf(item);
-  const img = getItemImageSrc(item);
-  const imageCandidatesAttr = getImageCandidatesAttribute(item);
-  const fallbackImageAttr = encodeURIComponent(getFallbackImageSrc());
+  const img = item.img || 'https://via.placeholder.com/100?text=Bild';
   const moveText = item.type === 'home' ? '↔ Flytta 1 till köp' : '↔ Flytta 1 till hemma';
   const placeMeta = getPlaceMeta(item.place);
   const div = document.createElement('div');
@@ -1142,7 +1073,7 @@ function createCard(item, source = 'items') {
 
   if (source === 'quick') {
     div.innerHTML = `
-      <img src="${img}" alt="${item.name}" data-candidates="${imageCandidatesAttr}" data-candidate-index="0" data-fallback="${fallbackImageAttr}" onerror="handleAutoImageError(this)" onclick="showQuickImage(${realIndex})">
+      <img src="${img}" alt="${item.name}" onclick="showQuickImage(${realIndex})">
       <div class="info">
         <div class="top-tags">
           ${createCategorySelect(item.category || 'MAT', `changeQuickCategory(${realIndex}, this.value)`)}
@@ -1166,7 +1097,7 @@ function createCard(item, source = 'items') {
   }
 
   div.innerHTML = `
-    <img src="${img}" alt="${item.name}" data-candidates="${imageCandidatesAttr}" data-candidate-index="0" data-fallback="${fallbackImageAttr}" onerror="handleAutoImageError(this)" onclick="showImage(${realIndex})">
+    <img src="${img}" alt="${item.name}" onclick="showImage(${realIndex})">
     <div class="info">
       <div class="top-tags">
         <div class="category">${item.category || 'MAT'}</div>
@@ -1599,7 +1530,7 @@ function suggestUnit() {
 }
 
 function showImage(index) {
-  const src = getItemImageSrc(items[index]);
+  const src = items[index]?.img;
   if (!src) return;
   const modal = document.getElementById('imageModal');
   const modalImg = document.getElementById('modalImg');
@@ -1608,7 +1539,7 @@ function showImage(index) {
 }
 
 function showQuickImage(index) {
-  const src = getItemImageSrc(quickItems[index]);
+  const src = quickItems[index]?.img;
   if (!src) return;
   const modal = document.getElementById('imageModal');
   const modalImg = document.getElementById('modalImg');
@@ -2910,4 +2841,59 @@ function toggleTheme() {
 
 document.addEventListener("DOMContentLoaded", () => {
   applyTheme(themes[currentThemeIndex]);
+});
+
+
+
+// ===== PWA / INSTALL APP =====
+let deferredPrompt = null;
+
+function isStandaloneMode() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function updateInstallButtonVisibility(forceHide = false) {
+  const installBtn = document.getElementById('installBtn');
+  if (!installBtn) return;
+  if (forceHide || isStandaloneMode()) {
+    installBtn.style.display = 'none';
+    return;
+  }
+  installBtn.style.display = deferredPrompt ? 'inline-flex' : 'none';
+}
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  updateInstallButtonVisibility();
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredPrompt = null;
+  updateInstallButtonVisibility(true);
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+  const installBtn = document.getElementById('installBtn');
+  if (installBtn) {
+    installBtn.addEventListener('click', async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      try {
+        await deferredPrompt.userChoice;
+      } catch (err) {
+        console.warn('Install prompt avbröts:', err);
+      }
+      deferredPrompt = null;
+      updateInstallButtonVisibility(true);
+    });
+  }
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(err => {
+      console.warn('Service worker kunde inte registreras:', err);
+    });
+  }
+
+  updateInstallButtonVisibility();
 });

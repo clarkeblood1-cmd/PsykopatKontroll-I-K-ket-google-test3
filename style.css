@@ -318,3 +318,67 @@ button:hover{background:var(--green-dark);color:#fff}
   .auth-panel{flex-direction:column;align-items:stretch}
   .auth-actions{flex-direction:column}
 }
+
+
+
+/* ===== APP INSTALL HEADER ===== */
+.app-header{
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  align-items:center;
+  gap:12px;
+  padding:18px 12px;
+  font-size:24px;
+  font-weight:700;
+  background:rgba(0,0,0,.25);
+  box-shadow:var(--shadow);
+}
+.header-left,.header-right{
+  display:flex;
+  align-items:center;
+}
+.header-left{justify-content:flex-start}
+.header-title{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:12px;
+  text-align:center;
+}
+.header-right{justify-content:flex-end}
+.app-icon{
+  width:34px;
+  height:34px;
+  border-radius:9px;
+  box-shadow:0 0 10px rgba(96,165,250,.25);
+  flex:0 0 auto;
+}
+.install-btn{
+  min-height:38px;
+  padding:8px 14px;
+  border-radius:12px;
+  background:#60a5fa;
+  color:#07122a;
+  font-weight:700;
+}
+.install-btn:hover{
+  background:#3b82f6;
+  color:#fff;
+}
+#themeToggleBtn{
+  position:static !important;
+  right:auto !important;
+  top:auto !important;
+}
+@media (max-width:700px){
+  .app-header{
+    grid-template-columns:1fr;
+    justify-items:center;
+    gap:10px;
+    font-size:21px;
+  }
+  .header-left,.header-title,.header-right{
+    justify-content:center;
+    width:100%;
+  }
+}
