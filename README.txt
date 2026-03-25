@@ -1,0 +1,1 @@
+Sökförslag från images är nu aktiverat. Exempel: skriv 'N' så föreslås Nötfärs även om varan inte redan finns i snabblistan.

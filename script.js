@@ -64,6 +64,17 @@ const weightSizeOptions = [14, 28, 50, 100, 150, 200, 250, 500, 750, 1000];
 const spiceWeightSizeOptions = [14, 28, 50, 100, 150, 200];
 const liquidSizeOptions = [250, 500, 1000, 1500, 2000];
 
+const imageCatalogItems = [
+  { name: 'Nötfärs', category: 'KÖTTFÄRS' },
+  { name: 'Blandfärs', category: 'KÖTTFÄRS' },
+  { name: 'Kycklingfärs', category: 'KÖTTFÄRS' },
+  { name: 'Hushållsfärs', category: 'KÖTTFÄRS' },
+  { name: 'Högrevsfärs', category: 'KÖTTFÄRS' },
+  { name: 'Chorizofärs', category: 'KÖTTFÄRS' },
+  { name: 'Salsicciafärs', category: 'KÖTTFÄRS' }
+];
+
+
 function isWeightUnit(unit) {
   return ['g', 'kg'].includes(String(unit || '').toLowerCase());
 }
@@ -490,7 +501,11 @@ function levenshteinDistance(a, b) {
 }
 
 function getKnownImageNames() {
-  return [...new Set([...items, ...quickItems].map(item => String(item?.name || '').trim()).filter(Boolean))];
+  return [...new Set([
+    ...items,
+    ...quickItems,
+    ...imageCatalogItems
+  ].map(item => String(item?.name || '').trim()).filter(Boolean))];
 }
 
 function buildImageNameVariants(name) {
@@ -1407,6 +1422,118 @@ function applyQuickItemToMainForm(index) {
   hideMainItemSuggestions();
 }
 
+
+function getImageCatalogMatches(search, limit = 8) {
+  const normalizedSearch = normalizeText(search);
+  if (!normalizedSearch) return [];
+
+  const ranked = imageCatalogItems
+    .map(item => {
+      const normalizedName = normalizeText(item.name);
+      const startsWith = normalizedName.startsWith(normalizedSearch);
+      const includes = normalizedName.includes(normalizedSearch);
+      const comparePart = normalizedName.slice(0, Math.max(normalizedSearch.length, 1));
+      const distance = levenshteinDistance(normalizedSearch, comparePart);
+      let score = 0;
+      if (startsWith) score += 100;
+      else if (includes) score += 60;
+      if (distance <= 2) score += 30 - (distance * 8);
+      return { item, startsWith, includes, distance, score };
+    })
+    .filter(entry => entry.startsWith || entry.includes || entry.distance <= 2)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (a.distance !== b.distance) return a.distance - b.distance;
+      return String(a.item.name || '').localeCompare(String(b.item.name || ''), 'sv');
+    });
+
+  const seen = new Set();
+  return ranked
+    .filter(entry => {
+      const key = normalizeText(entry.item.name);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit)
+    .map(entry => entry.item);
+}
+
+function getSortedMainMatches(search, limit = 8) {
+  const merged = [...getSortedQuickMatches(search, limit * 2), ...getImageCatalogMatches(search, limit * 2)];
+  const seen = new Set();
+
+  return merged
+    .filter(item => {
+      const key = normalizeText(item?.name || '');
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit);
+}
+
+function getSortedQuickMatches(search, limit = 8) {
+  const normalizedSearch = normalizeText(search);
+  if (!normalizedSearch) return [];
+
+  const ranked = quickItems
+    .map(item => {
+      const normalizedName = normalizeText(item.name);
+      const startsWith = normalizedName.startsWith(normalizedSearch);
+      const includes = normalizedName.includes(normalizedSearch);
+      const comparePart = normalizedName.slice(0, Math.max(normalizedSearch.length, 1));
+      const distance = levenshteinDistance(normalizedSearch, comparePart);
+      const categoryBoost = normalizeText(item.category || '').includes(normalizedSearch) ? 1 : 0;
+      let score = 0;
+      if (startsWith) score += 100;
+      else if (includes) score += 60;
+      if (distance <= 2) score += 30 - (distance * 8);
+      score += categoryBoost;
+      return { item, normalizedName, startsWith, includes, distance, score };
+    })
+    .filter(entry => entry.startsWith || entry.includes || entry.distance <= 2)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (a.distance !== b.distance) return a.distance - b.distance;
+      return String(a.item.name || '').localeCompare(String(b.item.name || ''), 'sv');
+    });
+
+  const seen = new Set();
+  return ranked
+    .filter(entry => {
+      const key = normalizeText(entry.item.name);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit)
+    .map(entry => entry.item);
+}
+
+function applyInlineAutocomplete(input, matches) {
+  if (!input || !matches.length) return;
+  if (input !== document.activeElement) return;
+
+  const rawValue = String(input.value || '');
+  const trimmedValue = rawValue.trim();
+  if (!trimmedValue) return;
+
+  const bestName = String(matches[0]?.name || '');
+  if (!bestName) return;
+
+  const normalizedTyped = normalizeText(trimmedValue);
+  const normalizedBest = normalizeText(bestName);
+  if (!normalizedBest.startsWith(normalizedTyped) || normalizedTyped === normalizedBest) return;
+
+  const typedFirst = trimmedValue.charAt(0);
+  const rest = bestName.slice(1);
+  const suggestion = typedFirst ? typedFirst.toUpperCase() + rest : bestName;
+
+  input.value = suggestion;
+  input.setSelectionRange(trimmedValue.length, suggestion.length);
+}
+
 function showMainItemSuggestions() {
   const input = document.getElementById('itemName');
   const box = document.getElementById('mainItemSuggestions');
@@ -1421,11 +1548,13 @@ function showMainItemSuggestions() {
     return;
   }
 
-  const matches = quickItems.filter(item => normalizeText(item.name).includes(search));
+  const matches = getSortedMainMatches(input.value);
   if (!matches.length) {
     box.style.display = 'none';
     return;
   }
+
+  applyInlineAutocomplete(input, matches);
 
   matches.slice(0, 8).forEach(item => {
     const row = document.createElement('button');
@@ -1433,8 +1562,16 @@ function showMainItemSuggestions() {
     row.className = 'suggestion-row';
     row.textContent = `${item.name}${item.category ? ' • ' + item.category : ''}`;
     row.onclick = () => {
-      const realIndex = quickItems.indexOf(item);
-      if (realIndex !== -1) applyQuickItemToMainForm(realIndex);
+      const realIndex = quickItems.findIndex(q => normalizeText(q.name) === normalizeText(item.name));
+      if (realIndex !== -1) {
+        applyQuickItemToMainForm(realIndex);
+        return;
+      }
+
+      input.value = item.name || '';
+      const itemCategory = document.getElementById('itemCategory');
+      if (itemCategory && item.category) itemCategory.value = item.category;
+      hideMainItemSuggestions();
     };
     box.appendChild(row);
   });
@@ -1519,15 +1656,22 @@ function renderQuickList() {
     return;
   }
 
-  const search = String(quickInput?.value || '').toLowerCase().trim();
+  const rawSearch = String(quickInput?.value || '').trim();
+  const search = normalizeText(rawSearch);
   let list = quickItems.slice();
 
   if (search) {
-    list = list.filter(item =>
-      String(item.name || '').toLowerCase().includes(search) ||
-      String(item.category || '').toLowerCase().includes(search) ||
-      String(item.place || '').toLowerCase().includes(search)
+    const rankedMatches = getSortedQuickMatches(rawSearch, quickItems.length);
+    const rankedSet = new Set(rankedMatches.map(item => normalizeText(item.name)));
+    const otherMatches = quickItems.filter(item =>
+      !rankedSet.has(normalizeText(item.name)) && (
+        normalizeText(item.name).includes(search) ||
+        normalizeText(item.category || '').includes(search) ||
+        normalizeText(item.place || '').includes(search)
+      )
     );
+    list = [...rankedMatches, ...otherMatches];
+    applyInlineAutocomplete(quickInput, rankedMatches);
     renderQuickSuggestions(list);
   } else {
     hideQuickSuggestions();
@@ -2517,7 +2661,7 @@ function showEditRecipeSuggestions() {
     return;
   }
 
-  const matches = quickItems.filter(item => normalizeText(item.name).includes(search));
+  const matches = getSortedQuickMatches(input.value);
   if (!matches.length) {
     box.style.display = 'none';
     return;
