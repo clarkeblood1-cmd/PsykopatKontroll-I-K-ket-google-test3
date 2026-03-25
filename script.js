@@ -437,13 +437,54 @@ function normalizeImageFileName(name) {
     .replace(/^-+|-+$/g, '');
 }
 
+function getRawImageFileName(name) {
+  return String(name || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[\\/:"*?<>|]+/g, '')
+    .trim();
+}
+
+function getImageCandidates(name) {
+  const raw = getRawImageFileName(name);
+  const normalized = normalizeImageFileName(name);
+  const candidates = [
+    raw ? `images/${raw}.png` : '',
+    raw ? `images/${raw}.jpg` : '',
+    raw ? `images/${raw}.jpeg` : '',
+    raw ? `images/${raw}.webp` : '',
+    normalized ? `images/${normalized}.png` : '',
+    normalized ? `images/${normalized}.jpg` : '',
+    normalized ? `images/${normalized}.jpeg` : '',
+    normalized ? `images/${normalized}.webp` : ''
+  ].filter(Boolean);
+
+  return [...new Set(candidates)];
+}
+
 function getAutoImagePath(name) {
-  const fileName = normalizeImageFileName(name);
-  return fileName ? `images/${fileName}.png` : '';
+  const candidates = getImageCandidates(name);
+  return candidates[0] || '';
 }
 
 function getDisplayImageSrc(item) {
   return item?.img ? String(item.img) : getAutoImagePath(item?.name || '');
+}
+
+function handleAutoImageError(imgEl) {
+  if (!imgEl) return;
+  const listAttr = imgEl.getAttribute('data-img-candidates') || '';
+  const candidates = listAttr ? listAttr.split('|').filter(Boolean) : [];
+  const nextIndex = Number(imgEl.getAttribute('data-img-index') || '0') + 1;
+
+  if (nextIndex < candidates.length) {
+    imgEl.setAttribute('data-img-index', String(nextIndex));
+    imgEl.src = candidates[nextIndex];
+    return;
+  }
+
+  imgEl.onerror = null;
+  imgEl.src = 'https://via.placeholder.com/100?text=Bild';
 }
 
 function normalizeText(text) {
@@ -1084,6 +1125,8 @@ function createPlaceSelect(current, onchangeCode) {
 function createCard(item, source = 'items') {
   const realIndex = source === 'quick' ? quickItems.indexOf(item) : items.indexOf(item);
   const img = getDisplayImageSrc(item);
+  const imgCandidates = item?.img ? [String(item.img)] : getImageCandidates(item?.name || '');
+  const imgCandidateAttr = imgCandidates.join('|').replace(/"/g, '&quot;');
   const moveText = item.type === 'home' ? '↔ Flytta 1 till köp' : '↔ Flytta 1 till hemma';
   const placeMeta = getPlaceMeta(item.place);
   const div = document.createElement('div');
@@ -1094,7 +1137,7 @@ function createCard(item, source = 'items') {
 
   if (source === 'quick') {
     div.innerHTML = `
-      <img src="${img}" alt="${item.name}" onerror="this.onerror=null;this.src='https://via.placeholder.com/100?text=Bild'" onclick="showQuickImage(${realIndex})">
+      <img src="${img}" alt="${item.name}" data-img-candidates="${imgCandidateAttr}" data-img-index="0" onerror="handleAutoImageError(this)" onclick="showQuickImage(${realIndex})">
       <div class="info">
         <div class="top-tags">
           ${createCategorySelect(item.category || 'MAT', `changeQuickCategory(${realIndex}, this.value)`)}
@@ -1118,7 +1161,7 @@ function createCard(item, source = 'items') {
   }
 
   div.innerHTML = `
-    <img src="${img}" alt="${item.name}" onerror="this.onerror=null;this.src='https://via.placeholder.com/100?text=Bild'" onclick="showImage(${realIndex})">
+    <img src="${img}" alt="${item.name}" data-img-candidates="${imgCandidateAttr}" data-img-index="0" onerror="handleAutoImageError(this)" onclick="showImage(${realIndex})">
     <div class="info">
       <div class="top-tags">
         <div class="category">${item.category || 'MAT'}</div>
