@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PsykopatKontroll I Köket</title>
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -112,7 +113,7 @@
       <div class="section-top-row">
         <div class="section-title">⚡ Snabblista</div>
         <div class="section-search-wrap" style="position:relative;">
-          <input class="search section-search" id="quickItemName" placeholder="Sök i snabblistan..." oninput="filterQuickList()" autocomplete="off">
+          <input class="search section-search" id="quickItemName" placeholder="Sök i snabblistan..." oninput="debouncedQuickFilter()" autocomplete="off">
           <div id="quickSuggestions" class="suggestion-box"></div>
         </div>
         <button type="button" id="quickToggleBtn" class="ghost-btn" onclick="toggleQuickList()">Dölj</button>
@@ -311,9 +312,9 @@
          <script defer src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
          <script defer src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
         <script defer src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
-<script src="firebase-config.js"></script>
-<script src="cloud-sync.js"></script>
-<script src="script.js"></script>
+<script defer src="firebase-config.js"></script>
+<script defer src="cloud-sync.js"></script>
+<script defer src="script.js"></script>
   
 </body>
 </html>

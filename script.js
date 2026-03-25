@@ -462,7 +462,7 @@ function normalizeImageName(name) {
 function getAutoImageCandidates(name) {
   const clean = normalizeImageName(name);
   if (!clean) return [];
-  return [`images/${clean}.png`];
+  return [`images/${clean}.png`, `images/${clean}.jpg`];
 }
 
 function getFallbackImageSrc() {
@@ -802,7 +802,7 @@ function resizeImage(file, callback) {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      const maxSize = 220;
+      const maxSize = 160;
       let { width, height } = img;
 
       if (width > height && width > maxSize) {
@@ -816,7 +816,7 @@ function resizeImage(file, callback) {
       canvas.width = width;
       canvas.height = height;
       canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-      callback(canvas.toDataURL('image/jpeg', 0.85));
+      callback(canvas.toDataURL('image/jpeg', 0.68));
     };
     img.src = event.target.result;
   };
@@ -1142,7 +1142,7 @@ function createCard(item, source = 'items') {
 
   if (source === 'quick') {
     div.innerHTML = `
-      <img loading="lazy" src="${img}" alt="${item.name}" data-candidates="${imageCandidatesAttr}" data-candidate-index="0" data-fallback="${fallbackImageAttr}" onerror="handleAutoImageError(this)" onclick="showQuickImage(${realIndex})">
+      <img loading="lazy" decoding="async" src="${img}" alt="${item.name}" data-candidates="${imageCandidatesAttr}" data-candidate-index="0" data-fallback="${fallbackImageAttr}" onerror="handleAutoImageError(this)" onclick="showQuickImage(${realIndex})">
       <div class="info">
         <div class="top-tags">
           ${createCategorySelect(item.category || 'MAT', `changeQuickCategory(${realIndex}, this.value)`)}
@@ -1166,7 +1166,7 @@ function createCard(item, source = 'items') {
   }
 
   div.innerHTML = `
-    <img loading="lazy" src="${img}" alt="${item.name}" data-candidates="${imageCandidatesAttr}" data-candidate-index="0" data-fallback="${fallbackImageAttr}" onerror="handleAutoImageError(this)" onclick="showImage(${realIndex})">
+    <img loading="lazy" decoding="async" src="${img}" alt="${item.name}" data-candidates="${imageCandidatesAttr}" data-candidate-index="0" data-fallback="${fallbackImageAttr}" onerror="handleAutoImageError(this)" onclick="showImage(${realIndex})">
     <div class="info">
       <div class="top-tags">
         <div class="category">${item.category || 'MAT'}</div>
@@ -2472,14 +2472,7 @@ function showNewRecipeQuickSuggestions() {
   box.style.display = 'block';
 }
 
-function render() {
-  setTimeout(()=>renderQuickList(),0);
-  setTimeout(()=>renderHomeList(document.getElementById('searchInput')?.value || '', document.getElementById('categoryFilter')?.value || ''),30);
-  setTimeout(()=>renderBuyList(document.getElementById('searchInput')?.value || '', document.getElementById('categoryFilter')?.value || ''),60);
-  updateSummary();
-  updateToggleButtons();
-  return;
-
+function renderNow() {
   updateToggleButtons();
   renderCategoryOptions();
   renderPlaceOptions();
@@ -2497,6 +2490,30 @@ function render() {
 
   const recipeSection = document.getElementById('recipeSection');
   if (recipeSection) recipeSection.style.display = showRecipes ? '' : 'none';
+}
+
+
+let renderQueued = false;
+let renderTimer = null;
+let quickFilterTimer = null;
+
+function render() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => {
+    renderQueued = false;
+    renderNow();
+  });
+}
+
+function debouncedRender() {
+  clearTimeout(renderTimer);
+  renderTimer = setTimeout(() => render(), 120);
+}
+
+function debouncedQuickFilter() {
+  clearTimeout(quickFilterTimer);
+  quickFilterTimer = setTimeout(() => renderQuickList(), 90);
 }
 
 document.addEventListener('click', event => {
@@ -2917,14 +2934,4 @@ function toggleTheme() {
 
 document.addEventListener("DOMContentLoaded", () => {
   applyTheme(themes[currentThemeIndex]);
-});
-
-let renderTimer=null;
-function debouncedRender(){clearTimeout(renderTimer);renderTimer=setTimeout(()=>render(),150);}
-
-window.addEventListener("load",()=>{
-  setTimeout(()=>{
-    hydrateData();
-    render();
-  },50);
 });
