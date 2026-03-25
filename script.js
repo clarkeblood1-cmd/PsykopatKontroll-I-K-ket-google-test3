@@ -1,3 +1,22 @@
+
+
+// === AUTO IMAGE SYSTEM ===
+function normalizeImageFileName(name) {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/å/g, 'a')
+    .replace(/ä/g, 'a')
+    .replace(/ö/g, 'o')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function getAutoImagePath(name) {
+  const fileName = normalizeImageFileName(name);
+  return fileName ? `images/${fileName}.png` : '';
+}
+
 let items = JSON.parse(localStorage.getItem('matlista') || '[]');
 let quickItems = JSON.parse(localStorage.getItem('matlista_snabb') || '[]');
 let recipes = JSON.parse(localStorage.getItem('matlista_recept') || '[]');
