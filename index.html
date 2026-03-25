@@ -7,13 +7,9 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>🛒 PsykopatKontroll I Köket 🛒
-      <button id="themeToggleBtn" onclick="toggleTheme()" style="position:absolute;right:20px;top:20px;">🎨 Tema</button>
-</header>
 
-  <div class="page">
     
-    <section class="auth-panel">
+    <section class="auth-panel" style="display:none;">
       <div class="auth-panel-left">
         <div class="auth-title">🔐 Konto & molnsynk</div>
         <div id="authStatus" class="auth-status">Inte inloggad</div>
@@ -27,6 +23,12 @@
         <button type="button" id="googleLogoutBtn" class="ghost-btn" onclick="logoutGoogle()" style="display:none;">Logga ut</button>
       </div>
     </section>
+  <header>🛒 PsykopatKontroll I Köket 🛒
+      <button id="themeToggleBtn" onclick="toggleTheme()" style="position:absolute;right:120px;top:20px;">🎨 Tema</button>
+      <button id="appLogoutBtn" onclick="logoutGoogle()" style="display:none;position:absolute;right:20px;top:20px;">Logga ut</button>
+</header>
+
+  <div class="page" style="display:none;">
 
     <div class="summary-bar">
       <div class="summary-box"><div>Varor hemma</div><strong id="homeCount">0</strong></div>
@@ -124,14 +126,10 @@
     <section class="section">
       <div class="section-top-row">
         <div class="section-title">🏠 Har hemma</div>
-        <div style="display:flex; gap:10px; align-items:center; width:100%; flex-wrap:wrap;">
-  <input class="search section-search" id="searchInput" placeholder="🔍 Sök vara, kategori eller plats..." oninput="render()" autocomplete="off" style="flex:1; min-width:220px;">
-  <button type="button" id="voiceAskBtn" class="ghost-btn" onclick="toggleVoiceModeV16()" style="display:inline-flex !important; align-items:center; justify-content:center; min-width:56px; font-size:20px;">🎤</button>
-</div>
+        <input class="search section-search" id="searchInput" placeholder="🔍 Sök vara, kategori eller plats..." oninput="render()">
         <button type="button" id="homeToggleBtn" class="ghost-btn" onclick="toggleHomeList()">Dölj</button>
       </div>
       <div class="section-subtitle">Uppdelat på kyl, frys och kryddor</div>
-<div id="voiceStatus" style="display:block; margin-top:10px; padding:10px 12px; border-radius:12px; background:rgba(255,255,255,.08); color:#fff;">Tryck på 🎤 och tillåt mikrofonen.</div>
       <div class="container" id="homeList"></div>
     </section>
 
