@@ -462,7 +462,7 @@ function normalizeImageName(name) {
 function getAutoImageCandidates(name) {
   const clean = normalizeImageName(name);
   if (!clean) return [];
-  return [`images/${clean}.png`, `images/${clean}.jpg`];
+  return [`images/${clean}.png`];
 }
 
 function getFallbackImageSrc() {
@@ -802,7 +802,7 @@ function resizeImage(file, callback) {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      const maxSize = 160;
+      const maxSize = 140;
       let { width, height } = img;
 
       if (width > height && width > maxSize) {
@@ -816,7 +816,7 @@ function resizeImage(file, callback) {
       canvas.width = width;
       canvas.height = height;
       canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-      callback(canvas.toDataURL('image/jpeg', 0.68));
+      callback(canvas.toDataURL('image/jpeg', 0.60));
     };
     img.src = event.target.result;
   };
@@ -2472,7 +2472,7 @@ function showNewRecipeQuickSuggestions() {
   box.style.display = 'block';
 }
 
-function renderNow() {
+function render() {
   updateToggleButtons();
   renderCategoryOptions();
   renderPlaceOptions();
@@ -2490,30 +2490,6 @@ function renderNow() {
 
   const recipeSection = document.getElementById('recipeSection');
   if (recipeSection) recipeSection.style.display = showRecipes ? '' : 'none';
-}
-
-
-let renderQueued = false;
-let renderTimer = null;
-let quickFilterTimer = null;
-
-function render() {
-  if (renderQueued) return;
-  renderQueued = true;
-  requestAnimationFrame(() => {
-    renderQueued = false;
-    renderNow();
-  });
-}
-
-function debouncedRender() {
-  clearTimeout(renderTimer);
-  renderTimer = setTimeout(() => render(), 120);
-}
-
-function debouncedQuickFilter() {
-  clearTimeout(quickFilterTimer);
-  quickFilterTimer = setTimeout(() => renderQuickList(), 90);
 }
 
 document.addEventListener('click', event => {
@@ -2935,3 +2911,67 @@ function toggleTheme() {
 document.addEventListener("DOMContentLoaded", () => {
   applyTheme(themes[currentThemeIndex]);
 });
+
+
+let renderTimer = null;
+let renderQueued = false;
+
+function debouncedRender() {
+  clearTimeout(renderTimer);
+  renderTimer = setTimeout(() => {
+    try { render(); } catch (e) { console.error(e); }
+  }, 160);
+}
+
+function queueRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => {
+    renderQueued = false;
+    try { render(); } catch (e) { console.error(e); }
+  });
+}
+
+function whenIdle(fn, timeout = 120) {
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(fn, { timeout });
+  } else {
+    setTimeout(fn, 0);
+  }
+}
+
+function loadFirebaseLazy() {
+  const scripts = [
+    "https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js",
+    "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js",
+    "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js",
+    "firebase-config.js",
+    "cloud-sync.js"
+  ];
+
+  let i = 0;
+  const loadNext = () => {
+    if (i >= scripts.length) return;
+    const s = document.createElement("script");
+    s.src = scripts[i++];
+    s.defer = true;
+    s.onload = loadNext;
+    s.onerror = loadNext;
+    document.body.appendChild(s);
+  };
+  loadNext();
+}
+
+
+
+window.addEventListener("load", () => {
+  const boot = () => {
+    try { hydrateData(); } catch (e) { console.error("hydrateData failed", e); }
+    try { render(); } catch (e) { console.error("render failed", e); }
+    const loader = document.getElementById("appLoading");
+    if (loader) loader.remove();
+    setTimeout(loadFirebaseLazy, 700);
+  };
+  whenIdle(boot, 180);
+});
+
