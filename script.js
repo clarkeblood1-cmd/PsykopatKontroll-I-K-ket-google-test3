@@ -51,8 +51,6 @@ let draggedItemSource = null;
 let holdAddTimeout = null;
 let holdAddInterval = null;
 let holdAddTriggered = false;
-let renderTimer = null;
-let quickRenderTimer = null;
 
 const defaultPlaces = [
   { key: 'kyl', label: '🧊 Kyl' },
@@ -464,7 +462,7 @@ function normalizeImageName(name) {
 function getAutoImageCandidates(name) {
   const clean = normalizeImageName(name);
   if (!clean) return [];
-  return AUTO_IMAGE_EXTENSIONS.map(ext => `images/${clean}.${ext}`);
+  return [`images/${clean}.png`];
 }
 
 function getFallbackImageSrc() {
@@ -623,16 +621,6 @@ function syncQuickItemFromItem(changedItem) {
   quick.unit = changedItem.unit || quick.unit || 'st';
   quick.size = normalizeSize(quick.unit, changedItem.size || quick.size);
   quick.quantity = 1;
-}
-
-function debouncedRender() {
-  if (renderTimer) clearTimeout(renderTimer);
-  renderTimer = setTimeout(() => render(), 180);
-}
-
-function debouncedQuickRender() {
-  if (quickRenderTimer) clearTimeout(quickRenderTimer);
-  quickRenderTimer = setTimeout(() => renderQuickList(), 120);
 }
 
 function updateToggleButtons() {
@@ -814,7 +802,7 @@ function resizeImage(file, callback) {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      const maxSize = 160;
+      const maxSize = 220;
       let { width, height } = img;
 
       if (width > height && width > maxSize) {
@@ -828,7 +816,7 @@ function resizeImage(file, callback) {
       canvas.width = width;
       canvas.height = height;
       canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-      callback(canvas.toDataURL('image/jpeg', 0.65));
+      callback(canvas.toDataURL('image/jpeg', 0.85));
     };
     img.src = event.target.result;
   };
@@ -1154,7 +1142,7 @@ function createCard(item, source = 'items') {
 
   if (source === 'quick') {
     div.innerHTML = `
-      <img loading="lazy" decoding="async" src="${img}" alt="${item.name}" data-candidates="${imageCandidatesAttr}" data-candidate-index="0" data-fallback="${fallbackImageAttr}" onerror="handleAutoImageError(this)" onclick="showQuickImage(${realIndex})">
+      <img loading="lazy" src="${img}" alt="${item.name}" data-candidates="${imageCandidatesAttr}" data-candidate-index="0" data-fallback="${fallbackImageAttr}" onerror="handleAutoImageError(this)" onclick="showQuickImage(${realIndex})">
       <div class="info">
         <div class="top-tags">
           ${createCategorySelect(item.category || 'MAT', `changeQuickCategory(${realIndex}, this.value)`)}
@@ -1178,7 +1166,7 @@ function createCard(item, source = 'items') {
   }
 
   div.innerHTML = `
-    <img loading="lazy" decoding="async" src="${img}" alt="${item.name}" data-candidates="${imageCandidatesAttr}" data-candidate-index="0" data-fallback="${fallbackImageAttr}" onerror="handleAutoImageError(this)" onclick="showImage(${realIndex})">
+    <img loading="lazy" src="${img}" alt="${item.name}" data-candidates="${imageCandidatesAttr}" data-candidate-index="0" data-fallback="${fallbackImageAttr}" onerror="handleAutoImageError(this)" onclick="showImage(${realIndex})">
     <div class="info">
       <div class="top-tags">
         <div class="category">${item.category || 'MAT'}</div>
@@ -1445,7 +1433,7 @@ function renderQuickList() {
 }
 
 function filterQuickList() {
-  debouncedQuickRender();
+  renderQuickList();
 }
 
 function removeQuickItem(index) {
@@ -2485,6 +2473,13 @@ function showNewRecipeQuickSuggestions() {
 }
 
 function render() {
+  setTimeout(()=>renderQuickList(),0);
+  setTimeout(()=>renderHomeList(document.getElementById('searchInput')?.value || '', document.getElementById('categoryFilter')?.value || ''),30);
+  setTimeout(()=>renderBuyList(document.getElementById('searchInput')?.value || '', document.getElementById('categoryFilter')?.value || ''),60);
+  updateSummary();
+  updateToggleButtons();
+  return;
+
   updateToggleButtons();
   renderCategoryOptions();
   renderPlaceOptions();
@@ -2922,4 +2917,14 @@ function toggleTheme() {
 
 document.addEventListener("DOMContentLoaded", () => {
   applyTheme(themes[currentThemeIndex]);
+});
+
+let renderTimer=null;
+function debouncedRender(){clearTimeout(renderTimer);renderTimer=setTimeout(()=>render(),150);}
+
+window.addEventListener("load",()=>{
+  setTimeout(()=>{
+    hydrateData();
+    render();
+  },50);
 });
