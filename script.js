@@ -177,14 +177,10 @@ function getRecipeIngredientContext(value = null) {
 
 function normalizeSize(unit, size, context = null) {
   if (!supportsSize(unit)) return null;
-  const n = Math.round(Number(size || 0));
-  const resolvedContext = getContextCategory(context);
-
-  if (isWeightUnit(unit) && !String(resolvedContext).startsWith('RECIPE')) {
-    if (Number.isFinite(n) && n > 0) return Math.min(n, MAX_WEIGHT_GRAMS);
-    return getDefaultSize(unit, context);
+  const n = Number(size || 0);
+  if (isWeightUnit(unit) && Number.isFinite(n) && n > 0) {
+    return Math.min(Math.round(n), MAX_WEIGHT_GRAMS);
   }
-
   const options = getSizeOptions(unit, context);
   if (options.includes(n)) return n;
   return getDefaultSize(unit, context);
@@ -194,11 +190,7 @@ function formatSizeValue(unit, size) {
   const normalized = normalizeSize(unit, size);
   if (!normalized) return '';
   if (isWeightUnit(unit)) {
-    if (normalized >= 1000) {
-      const kg = normalized / 1000;
-      return `${String(Number(kg.toFixed(2))).replace('.', ',')} kg`;
-    }
-    return `${normalized} g`;
+    return formatWeightDisplay(normalized);
   }
   const liters = normalized / 1000;
   return `${String(Number(liters.toFixed(1))).replace('.', ',')} l`;
@@ -215,7 +207,6 @@ function formatItemAmount(item) {
   const amount = Math.max(0, Number(item?.quantity || 0));
   if (supportsSize(item?.unit)) {
     const sizeLabel = formatSizeValue(item.unit, item.size);
-    if (!sizeLabel) return `${amount} ${item?.unit || 'st'}`;
     return `${amount} × ${sizeLabel}`;
   }
   return `${amount} ${item?.unit || 'st'}`;
@@ -630,26 +621,30 @@ function getItemImage(item) {
 }
 
 
+
 // === SMART WEIGHT TEXT + TOTAL DISPLAY ===
 const MAX_WEIGHT_GRAMS = 100000; // 100 kg
 
-function parseWeightInput(text) {
+function normalizeWeightUnitHint(unit) {
+  const u = String(unit || '').trim().toLowerCase();
+  return u === 'kg' ? 'kg' : 'g';
+}
+
+function parseWeightInput(text, unitHint = 'g') {
   const raw = String(text || '').trim().toLowerCase().replace(',', '.');
   if (!raw) return null;
 
-  const kgMatch = raw.match(/^(\d+(?:\.\d+)?)\s*kg$/);
-  if (kgMatch) {
-    const grams = Math.round(parseFloat(kgMatch[1]) * 1000);
-    return Number.isFinite(grams) ? Math.min(grams, MAX_WEIGHT_GRAMS) : null;
-  }
+  const match = raw.match(/^(\d+(?:\.\d+)?)\s*(kg|g)?$/i);
+  if (!match) return null;
 
-  const gMatch = raw.match(/^(\d+(?:\.\d+)?)\s*g$/);
-  if (gMatch) {
-    const grams = Math.round(parseFloat(gMatch[1]));
-    return Number.isFinite(grams) ? Math.min(grams, MAX_WEIGHT_GRAMS) : null;
-  }
+  const value = parseFloat(match[1]);
+  if (!Number.isFinite(value) || value <= 0) return null;
 
-  return null;
+  const suffix = (match[2] || normalizeWeightUnitHint(unitHint)).toLowerCase();
+  const grams = suffix === 'kg' ? Math.round(value * 1000) : Math.round(value);
+
+  if (!Number.isFinite(grams) || grams <= 0) return null;
+  return grams;
 }
 
 function formatWeightDisplay(grams) {
@@ -657,60 +652,73 @@ function formatWeightDisplay(grams) {
   if (!Number.isFinite(value) || value <= 0) return '';
   if (value >= 1000) {
     const kg = value / 1000;
-    return `${String(Number(kg.toFixed(2))).replace('.', ',')} kg`;
+    return `${kg.toFixed(kg % 1 === 0 ? 0 : 2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1').replace('.', ',')} kg`;
   }
   return `${Math.round(value)} g`;
 }
 
-function getWeightInput(prefix = 'item') {
-  return document.getElementById(`${prefix}WeightText`);
+function getWeightInputPlaceholder(unit) {
+  return normalizeWeightUnitHint(unit) === 'kg'
+    ? 'Vikt per st, t.ex. 1 eller 1,5'
+    : 'Vikt per st, t.ex. 500';
 }
 
-function getWeightSummaryEl(prefix = 'item') {
-  return document.getElementById(`${prefix}WeightSummary`);
+function isWeightUnit(unit) {
+  const u = String(unit || '').toLowerCase();
+  return u === 'g' || u === 'kg';
 }
 
-function getWeightSizeWrap(prefix = 'item') {
-  return document.getElementById(`${prefix}SizeWrap`);
+function getWeightTextFromSize(size) {
+  const grams = Number(size || 0);
+  return grams > 0 ? formatWeightDisplay(grams) : '';
 }
 
-function getWeightTextWrap(prefix = 'item') {
-  return document.getElementById(`${prefix}WeightTextWrap`);
+function applyWeightPlaceholder(inputEl, unit) {
+  if (inputEl) inputEl.placeholder = getWeightInputPlaceholder(unit);
 }
 
-function setWeightInputFromItem(prefix, item) {
-  const input = getWeightInput(prefix);
-  if (!input) return;
-  if (isWeightUnit(item?.unit) && Number(item?.size || 0) > 0) {
-    input.value = item?.weightText || formatWeightDisplay(item.size);
-  } else {
-    input.value = '';
-  }
-}
-
-function validateWeightRow(unit, weightText, quantity) {
-  if (!isWeightUnit(unit)) return { ok: true, grams: null };
-  const grams = parseWeightInput(weightText);
-  if (!grams) return { ok: false, message: 'Skriv vikt som t.ex. 500 g eller 1 kg.' };
-  const qty = Math.max(1, Number(quantity || 1));
-  const total = grams * qty;
+function getWeightValidationMessage(weightGrams, amount) {
+  const total = Number(weightGrams || 0) * Math.max(1, Number(amount || 1));
   if (total > MAX_WEIGHT_GRAMS) {
-    return { ok: false, grams, total, message: `Max 100 kg per rad. Du försökte lägga in ${formatWeightDisplay(total)}.` };
+    return `Max 100 kg per rad. Du försökte lägga in ${formatWeightDisplay(total)}.`;
   }
-  return { ok: true, grams, total };
+  return '';
 }
 
-function updateWeightSummary(prefix = 'item') {
-  const amountEl = document.getElementById(`${prefix}Quantity`);
-  const unitEl = document.getElementById(`${prefix}Unit`);
-  const weightTextEl = getWeightInput(prefix);
-  const summaryEl = getWeightSummaryEl(prefix);
+function normalizeWeightItemData(item, unitHint = null) {
+  if (!item || !isWeightUnit(item.unit)) return item;
+
+  const hint = unitHint || item.unit || 'g';
+  const parsed = parseWeightInput(item.weightText || item.size, hint);
+  if (!parsed) return item;
+
+  return {
+    ...item,
+    unit: hint,
+    size: parsed,
+    weightText: formatWeightDisplay(parsed)
+  };
+}
+
+function getWeightTextInput() {
+  return document.getElementById('itemWeightText');
+}
+
+function getWeightSummaryEl() {
+  return document.getElementById('itemWeightSummary');
+}
+
+function updateWeightSummary() {
+  const amountEl = document.getElementById('itemQuantity');
+  const unitEl = document.getElementById('itemUnit');
+  const weightTextEl = getWeightTextInput();
+  const summaryEl = getWeightSummaryEl();
 
   if (!amountEl || !unitEl || !weightTextEl || !summaryEl) return;
 
   const amount = Math.max(1, Number(amountEl.value || 1));
-  const parsed = parseWeightInput(weightTextEl.value);
   const unit = unitEl.value;
+  const parsed = parseWeightInput(weightTextEl.value, unit);
 
   if (!parsed || !isWeightUnit(unit)) {
     summaryEl.textContent = '';
@@ -719,20 +727,17 @@ function updateWeightSummary(prefix = 'item') {
   }
 
   const total = parsed * amount;
-  if (total > MAX_WEIGHT_GRAMS) {
-    summaryEl.textContent = `⚠️ För mycket: ${amount} × ${formatWeightDisplay(parsed)} = ${formatWeightDisplay(total)} (max 100 kg)`;
-  } else {
-    summaryEl.textContent = `${amount} × ${formatWeightDisplay(parsed)} = ${formatWeightDisplay(total)}`;
-  }
+  const warning = getWeightValidationMessage(parsed, amount);
+
+  summaryEl.textContent = warning || `${amount} × ${formatWeightDisplay(parsed)} = ${formatWeightDisplay(total)}`;
   summaryEl.style.display = 'block';
 }
 
-function syncWeightModeVisibility(prefix = 'item') {
-  const unitEl = document.getElementById(`${prefix}Unit`);
-  const sizeWrap = getWeightSizeWrap(prefix);
-  const weightWrap = getWeightTextWrap(prefix);
-  const sizeSelect = document.getElementById(`${prefix}Size`);
-  const weightTextEl = getWeightInput(prefix);
+function syncWeightModeVisibility() {
+  const unitEl = document.getElementById('itemUnit');
+  const sizeWrap = document.getElementById('itemSize');
+  const weightWrap = document.getElementById('itemWeightTextWrap');
+  const weightTextEl = getWeightTextInput();
 
   if (!unitEl || !sizeWrap || !weightWrap) return;
 
@@ -740,21 +745,92 @@ function syncWeightModeVisibility(prefix = 'item') {
   sizeWrap.style.display = weightMode ? 'none' : '';
   weightWrap.style.display = weightMode ? '' : 'none';
 
-  if (sizeSelect) sizeSelect.style.display = weightMode ? 'none' : (supportsSize(unitEl.value) ? '' : 'none');
+  applyWeightPlaceholder(weightTextEl, unitEl.value);
+
+  if (weightMode && weightTextEl?.value) {
+    const parsed = parseWeightInput(weightTextEl.value, unitEl.value);
+    if (parsed) weightTextEl.value = formatWeightDisplay(parsed);
+  }
+
   if (!weightMode && weightTextEl) weightTextEl.value = '';
-  updateWeightSummary(prefix);
+  updateWeightSummary();
+}
+
+function getEditWeightTextInput() {
+  return document.getElementById('editWeightText');
+}
+
+function getEditWeightSummaryEl() {
+  return document.getElementById('editWeightSummary');
+}
+
+function updateEditWeightSummary() {
+  const amountEl = document.getElementById('editQuantity');
+  const unitEl = document.getElementById('editUnit');
+  const weightTextEl = getEditWeightTextInput();
+  const summaryEl = getEditWeightSummaryEl();
+
+  if (!amountEl || !unitEl || !weightTextEl || !summaryEl) return;
+
+  const amount = Math.max(1, Number(amountEl.value || 1));
+  const unit = unitEl.value;
+  const parsed = parseWeightInput(weightTextEl.value, unit);
+
+  if (!parsed || !isWeightUnit(unit)) {
+    summaryEl.textContent = '';
+    summaryEl.style.display = 'none';
+    return;
+  }
+
+  const total = parsed * amount;
+  const warning = getWeightValidationMessage(parsed, amount);
+
+  summaryEl.textContent = warning || `${amount} × ${formatWeightDisplay(parsed)} = ${formatWeightDisplay(total)}`;
+  summaryEl.style.display = 'block';
+}
+
+function syncEditWeightModeVisibility() {
+  const unitEl = document.getElementById('editUnit');
+  const sizeWrap = document.getElementById('editSize');
+  const weightWrap = document.getElementById('editWeightTextWrap');
+  const weightTextEl = getEditWeightTextInput();
+
+  if (!unitEl || !sizeWrap || !weightWrap) return;
+
+  const weightMode = isWeightUnit(unitEl.value);
+  sizeWrap.style.display = weightMode ? 'none' : '';
+  weightWrap.style.display = weightMode ? '' : 'none';
+
+  applyWeightPlaceholder(weightTextEl, unitEl.value);
+
+  if (weightMode && weightTextEl?.value) {
+    const parsed = parseWeightInput(weightTextEl.value, unitEl.value);
+    if (parsed) weightTextEl.value = formatWeightDisplay(parsed);
+  }
+
+  if (!weightMode && weightTextEl) weightTextEl.value = '';
+  updateEditWeightSummary();
+}
+
+function formatWeightInputField(inputEl, unit) {
+  if (!inputEl) return null;
+  const parsed = parseWeightInput(inputEl.value, unit);
+  if (!parsed) return null;
+  inputEl.value = formatWeightDisplay(parsed);
+  return parsed;
 }
 
 function getItemTotalWeightText(item) {
   const amount = Number(item?.quantity || 0);
   const unit = String(item?.unit || '');
-  const grams = Number(item?.size || 0);
+  const parsed = Number(item?.size || parseWeightInput(item?.weightText || '', unit) || 0);
 
-  if (!amount || !grams || !isWeightUnit(unit)) return '';
-  const total = grams * amount;
-  return `${amount} × ${formatWeightDisplay(grams)} (${formatWeightDisplay(total)})`;
+  if (!amount || !parsed || !isWeightUnit(unit)) return '';
+  const total = parsed * amount;
+  return `${amount} × ${formatWeightDisplay(parsed)} (${formatWeightDisplay(total)})`;
 }
 // === END SMART WEIGHT TEXT + TOTAL DISPLAY ===
+
 
 
 function normalizeText(text) {
@@ -1546,6 +1622,7 @@ function applyQuickItemToMainForm(index) {
   const itemUnit = document.getElementById('itemUnit');
   const itemSize = document.getElementById('itemSize');
   const itemPlace = document.getElementById('itemPlace');
+  const itemWeightText = document.getElementById('itemWeightText');
 
   if (itemName) itemName.value = item.name || '';
   if (itemPrice) itemPrice.value = Number(item.price || 0) || '';
@@ -1553,7 +1630,7 @@ function applyQuickItemToMainForm(index) {
   if (itemCategory) itemCategory.value = item.category || 'MAT';
   if (itemUnit) itemUnit.value = item.unit || 'st';
   if (itemSize) updateSizeSelect('itemSize', item.unit || 'st', item.size);
-  setWeightInputFromItem('item', item);
+  if (itemWeightText) itemWeightText.value = '';
   if (itemPlace) {
     itemPlace.dataset.currentValue = item.place || 'kyl';
     renderPlaceOptions();
@@ -1757,8 +1834,8 @@ function openEditModal(item, isQuick, index) {
   if (editQuantity) editQuantity.value = Math.max(1, Number(item.quantity || 1));
   if (editUnit) editUnit.value = item.unit || 'st';
   if (editSize) updateSizeSelect('editSize', item.unit || 'st', item.size);
-  setWeightInputFromItem('edit', item);
-  syncWeightModeVisibility('edit');
+  const editWeightText = document.getElementById('editWeightText');
+  if (editWeightText) editWeightText.value = isWeightUnit(item.unit) ? getWeightTextFromSize(item.size) : '';
   if (editCategory) {
     editCategory.dataset.currentValue = item.category || 'MAT';
     renderCategoryOptions();
@@ -1770,6 +1847,7 @@ function openEditModal(item, isQuick, index) {
     editPlace.value = item.place || 'kyl';
   }
   if (editModal) editModal.style.display = 'flex';
+  try { syncEditWeightModeVisibility(); updateEditWeightSummary(); } catch (e) {}
 }
 
 function editQuickItem(index) {
@@ -1819,21 +1897,33 @@ function saveEditItem() {
   const updatedUnit = document.getElementById('editUnit')?.value || 'st';
   const updatedName = document.getElementById('editName')?.value.trim() || '';
   const updatedQuantity = Math.max(1, Number(document.getElementById('editQuantity')?.value || 1));
-  const editWeightText = document.getElementById('editWeightText')?.value || '';
-  const weightCheck = validateWeightRow(updatedUnit, editWeightText, updatedQuantity);
-  if (!weightCheck.ok) {
-    alert(weightCheck.message);
-    return;
+  const parsedWeight = isWeightUnit(updatedUnit)
+    ? parseWeightInput(document.getElementById('editWeightText')?.value || currentItem.weightText || currentItem.size, updatedUnit)
+    : null;
+
+  if (isWeightUnit(updatedUnit)) {
+    if (!parsedWeight) {
+      alert('Skriv vikt per st. Du kan skriva bara 500 eller 1,5.');
+      return;
+    }
+    const weightWarning = getWeightValidationMessage(parsedWeight, updatedQuantity);
+    if (weightWarning) {
+      alert(weightWarning);
+      return;
+    }
+    const editWeightInput = document.getElementById('editWeightText');
+    if (editWeightInput) editWeightInput.value = formatWeightDisplay(parsedWeight);
   }
+
   const updated = {
     name: updatedName,
     price: Number(document.getElementById('editPrice')?.value || 0),
     quantity: updatedQuantity,
     unit: updatedUnit,
     size: isWeightUnit(updatedUnit)
-      ? weightCheck.grams
+      ? parsedWeight
       : normalizeSize(updatedUnit, document.getElementById('editSize')?.value || currentItem.size, document.getElementById('editCategory')?.value || currentItem.category),
-    weightText: isWeightUnit(updatedUnit) ? formatWeightDisplay(weightCheck.grams) : '',
+    weightText: isWeightUnit(updatedUnit) && parsedWeight ? formatWeightDisplay(parsedWeight) : '',
     category: ensureCategoryExists(document.getElementById('editCategory')?.value || currentItem.category || 'MAT'),
     place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || 'kyl'),
     img: currentItem?.img && String(currentItem.img).startsWith('data:')
@@ -1907,6 +1997,7 @@ function clearInputs() {
   const itemUnit = document.getElementById('itemUnit');
   const itemSize = document.getElementById('itemSize');
   const itemPlace = document.getElementById('itemPlace');
+  const itemWeightText = document.getElementById('itemWeightText');
 
   if (itemName) itemName.value = '';
   if (itemPrice) itemPrice.value = '';
@@ -1915,8 +2006,6 @@ function clearInputs() {
   if (itemCategory) itemCategory.value = 'MAT';
   if (itemUnit) itemUnit.value = 'st';
   if (itemSize) updateSizeSelect('itemSize', 'st');
-  const itemWeightText = document.getElementById('itemWeightText');
-  if (itemWeightText) itemWeightText.value = '';
   if (itemPlace) {
     itemPlace.dataset.currentValue = 'kyl';
     renderPlaceOptions();
@@ -1944,22 +2033,34 @@ function addItem() {
   const matchedQuick = quickItems.find(q => normalizeText(q.name) === normalizeText(name));
 
   const resolvedUnit = unitInput?.value || (matchedQuick ? matchedQuick.unit : 'st');
-  const resolvedQuantity = Math.max(1, Number(qtyInput?.value || 1));
-  const weightText = document.getElementById('itemWeightText')?.value || (matchedQuick?.weightText || '');
-  const weightCheck = validateWeightRow(resolvedUnit, weightText, resolvedQuantity);
-  if (!weightCheck.ok) {
-    alert(weightCheck.message);
-    return;
+  const quantity = Math.max(1, Number(qtyInput?.value || 1));
+  const itemWeightTextInput = document.getElementById('itemWeightText');
+  const parsedWeight = isWeightUnit(resolvedUnit)
+    ? parseWeightInput(itemWeightTextInput?.value || matchedQuick?.weightText || matchedQuick?.size, resolvedUnit)
+    : null;
+
+  if (isWeightUnit(resolvedUnit)) {
+    if (!parsedWeight) {
+      alert('Skriv vikt per st. Du kan skriva bara 500 eller 1,5.');
+      return;
+    }
+    const weightWarning = getWeightValidationMessage(parsedWeight, quantity);
+    if (weightWarning) {
+      alert(weightWarning);
+      return;
+    }
+    if (itemWeightTextInput) itemWeightTextInput.value = formatWeightDisplay(parsedWeight);
   }
+
   const item = {
     name: matchedQuick ? matchedQuick.name : name,
     price: Number(priceInput?.value || (matchedQuick ? matchedQuick.price : 0) || 0),
-    quantity: resolvedQuantity,
+    quantity,
     unit: resolvedUnit,
     size: isWeightUnit(resolvedUnit)
-      ? weightCheck.grams
+      ? parsedWeight
       : normalizeSize(resolvedUnit, sizeInput?.value || (matchedQuick ? matchedQuick.size : null), categoryInput?.value || matchedQuick?.category),
-    weightText: isWeightUnit(resolvedUnit) ? formatWeightDisplay(weightCheck.grams) : '',
+    weightText: isWeightUnit(resolvedUnit) && parsedWeight ? formatWeightDisplay(parsedWeight) : '',
     category: ensureCategoryExists(categoryInput?.value || (matchedQuick ? matchedQuick.category : 'MAT')),
     place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : 'kyl')),
     type: 'home',
@@ -1979,11 +2080,14 @@ function addItem() {
       existingHome.quantity = Number(existingHome.quantity || 0) + Number(item.quantity || 0);
       existingHome.price = Number(item.price || existingHome.price || 0);
       existingHome.category = item.category;
+      existingHome.size = item.size;
+      existingHome.unit = item.unit;
+      existingHome.weightText = item.weightText || '';
       if (item.img) existingHome.img = item.img;
       syncQuickItemFromItem(existingHome);
     } else {
-      items.push(item);
-      syncQuickItemFromItem(item);
+      items.push(normalizeWeightItemData(item));
+      syncQuickItemFromItem(normalizeWeightItemData(item));
     }
 
     const existsQuick = quickItems.find(i => normalizeText(i.name) === normalizeText(item.name));
@@ -1992,12 +2096,12 @@ function addItem() {
       existsQuick.quantity = 1;
       existsQuick.unit = item.unit || existsQuick.unit || 'st';
       existsQuick.size = normalizeSize(existsQuick.unit, item.size || existsQuick.size, item.category || existsQuick.category);
-      existsQuick.weightText = item.weightText || '';
+      existsQuick.weightText = item.weightText || existsQuick.weightText || '';
       existsQuick.category = item.category || existsQuick.category || 'MAT';
       existsQuick.place = item.place || existsQuick.place || 'kyl';
       if (item.img) existsQuick.img = item.img;
     } else {
-      quickItems.unshift({ ...item, type: 'home' });
+      quickItems.unshift(normalizeWeightItemData({ ...item, type: 'home' }));
     }
 
     save();
@@ -2651,8 +2755,8 @@ function useRecipeIngredients() {
 
       if (supportsSize(ingredient.unit) && supportsSize(homeItem.unit)) {
         const packSize = Number(homeItem.size || 0);
-        const itemAmount = Number(homeItem.quantity || 0) * packSize;
-        const amountToUse = Math.min(itemAmount, remaining);
+        const itemQuantity = Number(homeItem.quantity || 0) * packSize;
+        const amountToUse = Math.min(itemQuantity, remaining);
         const packsToUse = Math.ceil(amountToUse / Math.max(1, packSize));
         homeItem.quantity = Math.max(0, Number(homeItem.quantity || 0) - packsToUse);
         remaining = Math.max(0, remaining - (packsToUse * packSize));
@@ -3287,21 +3391,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
 document.addEventListener('input', (e) => {
   if (!e.target) return;
-  if (['itemWeightText', 'itemQuantity'].includes(e.target.id)) updateWeightSummary('item');
-  if (['editWeightText', 'editQuantity'].includes(e.target.id)) updateWeightSummary('edit');
+  if (['itemWeightText', 'itemQuantity'].includes(e.target.id)) updateWeightSummary();
+  if (['editWeightText', 'editQuantity'].includes(e.target.id)) updateEditWeightSummary();
 });
 
 document.addEventListener('change', (e) => {
   if (!e.target) return;
-  if (e.target.id === 'itemUnit') syncWeightModeVisibility('item');
-  if (e.target.id === 'editUnit') syncWeightModeVisibility('edit');
+  if (e.target.id === 'itemUnit') syncWeightModeVisibility();
+  if (e.target.id === 'editUnit') syncEditWeightModeVisibility();
+  if (e.target.id === 'itemWeightText') formatWeightInputField(e.target, document.getElementById('itemUnit')?.value || 'g');
+  if (e.target.id === 'editWeightText') formatWeightInputField(e.target, document.getElementById('editUnit')?.value || 'g');
 });
+
+document.addEventListener('blur', (e) => {
+  if (!e.target) return;
+  if (e.target.id === 'itemWeightText') {
+    formatWeightInputField(e.target, document.getElementById('itemUnit')?.value || 'g');
+    updateWeightSummary();
+  }
+  if (e.target.id === 'editWeightText') {
+    formatWeightInputField(e.target, document.getElementById('editUnit')?.value || 'g');
+    updateEditWeightSummary();
+  }
+}, true);
 
 window.addEventListener('load', () => {
   try {
-    syncWeightModeVisibility('item');
-    updateWeightSummary('item');
-    syncWeightModeVisibility('edit');
-    updateWeightSummary('edit');
+    syncWeightModeVisibility();
+    syncEditWeightModeVisibility();
+    updateWeightSummary();
+    updateEditWeightSummary();
   } catch (e) {}
 });
