@@ -3137,6 +3137,7 @@ function createVoiceRecognition() {
 
   const recognition = new SpeechRecognition();
   recognition.lang = 'sv-SE';
+  recognition.continuous = false;
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
 
@@ -3153,11 +3154,22 @@ function createVoiceRecognition() {
   };
 
   recognition.onerror = (event) => {
-    const msg = event?.error === 'not-allowed'
-      ? 'Mikrofonen är blockerad. Tillåt mikrofon i webbläsaren.'
-      : 'Röststyrning kunde inte starta.';
+    let msg = 'Röststyrning kunde inte starta.';
+    if (event?.error === 'not-allowed') {
+      msg = 'Mikrofonen är blockerad. Tillåt mikrofon för sidan i Chrome.';
+      handsFreeVoice = false;
+    } else if (event?.error === 'service-not-allowed') {
+      msg = 'Rösttjänsten är blockerad i webbläsaren.';
+      handsFreeVoice = false;
+    } else if (event?.error === 'no-speech') {
+      msg = 'Jag hörde inget. Försök igen.';
+    } else if (event?.error === 'audio-capture') {
+      msg = 'Ingen mikrofon hittades.';
+      handsFreeVoice = false;
+    }
     setVoiceStatus(msg, true);
-    if (handsFreeVoice) scheduleHandsFreeRestart(1200);
+    refreshVoiceButton();
+    if (handsFreeVoice && event?.error === 'no-speech') scheduleHandsFreeRestart(1000);
   };
 
   recognition.onresult = (event) => {
@@ -3195,15 +3207,11 @@ function stopVoiceSearch() {
 }
 
 function toggleHandsFreeVoice() {
-  handsFreeVoice = !handsFreeVoice;
   if (handsFreeVoice) {
-    setVoiceStatus('Handsfree-röst är på. Säg till exempel: var har jag kaffet?');
-    startVoiceSearch();
+    stopVoiceAssistant();
   } else {
-    setVoiceStatus('Handsfree-röst är av.');
-    stopVoiceSearch();
+    startVoiceAssistant();
   }
-  refreshVoiceButton();
 }
 
 function autoStartVoice() {
@@ -3218,4 +3226,20 @@ function autoStartVoice() {
 }
 
 
-window.addEventListener('load', () => { try { autoStartVoice(); } catch (e) { console.error(e); } });
+
+
+function startVoiceAssistant() {
+  handsFreeVoice = true;
+  setVoiceStatus('Tryck tillåt för mikrofonen om webbläsaren frågar. Säg sedan: var har jag kaffet?');
+  refreshVoiceButton();
+  startVoiceSearch();
+}
+
+function stopVoiceAssistant() {
+  handsFreeVoice = false;
+  stopVoiceSearch();
+  setVoiceStatus('Röstläge avstängt.');
+  refreshVoiceButton();
+}
+
+document.addEventListener('DOMContentLoaded', () => { try { setVoiceStatus('Tryck på 🎤 Starta röstläge och tillåt mikrofonen i Chrome.'); } catch (e) {} });
