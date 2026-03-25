@@ -422,3 +422,5 @@ button:hover{background:var(--green-dark);color:#fff}
   color:#fbcfe8;
   border:1px solid rgba(236,72,153,.28);
 }
+
+.measure-summary{margin-top:8px;font-size:14px;color:var(--muted,#cbd5e1)}

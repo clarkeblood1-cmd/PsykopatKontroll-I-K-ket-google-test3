@@ -178,8 +178,8 @@ function getRecipeIngredientContext(value = null) {
 function normalizeSize(unit, size, context = null) {
   if (!supportsSize(unit)) return null;
   const n = Number(size || 0);
-  if (isWeightUnit(unit) && Number.isFinite(n) && n > 0) {
-    return Math.min(Math.round(n), MAX_WEIGHT_GRAMS);
+  if (Number.isFinite(n) && n > 0) {
+    return Math.min(Math.round(n), getBaseUnitLimit(unit));
   }
   const options = getSizeOptions(unit, context);
   if (options.includes(n)) return n;
@@ -189,17 +189,17 @@ function normalizeSize(unit, size, context = null) {
 function formatSizeValue(unit, size) {
   const normalized = normalizeSize(unit, size);
   if (!normalized) return '';
-  if (isWeightUnit(unit)) {
-    return formatWeightDisplay(normalized);
-  }
-  const liters = normalized / 1000;
-  return `${String(Number(liters.toFixed(1))).replace('.', ',')} l`;
+  return formatSmartMeasureDisplay(normalized, unit);
 }
 
 function getDisplayUnit(unit, size = null) {
-  if (isWeightUnit(unit) && Number(size || 0) === 1000) return 'kg';
-  if (isLiquidUnit(unit) && Number(size || 0) >= 1000) return 'l';
-  if (isLiquidUnit(unit)) return 'ml';
+  if (isWeightUnit(unit)) return Number(size || 0) >= 1000 ? 'kg' : 'g';
+  if (isLiquidUnit(unit)) {
+    const value = Number(size || 0);
+    if (value >= 1000) return 'l';
+    if (value >= 100) return 'dl';
+    return 'ml';
+  }
   return unit || 'st';
 }
 
@@ -624,27 +624,47 @@ function getItemImage(item) {
 
 // === SMART WEIGHT TEXT + TOTAL DISPLAY ===
 const MAX_WEIGHT_GRAMS = 100000; // 100 kg
+const MAX_LIQUID_ML = 100000; // 100 l
 
-function normalizeWeightUnitHint(unit) {
+function getUnitFamily(unit) {
   const u = String(unit || '').trim().toLowerCase();
-  return u === 'kg' ? 'kg' : 'g';
+  if (u === 'g' || u === 'kg') return 'weight';
+  if (u === 'ml' || u === 'dl' || u === 'l') return 'liquid';
+  return '';
 }
 
-function parseWeightInput(text, unitHint = 'g') {
+function getBaseUnitLimit(unit) {
+  return getUnitFamily(unit) === 'liquid' ? MAX_LIQUID_ML : MAX_WEIGHT_GRAMS;
+}
+
+function unitToBaseMultiplier(unit) {
+  const u = String(unit || '').trim().toLowerCase();
+  if (u === 'kg' || u === 'l') return 1000;
+  if (u === 'dl') return 100;
+  return 1;
+}
+
+function parseSmartMeasureInput(text, unitHint = 'g') {
   const raw = String(text || '').trim().toLowerCase().replace(',', '.');
   if (!raw) return null;
 
-  const match = raw.match(/^(\d+(?:\.\d+)?)\s*(kg|g)?$/i);
+  const match = raw.match(/^(\d+(?:\.\d+)?)\s*(kg|g|ml|dl|l)?$/i);
   if (!match) return null;
 
   const value = parseFloat(match[1]);
   if (!Number.isFinite(value) || value <= 0) return null;
 
-  const suffix = (match[2] || normalizeWeightUnitHint(unitHint)).toLowerCase();
-  const grams = suffix === 'kg' ? Math.round(value * 1000) : Math.round(value);
+  const hintFamily = getUnitFamily(unitHint);
+  let suffix = (match[2] || String(unitHint || '')).toLowerCase();
+  if (!suffix) suffix = hintFamily === 'liquid' ? 'ml' : 'g';
 
-  if (!Number.isFinite(grams) || grams <= 0) return null;
-  return grams;
+  const suffixFamily = getUnitFamily(suffix);
+  if (!suffixFamily || (hintFamily && suffixFamily !== hintFamily)) return null;
+
+  const baseValue = Math.round(value * unitToBaseMultiplier(suffix));
+  if (!Number.isFinite(baseValue) || baseValue <= 0 || baseValue > getBaseUnitLimit(suffix)) return null;
+
+  return baseValue;
 }
 
 function formatWeightDisplay(grams) {
@@ -657,177 +677,195 @@ function formatWeightDisplay(grams) {
   return `${Math.round(value)} g`;
 }
 
-function getWeightInputPlaceholder(unit) {
-  return normalizeWeightUnitHint(unit) === 'kg'
-    ? 'Vikt per st, t.ex. 1 eller 1,5'
-    : 'Vikt per st, t.ex. 500';
+function formatLiquidDisplay(ml) {
+  const value = Number(ml || 0);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  if (value >= 1000) {
+    const l = value / 1000;
+    return `${l.toFixed(l % 1 === 0 ? 0 : 2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1').replace('.', ',')} l`;
+  }
+  if (value >= 100) {
+    const dl = value / 100;
+    return `${dl.toFixed(dl % 1 === 0 ? 0 : 2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1').replace('.', ',')} dl`;
+  }
+  return `${Math.round(value)} ml`;
 }
 
-function isWeightUnit(unit) {
+function formatSmartMeasureDisplay(baseValue, unitHint = 'g') {
+  return getUnitFamily(unitHint) === 'liquid'
+    ? formatLiquidDisplay(baseValue)
+    : formatWeightDisplay(baseValue);
+}
+
+function getSmartMeasurePlaceholder(unit) {
   const u = String(unit || '').toLowerCase();
-  return u === 'g' || u === 'kg';
+  if (u === 'kg' || u === 'l') return 'Mängd per st, t.ex. 1 eller 1,5';
+  if (u === 'dl') return 'Mängd per st, t.ex. 5 eller 2,5';
+  return 'Mängd per st, t.ex. 500 eller 1,5';
 }
 
-function getWeightTextFromSize(size) {
-  const grams = Number(size || 0);
-  return grams > 0 ? formatWeightDisplay(grams) : '';
+function getMeasureInputError(unit) {
+  return getUnitFamily(unit) === 'liquid'
+    ? 'Skriv mängd per st. Du kan skriva bara 500 eller 1,5.'
+    : 'Skriv vikt per st. Du kan skriva bara 500 eller 1,5.';
 }
 
-function applyWeightPlaceholder(inputEl, unit) {
-  if (inputEl) inputEl.placeholder = getWeightInputPlaceholder(unit);
-}
-
-function getWeightValidationMessage(weightGrams, amount) {
-  const total = Number(weightGrams || 0) * Math.max(1, Number(amount || 1));
-  if (total > MAX_WEIGHT_GRAMS) {
+function getMeasureValidationMessage(baseValue, amount, unit) {
+  const total = Number(baseValue || 0) * Math.max(1, Number(amount || 1));
+  if (getUnitFamily(unit) === 'liquid' && total > MAX_LIQUID_ML) {
+    return `Max 100 l per rad. Du försökte lägga in ${formatLiquidDisplay(total)}.`;
+  }
+  if (getUnitFamily(unit) === 'weight' && total > MAX_WEIGHT_GRAMS) {
     return `Max 100 kg per rad. Du försökte lägga in ${formatWeightDisplay(total)}.`;
   }
   return '';
 }
 
-function normalizeWeightItemData(item, unitHint = null) {
-  if (!item || !isWeightUnit(item.unit)) return item;
-
+function normalizeMeasureItemData(item, unitHint = null) {
+  if (!item || !supportsSize(item.unit)) return item;
   const hint = unitHint || item.unit || 'g';
-  const parsed = parseWeightInput(item.weightText || item.size, hint);
+  const parsed = parseSmartMeasureInput(item.measureText || item.weightText || item.size, hint);
   if (!parsed) return item;
-
   return {
     ...item,
     unit: hint,
     size: parsed,
-    weightText: formatWeightDisplay(parsed)
+    measureText: formatSmartMeasureDisplay(parsed, hint),
+    weightText: getUnitFamily(hint) === 'weight' ? formatSmartMeasureDisplay(parsed, hint) : ''
   };
 }
 
-function getWeightTextInput() {
-  return document.getElementById('itemWeightText');
+function getMeasureTextInput() {
+  return document.getElementById('itemMeasureText');
 }
 
-function getWeightSummaryEl() {
-  return document.getElementById('itemWeightSummary');
+function getMeasureSummaryEl() {
+  return document.getElementById('itemMeasureSummary');
 }
 
-function updateWeightSummary() {
+function updateMeasureSummary() {
   const amountEl = document.getElementById('itemQuantity');
   const unitEl = document.getElementById('itemUnit');
-  const weightTextEl = getWeightTextInput();
-  const summaryEl = getWeightSummaryEl();
+  const inputEl = getMeasureTextInput();
+  const summaryEl = getMeasureSummaryEl();
 
-  if (!amountEl || !unitEl || !weightTextEl || !summaryEl) return;
+  if (!amountEl || !unitEl || !inputEl || !summaryEl) return;
 
   const amount = Math.max(1, Number(amountEl.value || 1));
   const unit = unitEl.value;
-  const parsed = parseWeightInput(weightTextEl.value, unit);
+  const parsed = parseSmartMeasureInput(inputEl.value, unit);
 
-  if (!parsed || !isWeightUnit(unit)) {
+  if (!parsed || !supportsSize(unit)) {
     summaryEl.textContent = '';
     summaryEl.style.display = 'none';
     return;
   }
 
   const total = parsed * amount;
-  const warning = getWeightValidationMessage(parsed, amount);
-
-  summaryEl.textContent = warning || `${amount} × ${formatWeightDisplay(parsed)} = ${formatWeightDisplay(total)}`;
+  const warning = getMeasureValidationMessage(parsed, amount, unit);
+  summaryEl.textContent = warning || `${amount} × ${formatSmartMeasureDisplay(parsed, unit)} = ${formatSmartMeasureDisplay(total, unit)}`;
   summaryEl.style.display = 'block';
 }
 
-function syncWeightModeVisibility() {
+function syncMeasureModeVisibility() {
   const unitEl = document.getElementById('itemUnit');
-  const sizeWrap = document.getElementById('itemSize');
-  const weightWrap = document.getElementById('itemWeightTextWrap');
-  const weightTextEl = getWeightTextInput();
+  const sizeWrap = document.getElementById('itemSizeWrap');
+  const measureWrap = document.getElementById('itemMeasureTextWrap');
+  const inputEl = getMeasureTextInput();
 
-  if (!unitEl || !sizeWrap || !weightWrap) return;
+  if (!unitEl || !sizeWrap || !measureWrap) return;
 
-  const weightMode = isWeightUnit(unitEl.value);
-  sizeWrap.style.display = weightMode ? 'none' : '';
-  weightWrap.style.display = weightMode ? '' : 'none';
+  const smartMode = supportsSize(unitEl.value);
+  sizeWrap.style.display = smartMode ? 'none' : '';
+  measureWrap.style.display = smartMode ? '' : 'none';
 
-  applyWeightPlaceholder(weightTextEl, unitEl.value);
+  if (inputEl) inputEl.placeholder = getSmartMeasurePlaceholder(unitEl.value);
 
-  if (weightMode && weightTextEl?.value) {
-    const parsed = parseWeightInput(weightTextEl.value, unitEl.value);
-    if (parsed) weightTextEl.value = formatWeightDisplay(parsed);
+  if (smartMode && inputEl?.value) {
+    const parsed = parseSmartMeasureInput(inputEl.value, unitEl.value);
+    if (parsed) inputEl.value = formatSmartMeasureDisplay(parsed, unitEl.value);
   }
 
-  if (!weightMode && weightTextEl) weightTextEl.value = '';
-  updateWeightSummary();
+  if (!smartMode && inputEl) inputEl.value = '';
+  updateMeasureSummary();
 }
 
-function getEditWeightTextInput() {
-  return document.getElementById('editWeightText');
+function getEditMeasureTextInput() {
+  return document.getElementById('editMeasureText');
 }
 
-function getEditWeightSummaryEl() {
-  return document.getElementById('editWeightSummary');
+function getEditMeasureSummaryEl() {
+  return document.getElementById('editMeasureSummary');
 }
 
-function updateEditWeightSummary() {
+function updateEditMeasureSummary() {
   const amountEl = document.getElementById('editQuantity');
   const unitEl = document.getElementById('editUnit');
-  const weightTextEl = getEditWeightTextInput();
-  const summaryEl = getEditWeightSummaryEl();
+  const inputEl = getEditMeasureTextInput();
+  const summaryEl = getEditMeasureSummaryEl();
 
-  if (!amountEl || !unitEl || !weightTextEl || !summaryEl) return;
+  if (!amountEl || !unitEl || !inputEl || !summaryEl) return;
 
   const amount = Math.max(1, Number(amountEl.value || 1));
   const unit = unitEl.value;
-  const parsed = parseWeightInput(weightTextEl.value, unit);
+  const parsed = parseSmartMeasureInput(inputEl.value, unit);
 
-  if (!parsed || !isWeightUnit(unit)) {
+  if (!parsed || !supportsSize(unit)) {
     summaryEl.textContent = '';
     summaryEl.style.display = 'none';
     return;
   }
 
   const total = parsed * amount;
-  const warning = getWeightValidationMessage(parsed, amount);
-
-  summaryEl.textContent = warning || `${amount} × ${formatWeightDisplay(parsed)} = ${formatWeightDisplay(total)}`;
+  const warning = getMeasureValidationMessage(parsed, amount, unit);
+  summaryEl.textContent = warning || `${amount} × ${formatSmartMeasureDisplay(parsed, unit)} = ${formatSmartMeasureDisplay(total, unit)}`;
   summaryEl.style.display = 'block';
 }
 
-function syncEditWeightModeVisibility() {
+function syncEditMeasureModeVisibility() {
   const unitEl = document.getElementById('editUnit');
-  const sizeWrap = document.getElementById('editSize');
-  const weightWrap = document.getElementById('editWeightTextWrap');
-  const weightTextEl = getEditWeightTextInput();
+  const sizeWrap = document.getElementById('editSizeWrap');
+  const measureWrap = document.getElementById('editMeasureTextWrap');
+  const inputEl = getEditMeasureTextInput();
 
-  if (!unitEl || !sizeWrap || !weightWrap) return;
+  if (!unitEl || !sizeWrap || !measureWrap) return;
 
-  const weightMode = isWeightUnit(unitEl.value);
-  sizeWrap.style.display = weightMode ? 'none' : '';
-  weightWrap.style.display = weightMode ? '' : 'none';
+  const smartMode = supportsSize(unitEl.value);
+  sizeWrap.style.display = smartMode ? 'none' : '';
+  measureWrap.style.display = smartMode ? '' : 'none';
 
-  applyWeightPlaceholder(weightTextEl, unitEl.value);
+  if (inputEl) inputEl.placeholder = getSmartMeasurePlaceholder(unitEl.value);
 
-  if (weightMode && weightTextEl?.value) {
-    const parsed = parseWeightInput(weightTextEl.value, unitEl.value);
-    if (parsed) weightTextEl.value = formatWeightDisplay(parsed);
+  if (smartMode && inputEl?.value) {
+    const parsed = parseSmartMeasureInput(inputEl.value, unitEl.value);
+    if (parsed) inputEl.value = formatSmartMeasureDisplay(parsed, unitEl.value);
   }
 
-  if (!weightMode && weightTextEl) weightTextEl.value = '';
-  updateEditWeightSummary();
+  if (!smartMode && inputEl) inputEl.value = '';
+  updateEditMeasureSummary();
 }
 
-function formatWeightInputField(inputEl, unit) {
+function formatMeasureInputField(inputEl, unit) {
   if (!inputEl) return null;
-  const parsed = parseWeightInput(inputEl.value, unit);
+  const parsed = parseSmartMeasureInput(inputEl.value, unit);
   if (!parsed) return null;
-  inputEl.value = formatWeightDisplay(parsed);
+  inputEl.value = formatSmartMeasureDisplay(parsed, unit);
   return parsed;
 }
 
-function getItemTotalWeightText(item) {
-  const amount = Number(item?.quantity || 0);
-  const unit = String(item?.unit || '');
-  const parsed = Number(item?.size || parseWeightInput(item?.weightText || '', unit) || 0);
+function getMeasureTextFromSize(size, unit) {
+  const baseValue = Number(size || 0);
+  return baseValue > 0 ? formatSmartMeasureDisplay(baseValue, unit) : '';
+}
 
-  if (!amount || !parsed || !isWeightUnit(unit)) return '';
+function getItemTotalWeightText(item) {
+  const amount = Number(item?.quantity || item?.amount || 0);
+  const unit = String(item?.unit || '');
+  const parsed = Number(item?.size || parseSmartMeasureInput(item?.measureText || item?.weightText || '', unit) || 0);
+
+  if (!amount || !parsed || !supportsSize(unit)) return '';
   const total = parsed * amount;
-  return `${amount} × ${formatWeightDisplay(parsed)} (${formatWeightDisplay(total)})`;
+  return `${amount} × ${formatSmartMeasureDisplay(parsed, unit)} (${formatSmartMeasureDisplay(total, unit)})`;
 }
 // === END SMART WEIGHT TEXT + TOTAL DISPLAY ===
 
@@ -895,7 +933,9 @@ function hydrateData() {
     price: Number(item?.price || 0),
     quantity: Math.max(0, Number(item?.quantity || 0)),
     unit: String(item?.unit || 'st'),
-    size: normalizeSize(item?.unit || 'st', item?.size),
+    size: normalizeSize(item?.unit || 'st', parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size),
+    measureText: supportsSize(item?.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size, item?.unit || 'st') : '',
+    weightText: isWeightUnit(item?.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size, item?.unit || 'st') : '',
     category: ensureCategoryExists(item?.category || 'MAT'),
     place: ensurePlaceExists(item?.place || 'kyl'),
     type: item?.type === 'buy' ? 'buy' : 'home',
@@ -907,7 +947,9 @@ function hydrateData() {
     price: Number(item?.price || 0),
     quantity: 1,
     unit: String(item?.unit || 'st'),
-    size: normalizeSize(item?.unit || 'st', item?.size),
+    size: normalizeSize(item?.unit || 'st', parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size),
+    measureText: supportsSize(item?.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size, item?.unit || 'st') : '',
+    weightText: isWeightUnit(item?.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size, item?.unit || 'st') : '',
     category: ensureCategoryExists(item?.category || 'MAT'),
     place: ensurePlaceExists(item?.place || 'kyl'),
     type: 'home',
@@ -961,7 +1003,9 @@ function syncQuickItemFromItem(changedItem) {
   if (!quick.img && changedItem.img) quick.img = changedItem.img;
   if (Number(changedItem.price || 0) > 0) quick.price = Number(changedItem.price || 0);
   quick.unit = changedItem.unit || quick.unit || 'st';
-  quick.size = normalizeSize(quick.unit, changedItem.size || quick.size);
+  quick.size = normalizeSize(quick.unit, parseSmartMeasureInput(changedItem.measureText || changedItem.weightText || changedItem.size, quick.unit) || changedItem.size || quick.size);
+  quick.measureText = supportsSize(quick.unit) ? getMeasureTextFromSize(quick.size, quick.unit) : '';
+  quick.weightText = isWeightUnit(quick.unit) ? quick.measureText : '';
   quick.quantity = 1;
 }
 
@@ -1257,7 +1301,9 @@ function addHomeItemFromTemplate(sourceItem, quantity = 1, targetPlace = null) {
     price: Number(sourceItem.price || 0),
     quantity: Math.max(1, Number(quantity || 1)),
     unit: sourceItem.unit || 'st',
-    size: normalizeSize(sourceItem.unit || 'st', sourceItem.size),
+    size: normalizeSize(sourceItem.unit || 'st', parseSmartMeasureInput(sourceItem.measureText || sourceItem.weightText || sourceItem.size, sourceItem.unit || 'st') || sourceItem.size),
+    measureText: supportsSize(sourceItem.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(sourceItem.measureText || sourceItem.weightText || sourceItem.size, sourceItem.unit || 'st') || sourceItem.size, sourceItem.unit || 'st') : '',
+    weightText: isWeightUnit(sourceItem.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(sourceItem.measureText || sourceItem.weightText || sourceItem.size, sourceItem.unit || 'st') || sourceItem.size, sourceItem.unit || 'st') : '',
     category: ensureCategoryExists(sourceItem.category || 'MAT'),
     place: ensurePlaceExists(targetPlace || sourceItem.place || 'kyl'),
     type: 'home',
@@ -1288,7 +1334,9 @@ function addBuyItemFromTemplate(sourceItem, quantity = 1) {
     price: Number(sourceItem.price || 0),
     quantity: Math.max(1, Number(quantity || 1)),
     unit: sourceItem.unit || 'st',
-    size: normalizeSize(sourceItem.unit || 'st', sourceItem.size),
+    size: normalizeSize(sourceItem.unit || 'st', parseSmartMeasureInput(sourceItem.measureText || sourceItem.weightText || sourceItem.size, sourceItem.unit || 'st') || sourceItem.size),
+    measureText: supportsSize(sourceItem.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(sourceItem.measureText || sourceItem.weightText || sourceItem.size, sourceItem.unit || 'st') || sourceItem.size, sourceItem.unit || 'st') : '',
+    weightText: isWeightUnit(sourceItem.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(sourceItem.measureText || sourceItem.weightText || sourceItem.size, sourceItem.unit || 'st') || sourceItem.size, sourceItem.unit || 'st') : '',
     category: ensureCategoryExists(sourceItem.category || 'MAT'),
     place: ensurePlaceExists(sourceItem.place || 'kyl'),
     type: 'buy',
@@ -1385,6 +1433,9 @@ function dropToQuickList() {
       price: Number(item.price || 0),
       quantity: Math.max(1, Number(item.quantity || 1)),
       unit: item.unit || 'st',
+      size: normalizeSize(item.unit || 'st', item.size),
+      measureText: supportsSize(item.unit || 'st') ? getMeasureTextFromSize(item.size, item.unit || 'st') : '',
+      weightText: isWeightUnit(item.unit || 'st') ? getMeasureTextFromSize(item.size, item.unit || 'st') : '',
       category: ensureCategoryExists(item.category || 'MAT'),
       place: item.place || 'kyl',
       type: 'home',
@@ -1622,7 +1673,7 @@ function applyQuickItemToMainForm(index) {
   const itemUnit = document.getElementById('itemUnit');
   const itemSize = document.getElementById('itemSize');
   const itemPlace = document.getElementById('itemPlace');
-  const itemWeightText = document.getElementById('itemWeightText');
+  const itemMeasureText = document.getElementById('itemMeasureText');
 
   if (itemName) itemName.value = item.name || '';
   if (itemPrice) itemPrice.value = Number(item.price || 0) || '';
@@ -1630,7 +1681,7 @@ function applyQuickItemToMainForm(index) {
   if (itemCategory) itemCategory.value = item.category || 'MAT';
   if (itemUnit) itemUnit.value = item.unit || 'st';
   if (itemSize) updateSizeSelect('itemSize', item.unit || 'st', item.size);
-  if (itemWeightText) itemWeightText.value = '';
+  if (itemMeasureText) itemMeasureText.value = supportsSize(item.unit) ? getMeasureTextFromSize(item.size, item.unit) : '';
   if (itemPlace) {
     itemPlace.dataset.currentValue = item.place || 'kyl';
     renderPlaceOptions();
@@ -1638,7 +1689,7 @@ function applyQuickItemToMainForm(index) {
   }
 
   hideMainItemSuggestions();
-  try { syncWeightModeVisibility(); updateWeightSummary(); } catch (e) {}
+  try { syncMeasureModeVisibility(); updateMeasureSummary(); } catch (e) {}
 }
 
 function showMainItemSuggestions() {
@@ -1828,14 +1879,14 @@ function openEditModal(item, isQuick, index) {
   const editSize = document.getElementById('editSize');
   const editCategory = document.getElementById('editCategory');
   const editPlace = document.getElementById('editPlace');
+  const editMeasureText = document.getElementById('editMeasureText');
 
   if (editName) editName.value = item.name || '';
   if (editPrice) editPrice.value = Number(item.price || 0) || '';
   if (editQuantity) editQuantity.value = Math.max(1, Number(item.quantity || 1));
   if (editUnit) editUnit.value = item.unit || 'st';
   if (editSize) updateSizeSelect('editSize', item.unit || 'st', item.size);
-  const editWeightText = document.getElementById('editWeightText');
-  if (editWeightText) editWeightText.value = isWeightUnit(item.unit) ? getWeightTextFromSize(item.size) : '';
+  if (editMeasureText) editMeasureText.value = supportsSize(item.unit) ? getMeasureTextFromSize(item.size, item.unit) : '';
   if (editCategory) {
     editCategory.dataset.currentValue = item.category || 'MAT';
     renderCategoryOptions();
@@ -1847,7 +1898,7 @@ function openEditModal(item, isQuick, index) {
     editPlace.value = item.place || 'kyl';
   }
   if (editModal) editModal.style.display = 'flex';
-  try { syncEditWeightModeVisibility(); updateEditWeightSummary(); } catch (e) {}
+  try { syncEditMeasureModeVisibility(); updateEditMeasureSummary(); } catch (e) {}
 }
 
 function editQuickItem(index) {
@@ -1897,22 +1948,22 @@ function saveEditItem() {
   const updatedUnit = document.getElementById('editUnit')?.value || 'st';
   const updatedName = document.getElementById('editName')?.value.trim() || '';
   const updatedQuantity = Math.max(1, Number(document.getElementById('editQuantity')?.value || 1));
-  const parsedWeight = isWeightUnit(updatedUnit)
-    ? parseWeightInput(document.getElementById('editWeightText')?.value || currentItem.weightText || currentItem.size, updatedUnit)
+  const parsedMeasure = supportsSize(updatedUnit)
+    ? parseSmartMeasureInput(document.getElementById('editMeasureText')?.value || currentItem.measureText || currentItem.weightText || currentItem.size, updatedUnit)
     : null;
 
-  if (isWeightUnit(updatedUnit)) {
-    if (!parsedWeight) {
-      alert('Skriv vikt per st. Du kan skriva bara 500 eller 1,5.');
+  if (supportsSize(updatedUnit)) {
+    if (!parsedMeasure) {
+      alert(getMeasureInputError(updatedUnit));
       return;
     }
-    const weightWarning = getWeightValidationMessage(parsedWeight, updatedQuantity);
-    if (weightWarning) {
-      alert(weightWarning);
+    const measureWarning = getMeasureValidationMessage(parsedMeasure, updatedQuantity, updatedUnit);
+    if (measureWarning) {
+      alert(measureWarning);
       return;
     }
-    const editWeightInput = document.getElementById('editWeightText');
-    if (editWeightInput) editWeightInput.value = formatWeightDisplay(parsedWeight);
+    const editMeasureInput = document.getElementById('editMeasureText');
+    if (editMeasureInput) editMeasureInput.value = formatSmartMeasureDisplay(parsedMeasure, updatedUnit);
   }
 
   const updated = {
@@ -1920,10 +1971,11 @@ function saveEditItem() {
     price: Number(document.getElementById('editPrice')?.value || 0),
     quantity: updatedQuantity,
     unit: updatedUnit,
-    size: isWeightUnit(updatedUnit)
-      ? parsedWeight
+    size: supportsSize(updatedUnit)
+      ? parsedMeasure
       : normalizeSize(updatedUnit, document.getElementById('editSize')?.value || currentItem.size, document.getElementById('editCategory')?.value || currentItem.category),
-    weightText: isWeightUnit(updatedUnit) && parsedWeight ? formatWeightDisplay(parsedWeight) : '',
+    measureText: supportsSize(updatedUnit) && parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, updatedUnit) : '',
+    weightText: isWeightUnit(updatedUnit) && parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, updatedUnit) : '',
     category: ensureCategoryExists(document.getElementById('editCategory')?.value || currentItem.category || 'MAT'),
     place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || 'kyl'),
     img: currentItem?.img && String(currentItem.img).startsWith('data:')
@@ -1997,7 +2049,6 @@ function clearInputs() {
   const itemUnit = document.getElementById('itemUnit');
   const itemSize = document.getElementById('itemSize');
   const itemPlace = document.getElementById('itemPlace');
-  const itemWeightText = document.getElementById('itemWeightText');
 
   if (itemName) itemName.value = '';
   if (itemPrice) itemPrice.value = '';
@@ -2006,6 +2057,7 @@ function clearInputs() {
   if (itemCategory) itemCategory.value = 'MAT';
   if (itemUnit) itemUnit.value = 'st';
   if (itemSize) updateSizeSelect('itemSize', 'st');
+  if (itemMeasureText) itemMeasureText.value = '';
   if (itemPlace) {
     itemPlace.dataset.currentValue = 'kyl';
     renderPlaceOptions();
@@ -2014,7 +2066,7 @@ function clearInputs() {
 
   selectedAddQuickIndex = null;
   hideMainItemSuggestions();
-  try { syncWeightModeVisibility(); updateWeightSummary(); } catch (e) {}
+  try { syncMeasureModeVisibility(); updateMeasureSummary(); } catch (e) {}
 }
 
 function addItem() {
@@ -2034,22 +2086,22 @@ function addItem() {
 
   const resolvedUnit = unitInput?.value || (matchedQuick ? matchedQuick.unit : 'st');
   const quantity = Math.max(1, Number(qtyInput?.value || 1));
-  const itemWeightTextInput = document.getElementById('itemWeightText');
-  const parsedWeight = isWeightUnit(resolvedUnit)
-    ? parseWeightInput(itemWeightTextInput?.value || matchedQuick?.weightText || matchedQuick?.size, resolvedUnit)
+  const itemMeasureTextInput = document.getElementById('itemMeasureText');
+  const parsedMeasure = supportsSize(resolvedUnit)
+    ? parseSmartMeasureInput(itemMeasureTextInput?.value || matchedQuick?.measureText || matchedQuick?.weightText || matchedQuick?.size, resolvedUnit)
     : null;
 
-  if (isWeightUnit(resolvedUnit)) {
-    if (!parsedWeight) {
-      alert('Skriv vikt per st. Du kan skriva bara 500 eller 1,5.');
+  if (supportsSize(resolvedUnit)) {
+    if (!parsedMeasure) {
+      alert(getMeasureInputError(resolvedUnit));
       return;
     }
-    const weightWarning = getWeightValidationMessage(parsedWeight, quantity);
-    if (weightWarning) {
-      alert(weightWarning);
+    const measureWarning = getMeasureValidationMessage(parsedMeasure, quantity, resolvedUnit);
+    if (measureWarning) {
+      alert(measureWarning);
       return;
     }
-    if (itemWeightTextInput) itemWeightTextInput.value = formatWeightDisplay(parsedWeight);
+    if (itemMeasureTextInput) itemMeasureTextInput.value = formatSmartMeasureDisplay(parsedMeasure, resolvedUnit);
   }
 
   const item = {
@@ -2057,10 +2109,11 @@ function addItem() {
     price: Number(priceInput?.value || (matchedQuick ? matchedQuick.price : 0) || 0),
     quantity,
     unit: resolvedUnit,
-    size: isWeightUnit(resolvedUnit)
-      ? parsedWeight
+    size: supportsSize(resolvedUnit)
+      ? parsedMeasure
       : normalizeSize(resolvedUnit, sizeInput?.value || (matchedQuick ? matchedQuick.size : null), categoryInput?.value || matchedQuick?.category),
-    weightText: isWeightUnit(resolvedUnit) && parsedWeight ? formatWeightDisplay(parsedWeight) : '',
+    measureText: supportsSize(resolvedUnit) && parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, resolvedUnit) : '',
+    weightText: isWeightUnit(resolvedUnit) && parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, resolvedUnit) : '',
     category: ensureCategoryExists(categoryInput?.value || (matchedQuick ? matchedQuick.category : 'MAT')),
     place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : 'kyl')),
     type: 'home',
@@ -2080,14 +2133,15 @@ function addItem() {
       existingHome.quantity = Number(existingHome.quantity || 0) + Number(item.quantity || 0);
       existingHome.price = Number(item.price || existingHome.price || 0);
       existingHome.category = item.category;
-      existingHome.size = item.size;
       existingHome.unit = item.unit;
+      existingHome.size = item.size;
+      existingHome.measureText = item.measureText || '';
       existingHome.weightText = item.weightText || '';
       if (item.img) existingHome.img = item.img;
       syncQuickItemFromItem(existingHome);
     } else {
-      items.push(normalizeWeightItemData(item));
-      syncQuickItemFromItem(normalizeWeightItemData(item));
+      items.push(normalizeMeasureItemData(item));
+      syncQuickItemFromItem(normalizeMeasureItemData(item));
     }
 
     const existsQuick = quickItems.find(i => normalizeText(i.name) === normalizeText(item.name));
@@ -2095,13 +2149,14 @@ function addItem() {
       existsQuick.price = Number(item.price || existsQuick.price || 0);
       existsQuick.quantity = 1;
       existsQuick.unit = item.unit || existsQuick.unit || 'st';
-      existsQuick.size = normalizeSize(existsQuick.unit, item.size || existsQuick.size, item.category || existsQuick.category);
-      existsQuick.weightText = item.weightText || existsQuick.weightText || '';
+      existsQuick.size = normalizeSize(existsQuick.unit, parseSmartMeasureInput(item.measureText || item.weightText || item.size, existsQuick.unit) || item.size || existsQuick.size, item.category || existsQuick.category);
+      existsQuick.measureText = supportsSize(existsQuick.unit) ? getMeasureTextFromSize(existsQuick.size, existsQuick.unit) : '';
+      existsQuick.weightText = isWeightUnit(existsQuick.unit) ? existsQuick.measureText : '';
       existsQuick.category = item.category || existsQuick.category || 'MAT';
       existsQuick.place = item.place || existsQuick.place || 'kyl';
       if (item.img) existsQuick.img = item.img;
     } else {
-      quickItems.unshift(normalizeWeightItemData({ ...item, type: 'home' }));
+      quickItems.unshift(normalizeMeasureItemData({ ...item, type: 'home' }));
     }
 
     save();
@@ -2137,6 +2192,8 @@ function updateQuantity(index, value) {
         quantity: diff,
         unit: item.unit || 'st',
         size: normalizeSize(item.unit || 'st', item.size),
+        measureText: supportsSize(item.unit || 'st') ? getMeasureTextFromSize(item.size, item.unit || 'st') : '',
+        weightText: isWeightUnit(item.unit || 'st') ? getMeasureTextFromSize(item.size, item.unit || 'st') : '',
         category: ensureCategoryExists(item.category || 'MAT'),
         place: item.place || 'kyl',
         type: 'buy',
@@ -2755,8 +2812,8 @@ function useRecipeIngredients() {
 
       if (supportsSize(ingredient.unit) && supportsSize(homeItem.unit)) {
         const packSize = Number(homeItem.size || 0);
-        const itemQuantity = Number(homeItem.quantity || 0) * packSize;
-        const amountToUse = Math.min(itemQuantity, remaining);
+        const itemAmount = Number(homeItem.quantity || 0) * packSize;
+        const amountToUse = Math.min(itemAmount, remaining);
         const packsToUse = Math.ceil(amountToUse / Math.max(1, packSize));
         homeItem.quantity = Math.max(0, Number(homeItem.quantity || 0) - packsToUse);
         remaining = Math.max(0, remaining - (packsToUse * packSize));
@@ -3391,35 +3448,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
 document.addEventListener('input', (e) => {
   if (!e.target) return;
-  if (['itemWeightText', 'itemQuantity'].includes(e.target.id)) updateWeightSummary();
-  if (['editWeightText', 'editQuantity'].includes(e.target.id)) updateEditWeightSummary();
+  if (['itemMeasureText', 'itemQuantity'].includes(e.target.id)) updateMeasureSummary();
+  if (['editMeasureText', 'editQuantity'].includes(e.target.id)) updateEditMeasureSummary();
 });
 
 document.addEventListener('change', (e) => {
   if (!e.target) return;
-  if (e.target.id === 'itemUnit') syncWeightModeVisibility();
-  if (e.target.id === 'editUnit') syncEditWeightModeVisibility();
-  if (e.target.id === 'itemWeightText') formatWeightInputField(e.target, document.getElementById('itemUnit')?.value || 'g');
-  if (e.target.id === 'editWeightText') formatWeightInputField(e.target, document.getElementById('editUnit')?.value || 'g');
+  if (e.target.id === 'itemUnit') syncMeasureModeVisibility();
+  if (e.target.id === 'editUnit') syncEditMeasureModeVisibility();
+  if (e.target.id === 'itemMeasureText') formatMeasureInputField(e.target, document.getElementById('itemUnit')?.value || 'g');
+  if (e.target.id === 'editMeasureText') formatMeasureInputField(e.target, document.getElementById('editUnit')?.value || 'g');
 });
 
 document.addEventListener('blur', (e) => {
   if (!e.target) return;
-  if (e.target.id === 'itemWeightText') {
-    formatWeightInputField(e.target, document.getElementById('itemUnit')?.value || 'g');
-    updateWeightSummary();
+  if (e.target.id === 'itemMeasureText') {
+    formatMeasureInputField(e.target, document.getElementById('itemUnit')?.value || 'g');
+    updateMeasureSummary();
   }
-  if (e.target.id === 'editWeightText') {
-    formatWeightInputField(e.target, document.getElementById('editUnit')?.value || 'g');
-    updateEditWeightSummary();
+  if (e.target.id === 'editMeasureText') {
+    formatMeasureInputField(e.target, document.getElementById('editUnit')?.value || 'g');
+    updateEditMeasureSummary();
   }
 }, true);
 
-window.addEventListener('load', () => {
-  try {
-    syncWeightModeVisibility();
-    syncEditWeightModeVisibility();
-    updateWeightSummary();
-    updateEditWeightSummary();
-  } catch (e) {}
-});
+window.addEventListener('load', () => { try { syncMeasureModeVisibility(); syncEditMeasureModeVisibility(); updateMeasureSummary(); updateEditMeasureSummary(); } catch (e) {} });

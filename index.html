@@ -72,15 +72,13 @@
       <input id="itemPrice" type="number" min="0" placeholder="Pris (kr)">
       <input id="itemQuantity" type="number" min="1" placeholder="Antal">
 
-      <select id="itemSize" style="display:none"></select>
-
-
-      <div id="itemWeightTextWrap" style="display:none;">
-        <input id="itemWeightText" type="text" placeholder="Vikt per st, t.ex. 500 eller 1,5">
-        <div id="itemWeightSummary" class="weight-summary" style="display:none;"></div>
+      <div id="itemSizeWrap"><select id="itemSize" style="display:none"></select></div>
+      <div id="itemMeasureTextWrap" style="display:none;">
+        <input id="itemMeasureText" type="text" placeholder="Mängd per st, t.ex. 500 eller 1,5">
+        <div id="itemMeasureSummary" class="measure-summary" style="display:none;"></div>
       </div>
 
-      <select id="itemUnit" onchange="updateSizeSelect('itemSize', this.value);">
+      <select id="itemUnit" onchange="updateSizeSelect('itemSize', this.value); syncMeasureModeVisibility();">
         <option value="st">st</option>
         <option value="g">g</option>
         <option value="kg">kg</option>
@@ -286,15 +284,13 @@
         <input id="editName" placeholder="Namn">
         <input id="editPrice" type="number" min="0" placeholder="Pris">
         <input id="editQuantity" type="number" min="1" placeholder="Antal">
-        <select id="editSize" style="display:none"></select>
-
-
-        <div id="editWeightTextWrap" style="display:none;">
-          <input id="editWeightText" type="text" placeholder="Vikt per st, t.ex. 500 eller 1,5">
-          <div id="editWeightSummary" class="weight-summary" style="display:none;"></div>
+        <div id="editSizeWrap"><select id="editSize" style="display:none"></select></div>
+        <div id="editMeasureTextWrap" style="display:none;">
+          <input id="editMeasureText" type="text" placeholder="Mängd per st, t.ex. 500 eller 1,5">
+          <div id="editMeasureSummary" class="measure-summary" style="display:none;"></div>
         </div>
 
-        <select id="editUnit" onchange="updateSizeSelect('editSize', this.value, document.getElementById('editSize')?.value); syncEditWeightModeVisibility();">
+        <select id="editUnit" onchange="updateSizeSelect('editSize', this.value, document.getElementById('editSize')?.value); syncEditMeasureModeVisibility();">
           <option value="st">st</option>
           <option value="g">g</option>
           <option value="kg">kg</option>
