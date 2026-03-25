@@ -2503,7 +2503,6 @@ document.addEventListener('click', event => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
-  try { applyAssistantQueryFromUrl(); } catch(e) { console.error(e); }
   hydrateData();
   householdSize = Math.max(1, Math.min(8, Number(householdSize || 1)));
   renderCategoryOptions();
@@ -2870,7 +2869,6 @@ function cookSelectedWeekRecipe() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  try { applyAssistantQueryFromUrl(); } catch(e) { console.error(e); }
   ensureWeekPlannerShape();
   refreshWeekPlannerUI();
 
@@ -2916,42 +2914,308 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
 
-function applyAssistantQueryFromUrl() {
+let voiceRecognition = null;
+let voiceListening = false;
+let handsFreeVoice = false;
+let handsFreeRestartTimer = null;
+let autoVoiceStarted = false;
+
+function setVoiceStatus(text, isError = false) {
+  const box = document.getElementById('voiceStatus');
+  if (!box) return;
+  box.style.display = text ? 'block' : 'none';
+  box.textContent = text || '';
+  box.style.background = isError ? 'rgba(180,40,40,.45)' : 'rgba(255,255,255,.08)';
+}
+
+function speakVoice(text) {
   try {
-    const url = new URL(window.location.href);
-    const item = (url.searchParams.get('assistant_item') || '').trim();
-    if (!item) return;
-    const searchInput = document.getElementById('searchInput');
-    if (searchInput) searchInput.value = item;
-    if (typeof render === 'function') render();
-
-    let found = null;
-    if (Array.isArray(window.items)) {
-      found = window.items.find(x =>
-        (x.type || 'home') === 'home' &&
-        typeof normalizeText === 'function' &&
-        normalizeText(x.name).includes(normalizeText(item))
-      );
-    }
-
-    const msg = found
-      ? `${found.name} finns i ${typeof getPlaceMeta === 'function' ? getPlaceMeta(found.place).label : found.place}.`
-      : `Jag hittade inte ${item} i listan.`;
-
-    const status = document.getElementById('assistantStatus');
-    if (status) {
-      status.style.display = 'block';
-      status.textContent = 'Google Assistant: ' + msg;
-    }
-
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(msg);
-      u.lang = 'sv-SE';
-      window.speechSynthesis.speak(u);
-    }
-  } catch (e) {
-    console.error('Assistant URL handling failed', e);
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'sv-SE';
+    utter.rate = 1;
+    speechSynthesis.speak(utter);
+  } catch (error) {
+    console.error('speech error', error);
   }
 }
 
+function normalizeVoiceQuery(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[?.!,]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractVoiceItemName(query) {
+  let text = normalizeVoiceQuery(query);
+
+  const prefixes = [
+    'var har jag ',
+    'var är ',
+    'vart är ',
+    'vart har jag ',
+    'hitta ',
+    'sök ',
+    'var finns ',
+    'var ligger ',
+    'köp ',
+    'lägg till '
+  ];
+
+  for (const prefix of prefixes) {
+    if (text.startsWith(prefix)) {
+      text = text.slice(prefix.length).trim();
+      break;
+    }
+  }
+
+  text = text
+    .replace(/\bmitt\b|\bmin\b|\bmina\b|\bden\b|\bdet\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return text;
+}
+
+function findBestVoiceItem(query) {
+  const wanted = extractVoiceItemName(query);
+  if (!wanted) return null;
+  const wantedNorm = normalizeText(wanted);
+
+  let found = items.find(item =>
+    item.type === 'home' &&
+    normalizeText(item.name).includes(wantedNorm)
+  );
+  if (found) return found;
+
+  found = quickItems.find(item => normalizeText(item.name).includes(wantedNorm));
+  if (found) return found;
+
+  found = items.find(item =>
+    item.type === 'home' &&
+    wantedNorm.split(' ').every(part => normalizeText(item.name).includes(part))
+  );
+
+  return found || null;
+}
+
+function refreshVoiceButton() {
+  const btn = document.getElementById('voiceAskBtn');
+  if (!btn) return;
+  if (voiceListening) {
+    btn.textContent = '🎤 Lyssnar...';
+  } else if (handsFreeVoice) {
+    btn.textContent = '🛑 Stoppa röst';
+  } else {
+    btn.textContent = '🎤 Starta röst';
+  }
+}
+
+function scheduleHandsFreeRestart(delay = 900) {
+  clearTimeout(handsFreeRestartTimer);
+  if (!handsFreeVoice) return;
+  handsFreeRestartTimer = setTimeout(() => {
+    if (!voiceListening) startVoiceSearch();
+  }, delay);
+}
+
+function addVoiceItem(name) {
+  const clean = String(name || '').trim();
+  if (!clean) return false;
+  addHomeItemFromTemplate({
+    name: clean,
+    price: 0,
+    quantity: 1,
+    unit: 'st',
+    size: null,
+    category: 'MAT',
+    place: 'kyl',
+    type: 'home',
+    img: ''
+  }, 1, 'kyl');
+  save();
+  render();
+  return true;
+}
+
+function moveVoiceItemToBuy(name) {
+  const clean = String(name || '').trim();
+  if (!clean) return false;
+  const norm = normalizeText(clean);
+  const found = items.find(item => item.type === 'home' && normalizeText(item.name).includes(norm));
+  if (!found) return false;
+  found.type = 'buy';
+  save();
+  render();
+  return true;
+}
+
+function getDinnerCountText() {
+  const homeItems = items.filter(i => i.type === 'home');
+  const totalDinnerWeight = homeItems.reduce((sum, item) => sum + getDinnerWeightFromItem(item), 0);
+  const totalDinners = Math.floor(totalDinnerWeight / (250 * householdSize));
+  return `${totalDinners} middagar kvar`;
+}
+
+function answerVoiceQuery(query) {
+  const raw = normalizeVoiceQuery(query);
+  if (!raw) {
+    const msg = 'Jag hörde inget.';
+    setVoiceStatus(msg);
+    speakVoice(msg);
+    return;
+  }
+
+  if (raw.includes('hjälp') || raw.includes('vad kan du')) {
+    const help = 'Du kan fråga till exempel: var har jag kaffet, lägg till mjölk, köp kaffe, eller hur många middagar har jag kvar.';
+    setVoiceStatus(help);
+    speakVoice(help);
+    return;
+  }
+
+  if (raw.includes('hur många middagar')) {
+    const msg = getDinnerCountText();
+    setVoiceStatus(`🎤 ${msg}`);
+    speakVoice(msg);
+    return;
+  }
+
+  if (raw.startsWith('lägg till ')) {
+    const name = extractVoiceItemName(raw);
+    if (addVoiceItem(name)) {
+      const msg = `${name} är tillagd.`;
+      setVoiceStatus(`🎤 ${msg}`);
+      speakVoice(msg);
+      return;
+    }
+  }
+
+  if (raw.startsWith('köp ')) {
+    const name = extractVoiceItemName(raw);
+    if (moveVoiceItemToBuy(name)) {
+      const msg = `${name} är flyttad till inköp.`;
+      setVoiceStatus(`🎤 ${msg}`);
+      speakVoice(msg);
+      return;
+    }
+    const fail = `Jag hittade inte ${name} hemma.`;
+    setVoiceStatus(`🎤 ${fail}`, true);
+    speakVoice(fail);
+    return;
+  }
+
+  const found = findBestVoiceItem(raw);
+  if (!found) {
+    const msg = 'Jag hittade inte den varan i listan.';
+    setVoiceStatus(msg, true);
+    speakVoice(msg);
+    return;
+  }
+
+  const placeMeta = getPlaceMeta(found.place);
+  const amount = formatItemAmount(found);
+  const msg = found.type === 'home'
+    ? `${found.name} finns i ${placeMeta.label.replace(/^[^\wåäöÅÄÖ]+/u, '').trim()}. Du har ${amount}.`
+    : `${found.name} ligger i inköpslistan.`;
+
+  const searchInput = document.getElementById('searchInput');
+  if (searchInput) {
+    searchInput.value = found.name;
+    render();
+  }
+
+  setVoiceStatus(`🎤 ${msg}`);
+  speakVoice(msg);
+}
+
+function createVoiceRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) return null;
+
+  const recognition = new SpeechRecognition();
+  recognition.lang = 'sv-SE';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.onstart = () => {
+    voiceListening = true;
+    refreshVoiceButton();
+    setVoiceStatus('Lyssnar... säg till exempel: var har jag kaffet?');
+  };
+
+  recognition.onend = () => {
+    voiceListening = false;
+    refreshVoiceButton();
+    if (handsFreeVoice) scheduleHandsFreeRestart(800);
+  };
+
+  recognition.onerror = (event) => {
+    const msg = event?.error === 'not-allowed'
+      ? 'Mikrofonen är blockerad. Tillåt mikrofon i webbläsaren.'
+      : 'Röststyrning kunde inte starta.';
+    setVoiceStatus(msg, true);
+    if (handsFreeVoice) scheduleHandsFreeRestart(1200);
+  };
+
+  recognition.onresult = (event) => {
+    const text = event?.results?.[0]?.[0]?.transcript || '';
+    answerVoiceQuery(text);
+    if (handsFreeVoice) scheduleHandsFreeRestart(1400);
+  };
+
+  return recognition;
+}
+
+function startVoiceSearch() {
+  if (!voiceRecognition) voiceRecognition = createVoiceRecognition();
+  if (!voiceRecognition) {
+    const msg = 'Din webbläsare stödjer inte röstigenkänning här.';
+    setVoiceStatus(msg, true);
+    alert(msg);
+    return;
+  }
+  try {
+    voiceRecognition.start();
+  } catch (error) {
+    console.error('voice start error', error);
+  }
+}
+
+function stopVoiceSearch() {
+  clearTimeout(handsFreeRestartTimer);
+  handsFreeRestartTimer = null;
+  try {
+    if (voiceRecognition) voiceRecognition.stop();
+  } catch (error) {}
+  voiceListening = false;
+  refreshVoiceButton();
+}
+
+function toggleHandsFreeVoice() {
+  handsFreeVoice = !handsFreeVoice;
+  if (handsFreeVoice) {
+    setVoiceStatus('Handsfree-röst är på. Säg till exempel: var har jag kaffet?');
+    startVoiceSearch();
+  } else {
+    setVoiceStatus('Handsfree-röst är av.');
+    stopVoiceSearch();
+  }
+  refreshVoiceButton();
+}
+
+function autoStartVoice() {
+  if (autoVoiceStarted) return;
+  autoVoiceStarted = true;
+  handsFreeVoice = true;
+  setTimeout(() => {
+    setVoiceStatus('Handsfree-röst är på. Säg till exempel: var har jag kaffet?');
+    startVoiceSearch();
+    refreshVoiceButton();
+  }, 900);
+}
+
+
+window.addEventListener('load', () => { try { autoStartVoice(); } catch (e) { console.error(e); } });

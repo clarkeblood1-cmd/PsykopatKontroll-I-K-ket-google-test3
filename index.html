@@ -124,11 +124,11 @@
     <section class="section">
       <div class="section-top-row">
         <div class="section-title">🏠 Har hemma</div>
-        <input class="search section-search" id="searchInput" placeholder="🔍 Sök vara, kategori eller plats..." oninput="render()">
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;"><input class="search section-search" id="searchInput" placeholder="🔍 Sök vara, kategori eller plats..." oninput="render()" style="flex:1;"><button type="button" id="voiceAskBtn" class="ghost-btn" onclick="toggleHandsFreeVoice()" style="margin-left:10px;">🎤 Starta röst</button></div>
         <button type="button" id="homeToggleBtn" class="ghost-btn" onclick="toggleHomeList()">Dölj</button>
       </div>
       <div class="section-subtitle">Uppdelat på kyl, frys och kryddor</div>
-<div id="assistantStatus" style="display:none;margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.08);color:#fff;"></div>
+<div id="voiceStatus" style="display:none; margin-top:10px; padding:10px 12px; border-radius:12px; background:rgba(255,255,255,.08); color:#fff;"></div>
       <div class="container" id="homeList"></div>
     </section>
 
