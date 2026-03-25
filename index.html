@@ -72,7 +72,14 @@
       <input id="itemPrice" type="number" min="0" placeholder="Pris (kr)">
       <input id="itemQuantity" type="number" min="1" placeholder="Antal">
 
-      <select id="itemSize" style="display:none"></select>
+      <div id="itemSizeWrap">
+        <select id="itemSize" style="display:none"></select>
+      </div>
+
+      <div id="itemWeightTextWrap" style="display:none;">
+        <input id="itemWeightText" type="text" placeholder="Vikt per st, t.ex. 500 g eller 1 kg">
+        <div id="itemWeightSummary" class="weight-summary" style="display:none;"></div>
+      </div>
 
       <select id="itemUnit" onchange="updateSizeSelect('itemSize', this.value);">
         <option value="st">st</option>
@@ -212,6 +219,10 @@
             <h3 style="margin-top:0;">Nytt recept</h3>
             <div class="container">
               <input id="recipeName" placeholder="Receptnamn, t.ex. Tacos">
+              <select id="recipeType" class="recipe-type-select">
+                <option value="matlagning">🍳 Matlagning</option>
+                <option value="bakverk">🧁 Bakverk</option>
+              </select>
               <input id="recipeLink" placeholder="Länk till recept (https://...)">
 
               <div style="position:relative; margin-top:10px;">
@@ -228,6 +239,11 @@
             <h3 style="margin-top:0;">🍽️ Har jag allt?</h3>
             <div class="container">
               <input id="recipeSearch" placeholder="Sök recept..." oninput="filterRecipeSelect()">
+              <select id="recipeTypeFilter" class="recipe-type-select" onchange="filterRecipeSelect()">
+                <option value="">Alla recept</option>
+                <option value="matlagning">🍳 Matlagning</option>
+                <option value="bakverk">🧁 Bakverk</option>
+              </select>
               <select id="portionSelect" onchange="renderSelectedRecipeIngredients(); clearRecipeResult();">
                 <option value="2">2 portioner • 250g / krydda 14g</option>
                 <option value="4">4 portioner • 500g / krydda 28g</option>
@@ -271,7 +287,13 @@
         <input id="editName" placeholder="Namn">
         <input id="editPrice" type="number" min="0" placeholder="Pris">
         <input id="editQuantity" type="number" min="1" placeholder="Antal">
-        <select id="editSize" style="display:none"></select>
+        <div id="editSizeWrap">
+          <select id="editSize" style="display:none"></select>
+        </div>
+        <div id="editWeightTextWrap" style="display:none;">
+          <input id="editWeightText" type="text" placeholder="Vikt per st, t.ex. 500 g eller 1 kg">
+          <div id="editWeightSummary" class="weight-summary" style="display:none;"></div>
+        </div>
 
         <select id="editUnit" onchange="updateSizeSelect('editSize', this.value, document.getElementById('editSize')?.value);">
           <option value="st">st</option>

@@ -16,6 +16,19 @@ if (!Array.isArray(places) || !places.length) {
   ];
 }
 
+
+function normalizeRecipeType(type) {
+  const value = String(type || '').trim().toLowerCase();
+  return value === 'bakverk' ? 'bakverk' : 'matlagning';
+}
+
+function getRecipeTypeMeta(type) {
+  const normalized = normalizeRecipeType(type);
+  return normalized === 'bakverk'
+    ? { value: 'bakverk', label: 'Bakverk', icon: '🧁' }
+    : { value: 'matlagning', label: 'Matlagning', icon: '🍳' };
+}
+
 if (!recipes.length) {
   recipes = [
     {
@@ -26,7 +39,8 @@ if (!recipes.length) {
         { name: 'tortillabröd', quantity: 1, unit: 'pkt', size: null },
         { name: 'ost', quantity: 1, unit: 'st', size: null }
       ],
-      link: ''
+      link: '',
+      type: 'matlagning'
     }
   ];
 }
@@ -63,17 +77,6 @@ const lockedPlaceKeys = ['kyl', 'frys', 'kryddor'];
 const weightSizeOptions = [14, 28, 50, 100, 150, 200, 250, 500, 750, 1000];
 const spiceWeightSizeOptions = [14, 28, 50, 100, 150, 200];
 const liquidSizeOptions = [250, 500, 1000, 1500, 2000];
-
-const imageCatalogItems = [
-  { name: 'Nötfärs', category: 'KÖTTFÄRS' },
-  { name: 'Blandfärs', category: 'KÖTTFÄRS' },
-  { name: 'Kycklingfärs', category: 'KÖTTFÄRS' },
-  { name: 'Hushållsfärs', category: 'KÖTTFÄRS' },
-  { name: 'Högrevsfärs', category: 'KÖTTFÄRS' },
-  { name: 'Chorizofärs', category: 'KÖTTFÄRS' },
-  { name: 'Salsicciafärs', category: 'KÖTTFÄRS' }
-];
-
 
 function isWeightUnit(unit) {
   return ['g', 'kg'].includes(String(unit || '').toLowerCase());
@@ -174,8 +177,15 @@ function getRecipeIngredientContext(value = null) {
 
 function normalizeSize(unit, size, context = null) {
   if (!supportsSize(unit)) return null;
+  const n = Math.round(Number(size || 0));
+  const resolvedContext = getContextCategory(context);
+
+  if (isWeightUnit(unit) && !String(resolvedContext).startsWith('RECIPE')) {
+    if (Number.isFinite(n) && n > 0) return Math.min(n, MAX_WEIGHT_GRAMS);
+    return getDefaultSize(unit, context);
+  }
+
   const options = getSizeOptions(unit, context);
-  const n = Number(size || 0);
   if (options.includes(n)) return n;
   return getDefaultSize(unit, context);
 }
@@ -184,7 +194,11 @@ function formatSizeValue(unit, size) {
   const normalized = normalizeSize(unit, size);
   if (!normalized) return '';
   if (isWeightUnit(unit)) {
-    return normalized === 1000 ? '1 kg' : `${normalized} g`;
+    if (normalized >= 1000) {
+      const kg = normalized / 1000;
+      return `${String(Number(kg.toFixed(2))).replace('.', ',')} kg`;
+    }
+    return `${normalized} g`;
   }
   const liters = normalized / 1000;
   return `${String(Number(liters.toFixed(1))).replace('.', ',')} l`;
@@ -201,6 +215,7 @@ function formatItemAmount(item) {
   const amount = Math.max(0, Number(item?.quantity || 0));
   if (supportsSize(item?.unit)) {
     const sizeLabel = formatSizeValue(item.unit, item.size);
+    if (!sizeLabel) return `${amount} ${item?.unit || 'st'}`;
     return `${amount} × ${sizeLabel}`;
   }
   return `${amount} ${item?.unit || 'st'}`;
@@ -615,21 +630,132 @@ function getItemImage(item) {
 }
 
 
-function cycleImageCandidate(imgEl, name) {
-  if (!imgEl) return;
-  const candidates = getAutoImageCandidates(name);
-  const current = String(imgEl.src || '');
-  const currentIndex = candidates.findIndex(path => current.includes(path));
-  const nextIndex = currentIndex + 1;
+// === SMART WEIGHT TEXT + TOTAL DISPLAY ===
+const MAX_WEIGHT_GRAMS = 100000; // 100 kg
 
-  if (nextIndex >= 0 && nextIndex < candidates.length) {
-    imgEl.src = candidates[nextIndex];
+function parseWeightInput(text) {
+  const raw = String(text || '').trim().toLowerCase().replace(',', '.');
+  if (!raw) return null;
+
+  const kgMatch = raw.match(/^(\d+(?:\.\d+)?)\s*kg$/);
+  if (kgMatch) {
+    const grams = Math.round(parseFloat(kgMatch[1]) * 1000);
+    return Number.isFinite(grams) ? Math.min(grams, MAX_WEIGHT_GRAMS) : null;
+  }
+
+  const gMatch = raw.match(/^(\d+(?:\.\d+)?)\s*g$/);
+  if (gMatch) {
+    const grams = Math.round(parseFloat(gMatch[1]));
+    return Number.isFinite(grams) ? Math.min(grams, MAX_WEIGHT_GRAMS) : null;
+  }
+
+  return null;
+}
+
+function formatWeightDisplay(grams) {
+  const value = Number(grams || 0);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  if (value >= 1000) {
+    const kg = value / 1000;
+    return `${String(Number(kg.toFixed(2))).replace('.', ',')} kg`;
+  }
+  return `${Math.round(value)} g`;
+}
+
+function getWeightInput(prefix = 'item') {
+  return document.getElementById(`${prefix}WeightText`);
+}
+
+function getWeightSummaryEl(prefix = 'item') {
+  return document.getElementById(`${prefix}WeightSummary`);
+}
+
+function getWeightSizeWrap(prefix = 'item') {
+  return document.getElementById(`${prefix}SizeWrap`);
+}
+
+function getWeightTextWrap(prefix = 'item') {
+  return document.getElementById(`${prefix}WeightTextWrap`);
+}
+
+function setWeightInputFromItem(prefix, item) {
+  const input = getWeightInput(prefix);
+  if (!input) return;
+  if (isWeightUnit(item?.unit) && Number(item?.size || 0) > 0) {
+    input.value = item?.weightText || formatWeightDisplay(item.size);
+  } else {
+    input.value = '';
+  }
+}
+
+function validateWeightRow(unit, weightText, quantity) {
+  if (!isWeightUnit(unit)) return { ok: true, grams: null };
+  const grams = parseWeightInput(weightText);
+  if (!grams) return { ok: false, message: 'Skriv vikt som t.ex. 500 g eller 1 kg.' };
+  const qty = Math.max(1, Number(quantity || 1));
+  const total = grams * qty;
+  if (total > MAX_WEIGHT_GRAMS) {
+    return { ok: false, grams, total, message: `Max 100 kg per rad. Du försökte lägga in ${formatWeightDisplay(total)}.` };
+  }
+  return { ok: true, grams, total };
+}
+
+function updateWeightSummary(prefix = 'item') {
+  const amountEl = document.getElementById(`${prefix}Quantity`);
+  const unitEl = document.getElementById(`${prefix}Unit`);
+  const weightTextEl = getWeightInput(prefix);
+  const summaryEl = getWeightSummaryEl(prefix);
+
+  if (!amountEl || !unitEl || !weightTextEl || !summaryEl) return;
+
+  const amount = Math.max(1, Number(amountEl.value || 1));
+  const parsed = parseWeightInput(weightTextEl.value);
+  const unit = unitEl.value;
+
+  if (!parsed || !isWeightUnit(unit)) {
+    summaryEl.textContent = '';
+    summaryEl.style.display = 'none';
     return;
   }
 
-  imgEl.onerror = null;
-  imgEl.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="220"><rect width="100%" height="100%" fill="#0b1736"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="white" font-family="Arial" font-size="24">Ingen bild</text></svg>`);
+  const total = parsed * amount;
+  if (total > MAX_WEIGHT_GRAMS) {
+    summaryEl.textContent = `⚠️ För mycket: ${amount} × ${formatWeightDisplay(parsed)} = ${formatWeightDisplay(total)} (max 100 kg)`;
+  } else {
+    summaryEl.textContent = `${amount} × ${formatWeightDisplay(parsed)} = ${formatWeightDisplay(total)}`;
+  }
+  summaryEl.style.display = 'block';
 }
+
+function syncWeightModeVisibility(prefix = 'item') {
+  const unitEl = document.getElementById(`${prefix}Unit`);
+  const sizeWrap = getWeightSizeWrap(prefix);
+  const weightWrap = getWeightTextWrap(prefix);
+  const sizeSelect = document.getElementById(`${prefix}Size`);
+  const weightTextEl = getWeightInput(prefix);
+
+  if (!unitEl || !sizeWrap || !weightWrap) return;
+
+  const weightMode = isWeightUnit(unitEl.value);
+  sizeWrap.style.display = weightMode ? 'none' : '';
+  weightWrap.style.display = weightMode ? '' : 'none';
+
+  if (sizeSelect) sizeSelect.style.display = weightMode ? 'none' : (supportsSize(unitEl.value) ? '' : 'none');
+  if (!weightMode && weightTextEl) weightTextEl.value = '';
+  updateWeightSummary(prefix);
+}
+
+function getItemTotalWeightText(item) {
+  const amount = Number(item?.quantity || 0);
+  const unit = String(item?.unit || '');
+  const grams = Number(item?.size || 0);
+
+  if (!amount || !grams || !isWeightUnit(unit)) return '';
+  const total = grams * amount;
+  return `${amount} × ${formatWeightDisplay(grams)} (${formatWeightDisplay(total)})`;
+}
+// === END SMART WEIGHT TEXT + TOTAL DISPLAY ===
+
 
 function normalizeText(text) {
   return String(text || '')
@@ -715,7 +841,8 @@ function hydrateData() {
   recipes = recipes.map(recipe => ({
     name: String(recipe?.name || '').trim(),
     items: normalizeRecipeIngredientList(recipe?.items),
-    link: String(recipe?.link || '')
+    link: String(recipe?.link || ''),
+    type: normalizeRecipeType(recipe?.type)
   })).filter(recipe => recipe.name);
 
   if (!categories.includes('MAT')) categories.unshift('MAT');
@@ -1426,6 +1553,7 @@ function applyQuickItemToMainForm(index) {
   if (itemCategory) itemCategory.value = item.category || 'MAT';
   if (itemUnit) itemUnit.value = item.unit || 'st';
   if (itemSize) updateSizeSelect('itemSize', item.unit || 'st', item.size);
+  setWeightInputFromItem('item', item);
   if (itemPlace) {
     itemPlace.dataset.currentValue = item.place || 'kyl';
     renderPlaceOptions();
@@ -1433,77 +1561,7 @@ function applyQuickItemToMainForm(index) {
   }
 
   hideMainItemSuggestions();
-}
-
-
-function levenshteinDistance(a, b) {
-  const s = String(a || '');
-  const t = String(b || '');
-  const m = s.length;
-  const n = t.length;
-  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-
-  for (let i = 0; i <= m; i++) dp[i][0] = i;
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      const cost = s[i - 1] === t[j - 1] ? 0 : 1;
-      dp[i][j] = Math.min(
-        dp[i - 1][j] + 1,
-        dp[i][j - 1] + 1,
-        dp[i - 1][j - 1] + cost
-      );
-    }
-  }
-
-  return dp[m][n];
-}
-
-function scoreNameMatch(search, name) {
-  const s = normalizeText(search);
-  const n = normalizeText(name);
-  if (!s || !n) return -1;
-
-  let score = 0;
-  if (n === s) score += 300;
-  if (n.startsWith(s)) score += 220;
-  if (n.includes(s)) score += 120;
-
-  const firstPart = n.slice(0, Math.max(s.length, 1));
-  const distance = levenshteinDistance(s, firstPart);
-  if (distance <= 2) score += 70 - distance * 20;
-
-  return score;
-}
-
-function getMainItemMatches(search, limit = 8) {
-  const all = [
-    ...quickItems.map(item => ({ ...item, _fromQuick: true })),
-    ...imageCatalogItems.map(item => ({ ...item, _fromImageCatalog: true }))
-  ];
-
-  const ranked = all
-    .map(item => ({
-      item,
-      score: scoreNameMatch(search, item.name || '')
-    }))
-    .filter(entry => entry.score > 0)
-    .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return String(a.item.name || '').localeCompare(String(b.item.name || ''), 'sv');
-    });
-
-  const seen = new Set();
-  return ranked
-    .map(entry => entry.item)
-    .filter(item => {
-      const key = normalizeText(item.name || '');
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, limit);
+  try { syncWeightModeVisibility(); updateWeightSummary(); } catch (e) {}
 }
 
 function showMainItemSuggestions() {
@@ -1520,39 +1578,21 @@ function showMainItemSuggestions() {
     return;
   }
 
-  const matches = getMainItemMatches(input.value, 8);
+  const matches = quickItems.filter(item => normalizeText(item.name).includes(search));
   if (!matches.length) {
     box.style.display = 'none';
     return;
   }
 
-  matches.forEach(item => {
+  matches.slice(0, 8).forEach(item => {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'suggestion-row';
     row.textContent = `${item.name}${item.category ? ' • ' + item.category : ''}`;
-
     row.onclick = () => {
-      const realIndex = quickItems.findIndex(q => normalizeText(q.name) === normalizeText(item.name));
-
-      if (realIndex !== -1) {
-        applyQuickItemToMainForm(realIndex);
-        return;
-      }
-
-      const itemName = document.getElementById('itemName');
-      const itemCategory = document.getElementById('itemCategory');
-      const itemUnit = document.getElementById('itemUnit');
-      const itemSize = document.getElementById('itemSize');
-
-      if (itemName) itemName.value = item.name || '';
-      if (itemCategory && item.category) itemCategory.value = item.category;
-      if (itemUnit) itemUnit.value = 'st';
-      if (itemSize) updateSizeSelect('itemSize', 'st', null, item.category || 'MAT');
-
-      hideMainItemSuggestions();
+      const realIndex = quickItems.indexOf(item);
+      if (realIndex !== -1) applyQuickItemToMainForm(realIndex);
     };
-
     box.appendChild(row);
   });
 
@@ -1717,6 +1757,8 @@ function openEditModal(item, isQuick, index) {
   if (editQuantity) editQuantity.value = Math.max(1, Number(item.quantity || 1));
   if (editUnit) editUnit.value = item.unit || 'st';
   if (editSize) updateSizeSelect('editSize', item.unit || 'st', item.size);
+  setWeightInputFromItem('edit', item);
+  syncWeightModeVisibility('edit');
   if (editCategory) {
     editCategory.dataset.currentValue = item.category || 'MAT';
     renderCategoryOptions();
@@ -1776,12 +1818,22 @@ function saveEditItem() {
 
   const updatedUnit = document.getElementById('editUnit')?.value || 'st';
   const updatedName = document.getElementById('editName')?.value.trim() || '';
+  const updatedQuantity = Math.max(1, Number(document.getElementById('editQuantity')?.value || 1));
+  const editWeightText = document.getElementById('editWeightText')?.value || '';
+  const weightCheck = validateWeightRow(updatedUnit, editWeightText, updatedQuantity);
+  if (!weightCheck.ok) {
+    alert(weightCheck.message);
+    return;
+  }
   const updated = {
     name: updatedName,
     price: Number(document.getElementById('editPrice')?.value || 0),
-    quantity: Math.max(1, Number(document.getElementById('editQuantity')?.value || 1)),
+    quantity: updatedQuantity,
     unit: updatedUnit,
-    size: normalizeSize(updatedUnit, document.getElementById('editSize')?.value || currentItem.size, document.getElementById('editCategory')?.value || currentItem.category),
+    size: isWeightUnit(updatedUnit)
+      ? weightCheck.grams
+      : normalizeSize(updatedUnit, document.getElementById('editSize')?.value || currentItem.size, document.getElementById('editCategory')?.value || currentItem.category),
+    weightText: isWeightUnit(updatedUnit) ? formatWeightDisplay(weightCheck.grams) : '',
     category: ensureCategoryExists(document.getElementById('editCategory')?.value || currentItem.category || 'MAT'),
     place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || 'kyl'),
     img: currentItem?.img && String(currentItem.img).startsWith('data:')
@@ -1863,6 +1915,8 @@ function clearInputs() {
   if (itemCategory) itemCategory.value = 'MAT';
   if (itemUnit) itemUnit.value = 'st';
   if (itemSize) updateSizeSelect('itemSize', 'st');
+  const itemWeightText = document.getElementById('itemWeightText');
+  if (itemWeightText) itemWeightText.value = '';
   if (itemPlace) {
     itemPlace.dataset.currentValue = 'kyl';
     renderPlaceOptions();
@@ -1871,6 +1925,7 @@ function clearInputs() {
 
   selectedAddQuickIndex = null;
   hideMainItemSuggestions();
+  try { syncWeightModeVisibility(); updateWeightSummary(); } catch (e) {}
 }
 
 function addItem() {
@@ -1889,12 +1944,22 @@ function addItem() {
   const matchedQuick = quickItems.find(q => normalizeText(q.name) === normalizeText(name));
 
   const resolvedUnit = unitInput?.value || (matchedQuick ? matchedQuick.unit : 'st');
+  const resolvedQuantity = Math.max(1, Number(qtyInput?.value || 1));
+  const weightText = document.getElementById('itemWeightText')?.value || (matchedQuick?.weightText || '');
+  const weightCheck = validateWeightRow(resolvedUnit, weightText, resolvedQuantity);
+  if (!weightCheck.ok) {
+    alert(weightCheck.message);
+    return;
+  }
   const item = {
     name: matchedQuick ? matchedQuick.name : name,
     price: Number(priceInput?.value || (matchedQuick ? matchedQuick.price : 0) || 0),
-    quantity: Math.max(1, Number(qtyInput?.value || 1)),
+    quantity: resolvedQuantity,
     unit: resolvedUnit,
-    size: normalizeSize(resolvedUnit, sizeInput?.value || (matchedQuick ? matchedQuick.size : null), categoryInput?.value || matchedQuick?.category),
+    size: isWeightUnit(resolvedUnit)
+      ? weightCheck.grams
+      : normalizeSize(resolvedUnit, sizeInput?.value || (matchedQuick ? matchedQuick.size : null), categoryInput?.value || matchedQuick?.category),
+    weightText: isWeightUnit(resolvedUnit) ? formatWeightDisplay(weightCheck.grams) : '',
     category: ensureCategoryExists(categoryInput?.value || (matchedQuick ? matchedQuick.category : 'MAT')),
     place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : 'kyl')),
     type: 'home',
@@ -1927,6 +1992,7 @@ function addItem() {
       existsQuick.quantity = 1;
       existsQuick.unit = item.unit || existsQuick.unit || 'st';
       existsQuick.size = normalizeSize(existsQuick.unit, item.size || existsQuick.size, item.category || existsQuick.category);
+      existsQuick.weightText = item.weightText || '';
       existsQuick.category = item.category || existsQuick.category || 'MAT';
       existsQuick.place = item.place || existsQuick.place || 'kyl';
       if (item.img) existsQuick.img = item.img;
@@ -2050,24 +2116,28 @@ function editDraftIngredient(index) {
 function saveRecipe() {
   const name = document.getElementById('recipeName')?.value.trim() || '';
   const link = document.getElementById('recipeLink')?.value.trim() || '';
+  const recipeType = normalizeRecipeType(document.getElementById('recipeType')?.value || '');
   if (!name) return;
 
   const existingIndex = recipes.findIndex(r => normalizeText(r.name) === normalizeText(name));
   const recipe = {
     name,
     items: recipeDraftItems.length ? normalizeRecipeIngredientList(recipeDraftItems) : (existingIndex >= 0 ? normalizeRecipeIngredientList(recipes[existingIndex].items) : []),
-    link
+    link,
+    type: recipeType
   };
 
   if (existingIndex >= 0) recipes[existingIndex] = recipe;
   else recipes.push(recipe);
 
   const recipeName = document.getElementById('recipeName');
+  const recipeTypeSelect = document.getElementById('recipeType');
   const recipeLink = document.getElementById('recipeLink');
   const recipeQuickSearch = document.getElementById('recipeQuickSearch');
   const recipeQuickSuggestions = document.getElementById('recipeQuickSuggestions');
 
   if (recipeName) recipeName.value = '';
+  if (recipeTypeSelect) recipeTypeSelect.value = 'matlagning';
   if (recipeLink) recipeLink.value = '';
   if (recipeQuickSearch) recipeQuickSearch.value = '';
   if (recipeQuickSuggestions) recipeQuickSuggestions.style.display = 'none';
@@ -2088,12 +2158,18 @@ function renderRecipeSelect() {
   if (!select) return;
 
   const search = (document.getElementById('recipeSearch')?.value || '').toLowerCase().trim();
+  const recipeTypeFilterEl = document.getElementById('recipeTypeFilter');
+  const rawTypeFilter = recipeTypeFilterEl?.value || '';
+  const typeFilter = rawTypeFilter ? normalizeRecipeType(rawTypeFilter) : '';
   const previous = select.value;
   select.innerHTML = '';
 
   let filtered = recipes.slice();
   if (search) {
     filtered = filtered.filter(recipe => (recipe.name || '').toLowerCase().includes(search));
+  }
+  if (typeFilter) {
+    filtered = filtered.filter(recipe => normalizeRecipeType(recipe.type) === typeFilter);
   }
 
   if (!filtered.length) {
@@ -2112,8 +2188,9 @@ function renderRecipeSelect() {
     .sort((a, b) => a.name.localeCompare(b.name, 'sv'))
     .forEach(recipe => {
       const opt = document.createElement('option');
+      const typeMeta = getRecipeTypeMeta(recipe.type);
       opt.value = recipe.name;
-      opt.textContent = recipe.name;
+      opt.textContent = `${typeMeta.icon} ${recipe.name}`;
       select.appendChild(opt);
     });
 
@@ -2163,6 +2240,12 @@ function renderSelectedRecipeIngredients() {
   topActions.style.gap = '8px';
   topActions.style.flexWrap = 'wrap';
   topActions.style.marginBottom = '10px';
+
+  const typeMeta = getRecipeTypeMeta(recipe.type);
+  const typeBadge = document.createElement('span');
+  typeBadge.className = `recipe-type-badge recipe-type-${typeMeta.value}`;
+  typeBadge.textContent = `${typeMeta.icon} ${typeMeta.label}`;
+  topActions.appendChild(typeBadge);
 
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
@@ -2735,6 +2818,8 @@ document.addEventListener('click', event => {
 document.addEventListener('DOMContentLoaded', () => {
   hydrateData();
   householdSize = Math.max(1, Math.min(8, Number(householdSize || 1)));
+  const recipeType = document.getElementById('recipeType');
+  if (recipeType) recipeType.value = 'matlagning';
   renderCategoryOptions();
   renderPlaceOptions();
   updateSizeSelect('itemSize', document.getElementById('itemUnit')?.value || 'st');
@@ -2853,8 +2938,9 @@ function buildWeekRecipeOptions(selectedValue) {
   select.innerHTML = '<option value="">Välj recept</option>';
   recipes.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'sv')).forEach(recipe => {
     const opt = document.createElement('option');
+    const typeMeta = getRecipeTypeMeta(recipe.type);
     opt.value = recipe.name || '';
-    opt.textContent = recipe.name || '';
+    opt.textContent = `${typeMeta.icon} ${recipe.name || ''}`;
     if ((recipe.name || '') === (selectedValue || '')) opt.selected = true;
     select.appendChild(opt);
   });
@@ -3195,4 +3281,27 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   updateInstallButtonVisibility();
+});
+
+
+
+document.addEventListener('input', (e) => {
+  if (!e.target) return;
+  if (['itemWeightText', 'itemQuantity'].includes(e.target.id)) updateWeightSummary('item');
+  if (['editWeightText', 'editQuantity'].includes(e.target.id)) updateWeightSummary('edit');
+});
+
+document.addEventListener('change', (e) => {
+  if (!e.target) return;
+  if (e.target.id === 'itemUnit') syncWeightModeVisibility('item');
+  if (e.target.id === 'editUnit') syncWeightModeVisibility('edit');
+});
+
+window.addEventListener('load', () => {
+  try {
+    syncWeightModeVisibility('item');
+    updateWeightSummary('item');
+    syncWeightModeVisibility('edit');
+    updateWeightSummary('edit');
+  } catch (e) {}
 });

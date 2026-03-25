@@ -382,3 +382,43 @@ button:hover{background:var(--green-dark);color:#fff}
     width:100%;
   }
 }
+
+
+.weight-summary{
+  display:block;
+  margin-top:8px;
+  color:#cbd5e1;
+  font-size:.95rem;
+}
+
+#itemWeightTextWrap input{
+  width:100%;
+}
+
+
+.recipe-type-select{
+  min-height:44px;
+}
+
+.recipe-type-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-height:38px;
+  padding:8px 12px;
+  border-radius:999px;
+  font-size:13px;
+  font-weight:800;
+}
+
+.recipe-type-matlagning{
+  background:rgba(34,197,94,.16);
+  color:#bbf7d0;
+  border:1px solid rgba(34,197,94,.28);
+}
+
+.recipe-type-bakverk{
+  background:rgba(236,72,153,.16);
+  color:#fbcfe8;
+  border:1px solid rgba(236,72,153,.28);
+}
