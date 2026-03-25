@@ -5,23 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PsykopatKontroll I Köket</title>
   <link rel="stylesheet" href="style.css">
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#07122a">
-  <link rel="icon" href="icons/icon-192.png">
 </head>
 <body>
-  <header class="app-header">
-    <div class="header-left">
-      <button id="installBtn" class="install-btn" style="display:none;">📲 Installera app</button>
-    </div>
-    <div class="header-title">
-     
-      <span>🛒 PsykopatKontroll I Köket 🛒</span>
-    </div>
-    <div class="header-right">
-      <button id="themeToggleBtn" onclick="toggleTheme()">🎨 Tema</button>
-    </div>
-  </header>
+  <header>🛒 PsykopatKontroll I Köket 🛒
+      <button id="themeToggleBtn" onclick="toggleTheme()" style="position:absolute;right:20px;top:20px;">🎨 Tema</button>
+</header>
 
   <div class="page">
     
@@ -136,7 +124,7 @@
     <section class="section">
       <div class="section-top-row">
         <div class="section-title">🏠 Har hemma</div>
-        <input class="search section-search" id="searchInput" placeholder="🔍 Sök vara, kategori eller plats..." oninput="render()">
+        <input class="search section-search" id="searchInput" placeholder="🔍 Sök vara, kategori eller plats..." oninput="debouncedRender()">
         <button type="button" id="homeToggleBtn" class="ghost-btn" onclick="toggleHomeList()">Dölj</button>
       </div>
       <div class="section-subtitle">Uppdelat på kyl, frys och kryddor</div>
