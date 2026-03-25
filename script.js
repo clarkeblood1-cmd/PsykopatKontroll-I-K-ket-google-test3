@@ -425,66 +425,182 @@ function ensureCategoryExists(category) {
   return clean;
 }
 
-
 function normalizeImageFileName(name) {
   return String(name || '')
     .trim()
     .toLowerCase()
-    .replace(/å/g, 'a')
-    .replace(/ä/g, 'a')
-    .replace(/ö/g, 'o')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
-function getRawImageFileName(name) {
-  return String(name || '')
-    .trim()
+    .replace(/[’'`´]/g, '')
+    .replace(/[()\[\]{}]/g, ' ')
     .replace(/\s+/g, ' ')
-    .replace(/[\\/:"*?<>|]+/g, '')
+    .replace(/[^a-z0-9åäö _-]+/g, '')
     .trim();
 }
 
-function getImageCandidates(name) {
-  const raw = getRawImageFileName(name);
-  const normalized = normalizeImageFileName(name);
-  const candidates = [
-    raw ? `images/${raw}.png` : '',
-    raw ? `images/${raw}.jpg` : '',
-    raw ? `images/${raw}.jpeg` : '',
-    raw ? `images/${raw}.webp` : '',
-    normalized ? `images/${normalized}.png` : '',
-    normalized ? `images/${normalized}.jpg` : '',
-    normalized ? `images/${normalized}.jpeg` : '',
-    normalized ? `images/${normalized}.webp` : ''
-  ].filter(Boolean);
+function stripSwedishChars(text) {
+  return String(text || '')
+    .replace(/å/g, 'a')
+    .replace(/ä/g, 'a')
+    .replace(/ö/g, 'o');
+}
+
+function slugifyImageName(name, separator = '-') {
+  return normalizeImageFileName(name)
+    .replace(/\s+/g, separator)
+    .replace(new RegExp(`\\${separator}+`, 'g'), separator)
+    .replace(new RegExp(`^\\${separator}+|\\${separator}+$`, 'g'), '');
+}
+
+function compactImageName(name) {
+  return normalizeImageFileName(name)
+    .replace(/[ _-]+/g, '');
+}
+
+function normalizeForDistance(text) {
+  return stripSwedishChars(normalizeImageFileName(text))
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function levenshteinDistance(a, b) {
+  const s = String(a || '');
+  const t = String(b || '');
+  if (!s) return t.length;
+  if (!t) return s.length;
+
+  const rows = s.length + 1;
+  const cols = t.length + 1;
+  const matrix = Array.from({ length: rows }, () => new Array(cols).fill(0));
+
+  for (let i = 0; i < rows; i++) matrix[i][0] = i;
+  for (let j = 0; j < cols; j++) matrix[0][j] = j;
+
+  for (let i = 1; i < rows; i++) {
+    for (let j = 1; j < cols; j++) {
+      const cost = s[i - 1] === t[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + cost
+      );
+    }
+  }
+
+  return matrix[rows - 1][cols - 1];
+}
+
+function getKnownImageNames() {
+  return [...new Set([...items, ...quickItems].map(item => String(item?.name || '').trim()).filter(Boolean))];
+}
+
+function buildImageNameVariants(name) {
+  const original = normalizeImageFileName(name);
+  if (!original) return [];
+
+  const variants = new Set();
+  const add = value => {
+    const clean = String(value || '').trim();
+    if (clean) variants.add(clean);
+  };
+
+  const swedishSpaces = original;
+  const swedishHyphen = slugifyImageName(original, '-');
+  const swedishUnderscore = slugifyImageName(original, '_');
+  const swedishCompact = compactImageName(original);
+
+  const asciiSpaces = stripSwedishChars(swedishSpaces);
+  const asciiHyphen = stripSwedishChars(swedishHyphen);
+  const asciiUnderscore = stripSwedishChars(swedishUnderscore);
+  const asciiCompact = stripSwedishChars(swedishCompact);
+
+  [
+    swedishSpaces,
+    swedishHyphen,
+    swedishUnderscore,
+    swedishCompact,
+    asciiSpaces,
+    asciiHyphen,
+    asciiUnderscore,
+    asciiCompact
+  ].forEach(add);
+
+  const target = normalizeForDistance(original);
+  const maxAllowed = target.length <= 5 ? 1 : 2;
+
+  getKnownImageNames().forEach(candidateName => {
+    const candidate = normalizeForDistance(candidateName);
+    if (!candidate) return;
+    if (levenshteinDistance(target, candidate) <= maxAllowed) {
+      add(normalizeImageFileName(candidateName));
+      add(slugifyImageName(candidateName, '-'));
+      add(slugifyImageName(candidateName, '_'));
+      add(compactImageName(candidateName));
+      add(stripSwedishChars(normalizeImageFileName(candidateName)));
+      add(stripSwedishChars(slugifyImageName(candidateName, '-')));
+      add(stripSwedishChars(slugifyImageName(candidateName, '_')));
+      add(stripSwedishChars(compactImageName(candidateName)));
+    }
+  });
+
+  return [...variants];
+}
+
+function getAutoImageCandidates(name) {
+  const fileNames = buildImageNameVariants(name);
+  const extensions = ['png', 'jpg', 'jpeg', 'webp'];
+  const candidates = [];
+
+  fileNames.forEach(fileName => {
+    extensions.forEach(ext => {
+      candidates.push(`images/${encodeURIComponent(fileName)}.${ext}`);
+    });
+  });
 
   return [...new Set(candidates)];
 }
 
 function getAutoImagePath(name) {
-  const candidates = getImageCandidates(name);
-  return candidates[0] || '';
+  return getAutoImageCandidates(name)[0] || '';
 }
 
-function getDisplayImageSrc(item) {
-  return item?.img ? String(item.img) : getAutoImagePath(item?.name || '');
+function getNextAutoImagePath(name, currentSrc = '') {
+  const candidates = getAutoImageCandidates(name);
+  if (!candidates.length) return '';
+  const current = String(currentSrc || '');
+  const currentIndex = candidates.findIndex(candidate => current.includes(candidate));
+  return currentIndex === -1 ? candidates[0] : (candidates[currentIndex + 1] || '');
 }
 
-function handleAutoImageError(imgEl) {
+function getNoImagePlaceholder() {
+  return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" viewBox="0 0 220 220">' +
+    '<rect width="220" height="220" rx="18" fill="#ffffff"/>' +
+    '<text x="110" y="92" text-anchor="middle" font-size="72">🛒</text>' +
+    '<text x="110" y="148" text-anchor="middle" font-size="18" font-family="Arial" fill="#334155">Ingen bild</text>' +
+    '</svg>'
+  );
+}
+
+function handleItemImageError(imgEl) {
   if (!imgEl) return;
-  const listAttr = imgEl.getAttribute('data-img-candidates') || '';
-  const candidates = listAttr ? listAttr.split('|').filter(Boolean) : [];
-  const nextIndex = Number(imgEl.getAttribute('data-img-index') || '0') + 1;
 
-  if (nextIndex < candidates.length) {
-    imgEl.setAttribute('data-img-index', String(nextIndex));
-    imgEl.src = candidates[nextIndex];
+  const itemName = imgEl.dataset.itemName || imgEl.getAttribute('alt') || '';
+  const nextSrc = getNextAutoImagePath(itemName, imgEl.src);
+
+  if (nextSrc && !imgEl.dataset.triedSrcs?.includes(nextSrc)) {
+    const tried = imgEl.dataset.triedSrcs ? `${imgEl.dataset.triedSrcs}|${nextSrc}` : nextSrc;
+    imgEl.dataset.triedSrcs = tried;
+    imgEl.src = nextSrc;
     return;
   }
 
   imgEl.onerror = null;
-  imgEl.src = 'https://via.placeholder.com/100?text=Bild';
+  imgEl.src = getNoImagePlaceholder();
+}
+
+function getItemImage(item) {
+  if (!item) return '';
+  return item.img ? String(item.img) : getAutoImagePath(item.name || '');
 }
 
 function normalizeText(text) {
@@ -1124,9 +1240,7 @@ function createPlaceSelect(current, onchangeCode) {
 
 function createCard(item, source = 'items') {
   const realIndex = source === 'quick' ? quickItems.indexOf(item) : items.indexOf(item);
-  const img = getDisplayImageSrc(item);
-  const imgCandidates = item?.img ? [String(item.img)] : getImageCandidates(item?.name || '');
-  const imgCandidateAttr = imgCandidates.join('|').replace(/"/g, '&quot;');
+  const img = getItemImage(item) || 'https://via.placeholder.com/100?text=Bild';
   const moveText = item.type === 'home' ? '↔ Flytta 1 till köp' : '↔ Flytta 1 till hemma';
   const placeMeta = getPlaceMeta(item.place);
   const div = document.createElement('div');
@@ -1137,7 +1251,7 @@ function createCard(item, source = 'items') {
 
   if (source === 'quick') {
     div.innerHTML = `
-      <img src="${img}" alt="${item.name}" data-img-candidates="${imgCandidateAttr}" data-img-index="0" onerror="handleAutoImageError(this)" onclick="showQuickImage(${realIndex})">
+      <img src="${img}" alt="${item.name}" data-item-name="${item.name}" onerror="handleItemImageError(this)" onclick="showQuickImage(${realIndex})">
       <div class="info">
         <div class="top-tags">
           ${createCategorySelect(item.category || 'MAT', `changeQuickCategory(${realIndex}, this.value)`)}
@@ -1161,7 +1275,7 @@ function createCard(item, source = 'items') {
   }
 
   div.innerHTML = `
-    <img src="${img}" alt="${item.name}" data-img-candidates="${imgCandidateAttr}" data-img-index="0" onerror="handleAutoImageError(this)" onclick="showImage(${realIndex})">
+    <img src="${img}" alt="${item.name}" data-item-name="${item.name}" onerror="handleItemImageError(this)" onclick="showImage(${realIndex})">
     <div class="info">
       <div class="top-tags">
         <div class="category">${item.category || 'MAT'}</div>
@@ -1598,7 +1712,7 @@ function suggestUnit() {
 }
 
 function showImage(index) {
-  const src = items[index]?.img;
+  const src = getItemImage(items[index]);
   if (!src) return;
   const modal = document.getElementById('imageModal');
   const modalImg = document.getElementById('modalImg');
@@ -1607,7 +1721,7 @@ function showImage(index) {
 }
 
 function showQuickImage(index) {
-  const src = quickItems[index]?.img;
+  const src = getItemImage(quickItems[index]);
   if (!src) return;
   const modal = document.getElementById('imageModal');
   const modalImg = document.getElementById('modalImg');
@@ -1667,9 +1781,7 @@ function addItem() {
     category: ensureCategoryExists(categoryInput?.value || (matchedQuick ? matchedQuick.category : 'MAT')),
     place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : 'kyl')),
     type: 'home',
-    img: matchedQuick?.img
-      ? String(matchedQuick.img)
-      : getAutoImagePath(matchedQuick ? matchedQuick.name : name)
+    img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name)
   };
 
   const file = fileInput?.files?.[0];
