@@ -462,7 +462,7 @@ function normalizeImageName(name) {
 function getAutoImageCandidates(name) {
   const clean = normalizeImageName(name);
   if (!clean) return [];
-  return [`images/${clean}.png`];
+  return AUTO_IMAGE_EXTENSIONS.map(ext => `images/${clean}.${ext}`);
 }
 
 function getFallbackImageSrc() {
@@ -802,7 +802,7 @@ function resizeImage(file, callback) {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      const maxSize = 140;
+      const maxSize = 220;
       let { width, height } = img;
 
       if (width > height && width > maxSize) {
@@ -816,7 +816,7 @@ function resizeImage(file, callback) {
       canvas.width = width;
       canvas.height = height;
       canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-      callback(canvas.toDataURL('image/jpeg', 0.60));
+      callback(canvas.toDataURL('image/jpeg', 0.85));
     };
     img.src = event.target.result;
   };
@@ -1142,7 +1142,7 @@ function createCard(item, source = 'items') {
 
   if (source === 'quick') {
     div.innerHTML = `
-      <img loading="lazy" decoding="async" src="${img}" alt="${item.name}" data-candidates="${imageCandidatesAttr}" data-candidate-index="0" data-fallback="${fallbackImageAttr}" onerror="handleAutoImageError(this)" onclick="showQuickImage(${realIndex})">
+      <img src="${img}" alt="${item.name}" data-candidates="${imageCandidatesAttr}" data-candidate-index="0" data-fallback="${fallbackImageAttr}" onerror="handleAutoImageError(this)" onclick="showQuickImage(${realIndex})">
       <div class="info">
         <div class="top-tags">
           ${createCategorySelect(item.category || 'MAT', `changeQuickCategory(${realIndex}, this.value)`)}
@@ -1166,7 +1166,7 @@ function createCard(item, source = 'items') {
   }
 
   div.innerHTML = `
-    <img loading="lazy" decoding="async" src="${img}" alt="${item.name}" data-candidates="${imageCandidatesAttr}" data-candidate-index="0" data-fallback="${fallbackImageAttr}" onerror="handleAutoImageError(this)" onclick="showImage(${realIndex})">
+    <img src="${img}" alt="${item.name}" data-candidates="${imageCandidatesAttr}" data-candidate-index="0" data-fallback="${fallbackImageAttr}" onerror="handleAutoImageError(this)" onclick="showImage(${realIndex})">
     <div class="info">
       <div class="top-tags">
         <div class="category">${item.category || 'MAT'}</div>
@@ -2503,6 +2503,7 @@ document.addEventListener('click', event => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
+  try { applyAssistantQueryFromUrl(); } catch(e) { console.error(e); }
   hydrateData();
   householdSize = Math.max(1, Math.min(8, Number(householdSize || 1)));
   renderCategoryOptions();
@@ -2869,6 +2870,7 @@ function cookSelectedWeekRecipe() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  try { applyAssistantQueryFromUrl(); } catch(e) { console.error(e); }
   ensureWeekPlannerShape();
   refreshWeekPlannerUI();
 
@@ -2913,65 +2915,43 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 
-let renderTimer = null;
-let renderQueued = false;
 
-function debouncedRender() {
-  clearTimeout(renderTimer);
-  renderTimer = setTimeout(() => {
-    try { render(); } catch (e) { console.error(e); }
-  }, 160);
-}
+function applyAssistantQueryFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    const item = (url.searchParams.get('assistant_item') || '').trim();
+    if (!item) return;
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) searchInput.value = item;
+    if (typeof render === 'function') render();
 
-function queueRender() {
-  if (renderQueued) return;
-  renderQueued = true;
-  requestAnimationFrame(() => {
-    renderQueued = false;
-    try { render(); } catch (e) { console.error(e); }
-  });
-}
+    let found = null;
+    if (Array.isArray(window.items)) {
+      found = window.items.find(x =>
+        (x.type || 'home') === 'home' &&
+        typeof normalizeText === 'function' &&
+        normalizeText(x.name).includes(normalizeText(item))
+      );
+    }
 
-function whenIdle(fn, timeout = 120) {
-  if ('requestIdleCallback' in window) {
-    requestIdleCallback(fn, { timeout });
-  } else {
-    setTimeout(fn, 0);
+    const msg = found
+      ? `${found.name} finns i ${typeof getPlaceMeta === 'function' ? getPlaceMeta(found.place).label : found.place}.`
+      : `Jag hittade inte ${item} i listan.`;
+
+    const status = document.getElementById('assistantStatus');
+    if (status) {
+      status.style.display = 'block';
+      status.textContent = 'Google Assistant: ' + msg;
+    }
+
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(msg);
+      u.lang = 'sv-SE';
+      window.speechSynthesis.speak(u);
+    }
+  } catch (e) {
+    console.error('Assistant URL handling failed', e);
   }
 }
-
-function loadFirebaseLazy() {
-  const scripts = [
-    "https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js",
-    "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js",
-    "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js",
-    "firebase-config.js",
-    "cloud-sync.js"
-  ];
-
-  let i = 0;
-  const loadNext = () => {
-    if (i >= scripts.length) return;
-    const s = document.createElement("script");
-    s.src = scripts[i++];
-    s.defer = true;
-    s.onload = loadNext;
-    s.onerror = loadNext;
-    document.body.appendChild(s);
-  };
-  loadNext();
-}
-
-
-
-window.addEventListener("load", () => {
-  const boot = () => {
-    try { hydrateData(); } catch (e) { console.error("hydrateData failed", e); }
-    try { render(); } catch (e) { console.error("render failed", e); }
-    const loader = document.getElementById("appLoading");
-    if (loader) loader.remove();
-    setTimeout(loadFirebaseLazy, 700);
-  };
-  whenIdle(boot, 180);
-});
 
