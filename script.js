@@ -1,22 +1,3 @@
-
-
-// === AUTO IMAGE SYSTEM ===
-function normalizeImageFileName(name) {
-  return String(name || '')
-    .trim()
-    .toLowerCase()
-    .replace(/å/g, 'a')
-    .replace(/ä/g, 'a')
-    .replace(/ö/g, 'o')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
-function getAutoImagePath(name) {
-  const fileName = normalizeImageFileName(name);
-  return fileName ? `images/${fileName}.png` : '';
-}
-
 let items = JSON.parse(localStorage.getItem('matlista') || '[]');
 let quickItems = JSON.parse(localStorage.getItem('matlista_snabb') || '[]');
 let recipes = JSON.parse(localStorage.getItem('matlista_recept') || '[]');
@@ -444,6 +425,27 @@ function ensureCategoryExists(category) {
   return clean;
 }
 
+
+function normalizeImageFileName(name) {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/å/g, 'a')
+    .replace(/ä/g, 'a')
+    .replace(/ö/g, 'o')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function getAutoImagePath(name) {
+  const fileName = normalizeImageFileName(name);
+  return fileName ? `images/${fileName}.png` : '';
+}
+
+function getDisplayImageSrc(item) {
+  return item?.img ? String(item.img) : getAutoImagePath(item?.name || '');
+}
+
 function normalizeText(text) {
   return String(text || '')
     .toLowerCase()
@@ -510,7 +512,7 @@ function hydrateData() {
     category: ensureCategoryExists(item?.category || 'MAT'),
     place: ensurePlaceExists(item?.place || 'kyl'),
     type: item?.type === 'buy' ? 'buy' : 'home',
-    img: item?.img ? String(item.img) : ''
+    img: item?.img ? String(item.img) : getAutoImagePath(item?.name || '')
   })).filter(item => item.name);
 
   quickItems = quickItems.map(item => ({
@@ -522,7 +524,7 @@ function hydrateData() {
     category: ensureCategoryExists(item?.category || 'MAT'),
     place: ensurePlaceExists(item?.place || 'kyl'),
     type: 'home',
-    img: item?.img ? String(item.img) : ''
+    img: item?.img ? String(item.img) : getAutoImagePath(item?.name || '')
   })).filter(item => item.name);
 
   recipes = recipes.map(recipe => ({
@@ -1081,7 +1083,7 @@ function createPlaceSelect(current, onchangeCode) {
 
 function createCard(item, source = 'items') {
   const realIndex = source === 'quick' ? quickItems.indexOf(item) : items.indexOf(item);
-  const img = item.img || 'https://via.placeholder.com/100?text=Bild';
+  const img = getDisplayImageSrc(item);
   const moveText = item.type === 'home' ? '↔ Flytta 1 till köp' : '↔ Flytta 1 till hemma';
   const placeMeta = getPlaceMeta(item.place);
   const div = document.createElement('div');
@@ -1092,7 +1094,7 @@ function createCard(item, source = 'items') {
 
   if (source === 'quick') {
     div.innerHTML = `
-      <img src="${img}" alt="${item.name}" onclick="showQuickImage(${realIndex})">
+      <img src="${img}" alt="${item.name}" onerror="this.onerror=null;this.src='https://via.placeholder.com/100?text=Bild'" onclick="showQuickImage(${realIndex})">
       <div class="info">
         <div class="top-tags">
           ${createCategorySelect(item.category || 'MAT', `changeQuickCategory(${realIndex}, this.value)`)}
@@ -1116,7 +1118,7 @@ function createCard(item, source = 'items') {
   }
 
   div.innerHTML = `
-    <img src="${img}" alt="${item.name}" onclick="showImage(${realIndex})">
+    <img src="${img}" alt="${item.name}" onerror="this.onerror=null;this.src='https://via.placeholder.com/100?text=Bild'" onclick="showImage(${realIndex})">
     <div class="info">
       <div class="top-tags">
         <div class="category">${item.category || 'MAT'}</div>
@@ -1499,14 +1501,18 @@ function saveEditItem() {
   if (!currentItem) return;
 
   const updatedUnit = document.getElementById('editUnit')?.value || 'st';
+  const updatedName = document.getElementById('editName')?.value.trim() || '';
   const updated = {
-    name: document.getElementById('editName')?.value.trim() || '',
+    name: updatedName,
     price: Number(document.getElementById('editPrice')?.value || 0),
     quantity: Math.max(1, Number(document.getElementById('editQuantity')?.value || 1)),
     unit: updatedUnit,
     size: normalizeSize(updatedUnit, document.getElementById('editSize')?.value || currentItem.size, document.getElementById('editCategory')?.value || currentItem.category),
     category: ensureCategoryExists(document.getElementById('editCategory')?.value || currentItem.category || 'MAT'),
-    place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || 'kyl')
+    place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || 'kyl'),
+    img: currentItem?.img && String(currentItem.img).startsWith('data:')
+      ? String(currentItem.img)
+      : getAutoImagePath(updatedName)
   };
 
   if (!updated.name) return;
@@ -1618,7 +1624,9 @@ function addItem() {
     category: ensureCategoryExists(categoryInput?.value || (matchedQuick ? matchedQuick.category : 'MAT')),
     place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : 'kyl')),
     type: 'home',
-    img: matchedQuick?.img ? String(matchedQuick.img) : ''
+    img: matchedQuick?.img
+      ? String(matchedQuick.img)
+      : getAutoImagePath(matchedQuick ? matchedQuick.name : name)
   };
 
   const file = fileInput?.files?.[0];
