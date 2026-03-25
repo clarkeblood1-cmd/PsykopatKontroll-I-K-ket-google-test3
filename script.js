@@ -438,73 +438,6 @@ function normalizeText(text) {
     .trim();
 }
 
-
-const AUTO_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'];
-const LOCAL_FALLBACK_IMAGE = 'images/default.png';
-const SVG_PLACEHOLDER_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent(`
-  <svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" viewBox="0 0 220 220">
-    <rect width="220" height="220" rx="28" fill="#0b122b"/>
-    <rect x="18" y="18" width="184" height="184" rx="22" fill="#ffffff"/>
-    <text x="110" y="102" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#0f172a">Ingen</text>
-    <text x="110" y="138" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#0f172a">bild</text>
-  </svg>
-`)}`;
-
-function normalizeImageName(name) {
-  return String(name || '')
-    .toLowerCase()
-    .replace(/å/g, 'a')
-    .replace(/ä/g, 'a')
-    .replace(/ö/g, 'o')
-    .replace(/[^a-z0-9]/g, '');
-}
-
-function getAutoImageCandidates(name) {
-  const clean = normalizeImageName(name);
-  if (!clean) return [];
-  return AUTO_IMAGE_EXTENSIONS.map(ext => `images/${clean}.${ext}`);
-}
-
-function getFallbackImageSrc() {
-  return LOCAL_FALLBACK_IMAGE || SVG_PLACEHOLDER_IMAGE;
-}
-
-function getItemImageSrc(item) {
-  if (item?.img) return item.img;
-  const candidates = getAutoImageCandidates(item?.name);
-  return candidates[0] || getFallbackImageSrc();
-}
-
-function getImageCandidatesAttribute(item) {
-  const candidates = item?.img ? [] : getAutoImageCandidates(item?.name);
-  return candidates.map(src => encodeURIComponent(src)).join('|');
-}
-
-function handleAutoImageError(img) {
-  if (!img) return;
-
-  const candidates = String(img.dataset.candidates || '')
-    .split('|')
-    .filter(Boolean)
-    .map(value => decodeURIComponent(value));
-
-  let index = Number(img.dataset.candidateIndex || 0);
-  index += 1;
-
-  if (index < candidates.length) {
-    img.dataset.candidateIndex = String(index);
-    img.src = candidates[index];
-    return;
-  }
-
-  const fallback = img.dataset.fallback ? decodeURIComponent(img.dataset.fallback) : getFallbackImageSrc();
-  if (img.src !== fallback) {
-    img.onerror = null;
-    img.src = fallback || SVG_PLACEHOLDER_IMAGE;
-  }
-}
-
-
 function extractQuantity(text) {
   const match = String(text || '').match(/^(\d+)/);
   return match ? Number(match[1]) : 1;
@@ -512,6 +445,76 @@ function extractQuantity(text) {
 
 function smartIngredientMatch(a, b) {
   return normalizeText(String(a || '').replace(/^(\d+)\s*(st|g|kg|ml|dl|l|pkt)?\s*/i, '')) === normalizeText(String(b || ''));
+}
+
+
+function slugifyItemName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/å/g, 'a')
+    .replace(/ä/g, 'a')
+    .replace(/ö/g, 'o')
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+}
+
+function getAutoImage(name) {
+  const slug = slugifyItemName(name);
+  return slug ? `images/${slug}.png` : 'images/default.png';
+}
+
+function getItemImageCandidates(item) {
+  if (item?.img) return [String(item.img)];
+  const slug = slugifyItemName(item?.name);
+  if (!slug) return ['images/default.png'];
+  return [
+    `images/${slug}.png`,
+    `images/${slug}.jpg`,
+    `images/${slug}.jpeg`,
+    `images/${slug}.webp`,
+    'images/default.png'
+  ];
+}
+
+function getItemImageSrc(item) {
+  const candidates = getItemImageCandidates(item);
+  return candidates[0] || 'images/default.png';
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildImageTag(item, clickHandler) {
+  const candidates = getItemImageCandidates(item).map(src => `'${src.replace(/'/g, "\'")}'`).join(',');
+  const alt = escapeHtml(item?.name || 'Bild');
+  return `<img src="${getItemImageSrc(item)}" alt="${alt}" onclick="${clickHandler}" data-candidates="${escapeHtml(candidates)}" onerror="cycleImageFallback(this)">`;
+}
+
+function cycleImageFallback(img) {
+  if (!img) return;
+  let candidates = [];
+  try {
+    candidates = JSON.parse(`[${img.dataset.candidates || ''}]`);
+  } catch (error) {
+    candidates = [];
+  }
+  const current = img.getAttribute('src') || '';
+  const index = candidates.indexOf(current);
+  const next = index >= 0 ? candidates[index + 1] : candidates[0];
+  if (next && next !== current) {
+    img.src = next;
+    return;
+  }
+  img.onerror = null;
+  img.src = 'images/default.png';
 }
 
 function getPlaceMeta(place) {
@@ -1130,8 +1133,6 @@ function createPlaceSelect(current, onchangeCode) {
 function createCard(item, source = 'items') {
   const realIndex = source === 'quick' ? quickItems.indexOf(item) : items.indexOf(item);
   const img = getItemImageSrc(item);
-  const imageCandidatesAttr = getImageCandidatesAttribute(item);
-  const fallbackImageAttr = encodeURIComponent(getFallbackImageSrc());
   const moveText = item.type === 'home' ? '↔ Flytta 1 till köp' : '↔ Flytta 1 till hemma';
   const placeMeta = getPlaceMeta(item.place);
   const div = document.createElement('div');
@@ -1142,7 +1143,7 @@ function createCard(item, source = 'items') {
 
   if (source === 'quick') {
     div.innerHTML = `
-      <img src="${img}" alt="${item.name}" data-candidates="${imageCandidatesAttr}" data-candidate-index="0" data-fallback="${fallbackImageAttr}" onerror="handleAutoImageError(this)" onclick="showQuickImage(${realIndex})">
+      ${buildImageTag(item, `showQuickImage(${realIndex})`)}
       <div class="info">
         <div class="top-tags">
           ${createCategorySelect(item.category || 'MAT', `changeQuickCategory(${realIndex}, this.value)`)}
@@ -1166,7 +1167,7 @@ function createCard(item, source = 'items') {
   }
 
   div.innerHTML = `
-    <img src="${img}" alt="${item.name}" data-candidates="${imageCandidatesAttr}" data-candidate-index="0" data-fallback="${fallbackImageAttr}" onerror="handleAutoImageError(this)" onclick="showImage(${realIndex})">
+    ${buildImageTag(item, `showImage(${realIndex})`)}
     <div class="info">
       <div class="top-tags">
         <div class="category">${item.category || 'MAT'}</div>
@@ -1600,7 +1601,6 @@ function suggestUnit() {
 
 function showImage(index) {
   const src = getItemImageSrc(items[index]);
-  if (!src) return;
   const modal = document.getElementById('imageModal');
   const modalImg = document.getElementById('modalImg');
   if (modal) modal.style.display = 'flex';
@@ -1609,7 +1609,6 @@ function showImage(index) {
 
 function showQuickImage(index) {
   const src = getItemImageSrc(quickItems[index]);
-  if (!src) return;
   const modal = document.getElementById('imageModal');
   const modalImg = document.getElementById('modalImg');
   if (modal) modal.style.display = 'flex';
