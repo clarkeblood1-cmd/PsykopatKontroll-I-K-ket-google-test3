@@ -4439,3 +4439,61 @@ function getDragAfterElement(container, y) {
     }
   }, { offset: Number.NEGATIVE_INFINITY }).element;
 }
+
+
+// ===== PAGE TABS =====
+const PAGE_TAB_STORAGE_KEY = 'activeKitchenPage';
+const PAGE_NAMES = ['home', 'buy', 'quick', 'week', 'recipes', 'manage'];
+
+function normalizePageName(page) {
+  return PAGE_NAMES.includes(page) ? page : 'home';
+}
+
+function getInitialKitchenPage() {
+  const hashPage = (window.location.hash || '').replace('#', '').trim().toLowerCase();
+  if (PAGE_NAMES.includes(hashPage)) return hashPage;
+  const savedPage = localStorage.getItem(PAGE_TAB_STORAGE_KEY) || 'home';
+  return normalizePageName(savedPage);
+}
+
+function setActiveKitchenPage(page, pushHash = true) {
+  const nextPage = normalizePageName(page);
+  document.querySelectorAll('[data-page]').forEach(section => {
+    const isActive = section.dataset.page === nextPage;
+    section.classList.toggle('page-visible', isActive);
+    section.classList.toggle('page-switching', isActive);
+  });
+
+  document.querySelectorAll('[data-page-tab]').forEach(button => {
+    const active = button.dataset.pageTab === nextPage;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+
+  localStorage.setItem(PAGE_TAB_STORAGE_KEY, nextPage);
+  if (pushHash) {
+    history.replaceState(null, '', `#${nextPage}`);
+  }
+  window.setTimeout(() => {
+    document.querySelectorAll('.page-switching').forEach(node => node.classList.remove('page-switching'));
+  }, 220);
+}
+
+function initKitchenPageTabs() {
+  document.querySelectorAll('[data-page-tab]').forEach(button => {
+    button.addEventListener('click', () => setActiveKitchenPage(button.dataset.pageTab || 'home'));
+  });
+  setActiveKitchenPage(getInitialKitchenPage(), false);
+  window.addEventListener('hashchange', () => {
+    const hashPage = (window.location.hash || '').replace('#', '').trim().toLowerCase();
+    if (PAGE_NAMES.includes(hashPage)) setActiveKitchenPage(hashPage, false);
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initKitchenPageTabs();
+  updateManageCounts();
+});
+
+
+document.addEventListener('DOMContentLoaded', updateManageCounts);

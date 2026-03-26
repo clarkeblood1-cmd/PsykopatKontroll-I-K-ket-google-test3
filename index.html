@@ -72,7 +72,16 @@
       </div>
     </div>
 
-    <div class="controls">
+    <nav class="page-tabs" aria-label="Sidor">
+      <button type="button" class="page-tab active" data-page-tab="home">🏠 Har hemma</button>
+      <button type="button" class="page-tab" data-page-tab="buy">🛒 Behöver köpa</button>
+      <button type="button" class="page-tab" data-page-tab="quick">⚡ Snabblista</button>
+      <button type="button" class="page-tab" data-page-tab="week">📅 Veckoplan</button>
+      <button type="button" class="page-tab" data-page-tab="recipes">🍽️ Recept</button>
+      <button type="button" class="page-tab" data-page-tab="manage">⚙️ Hantera</button>
+    </nav>
+
+    <div class="controls" data-page="home">
       <select id="itemCategory" data-category-select onchange="suggestUnit()"></select>
 
       <div style="position:relative;">
@@ -110,7 +119,20 @@
       <button type="button" onclick="addItem()">➕ Lägg till</button>
     </div>
 
-    <section class="section category-manager-section">
+
+    <section class="section manage-hero" data-page="manage">
+      <div class="manage-hero-card">
+        <div class="manage-hero-badge">⚙️ Egen hantera-sida</div>
+        <h2>Hantera kategorier och platser separat</h2>
+        <p>Här samlar du allt för strukturering av appen: skapa nya kategorier, lägg till egna platser och håll listorna rena utan att Har hemma-sidan blir rörig.</p>
+        <div class="manage-hero-stats">
+          <div class="manage-stat-pill"><span>🏷️</span><strong id="manageCategoryCount">0 kategorier</strong></div>
+          <div class="manage-stat-pill"><span>📍</span><strong id="managePlaceCount">0 platser</strong></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section category-manager-section manage-card" data-page="manage">
       <div class="section-top-row">
         <div class="section-title">🏷️ Kategorier</div>
         <div class="section-search-wrap category-manager-bar">
@@ -125,7 +147,7 @@
       <div id="categoryChips" class="category-chips"></div>
     </section>
 
-    <section class="section category-manager-section">
+    <section class="section category-manager-section manage-card" data-page="manage">
       <div class="section-top-row">
         <div class="section-title">📍 Platser</div>
         <div class="section-search-wrap category-manager-bar">
@@ -138,7 +160,7 @@
       <div id="placeChips" class="category-chips"></div>
     </section>
 
-    <section class="section">
+    <section class="section" data-page="quick">
       <div class="section-top-row">
         <div class="section-title">⚡ Snabblista</div>
         <div class="section-search-wrap" style="position:relative;">
@@ -147,11 +169,11 @@
         </div>
         <button type="button" id="quickToggleBtn" class="ghost-btn" onclick="toggleQuickList()">Dölj</button>
       </div>
-      <div class="section-subtitle">Sök, redigera och lägg till till listan</div>
+      <div class="section-subtitle">Egen sida för snabblistan – sök, redigera, dra om ordning och lägg till till listan</div>
       <div class="container" id="quickList" ondragover="allowDrop(event)" ondragleave="removeDropHover(event)" ondrop="dropToQuickList()"></div>
     </section>
 
-    <section class="section">
+    <section class="section" data-page="home">
       <div class="section-top-row">
         <div class="section-title">🏠 Har hemma</div>
         <input class="search section-search" id="searchInput" placeholder="🔍 Sök vara, kategori eller plats..." oninput="render()">
@@ -161,7 +183,7 @@
       <div class="container" id="homeList"></div>
     </section>
 
-    <section class="section">
+    <section class="section" data-page="buy">
       <div class="section-top-row">
         <div class="section-title">🛒 Behöver köpa</div>
         <div class="section-search-spacer"></div>
@@ -172,7 +194,7 @@
     </section>
 
 
-    <section class="section week-section-compact">
+    <section class="section week-section-compact" data-page="week">
   <div class="section-top-row">
     <div class="section-title">📅 Veckoplan</div>
     <div class="section-search-spacer"></div>
@@ -257,7 +279,7 @@
   </div>
 </section>
 
-    <section class="section">
+    <section class="section" data-page="recipes">
       <div class="section-top-row">
         <div class="section-title">🍽️ Recept</div>
         <div class="section-search-spacer"></div>
