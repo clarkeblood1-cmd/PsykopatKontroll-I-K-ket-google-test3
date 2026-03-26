@@ -7,6 +7,11 @@ if (!Array.isArray(categories) || !categories.length) {
   categories = ['MAT'];
 }
 
+let recipeCategories = JSON.parse(localStorage.getItem('matlista_recipe_categories') || 'null');
+if (!Array.isArray(recipeCategories) || !recipeCategories.length) {
+  recipeCategories = ['matlagning', 'bakverk'];
+}
+
 let places = JSON.parse(localStorage.getItem('matlista_places') || 'null');
 if (!Array.isArray(places) || !places.length) {
   places = [
@@ -22,11 +27,169 @@ function normalizeRecipeType(type) {
   return value === 'bakverk' ? 'bakverk' : 'matlagning';
 }
 
+function normalizeRecipeCategory(category) {
+  const value = String(category || '').trim().toLowerCase();
+  return value || 'matlagning';
+}
+
+function getRecipeFallbackCategory(recipe) {
+  return normalizeRecipeType(recipe?.type || recipe?.category || 'matlagning');
+}
+
+function ensureRecipeCategoryExists(category) {
+  const normalized = normalizeRecipeCategory(category);
+  if (!recipeCategories.includes(normalized)) {
+    recipeCategories.push(normalized);
+  }
+  return normalized;
+}
+
+function getRecipeCategoryLabel(category) {
+  const normalized = normalizeRecipeCategory(category);
+  return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Matlagning';
+}
+
+function getRecipeYieldLabel(category, count = null) {
+  const normalized = normalizeRecipeCategory(category);
+  if (normalized === 'bakverk') return '';
+  const baseLabel = 'portion';
+  const amount = Number(count || 0);
+  if (!amount) return 'Portioner';
+  return `${amount} ${baseLabel}${amount === 1 ? '' : 'er'}`;
+}
+
+function isRecipePortionControlled(recipe = null) {
+  return normalizeRecipeCategory(recipe?.category || recipe?.type || 'matlagning') !== 'bakverk';
+}
+
+function normalizeRecipeYield(value, fallback = 4) {
+  const n = Math.round(Number(value || 0));
+  return Math.max(1, Math.min(24, Number.isFinite(n) && n > 0 ? n : fallback));
+}
+
+function getRecipeBaseYield(recipe = null) {
+  return normalizeRecipeYield(recipe?.yield, 4);
+}
+
+function getSelectedRecipePortions() {
+  return Math.max(1, householdSize);
+}
+
+function getRecipeScaleFactor(recipe = null) {
+  if (!recipe || !isRecipePortionControlled(recipe)) return 1;
+  return getSelectedRecipePortions() / Math.max(1, getRecipeBaseYield(recipe));
+}
+
+function shouldUseGlobalPortionWeight(ingredient, recipe = null) {
+  if (!recipe || !isRecipePortionControlled(recipe)) return false;
+  const ing = normalizeRecipeIngredient(ingredient);
+  if (!ing || !isWeightUnit(ing.unit)) return false;
+  const normalized = normalizeText(ing.name);
+  const keywords = [
+    'kottfars', 'notfars', 'blandfars', 'hushallsfars', 'kycklingfars',
+    'kyckling', 'flaskfile', 'flaskkotlett', 'flask', 'nötfars', 'notfile', 'not',
+    'lax', 'torsk', 'fisk', 'korv', 'falukorv', 'scans', 'entrecote', 'biff',
+    'kott', 'högrev', 'bog', 'salsiccia', 'chorizo'
+  ];
+  return keywords.some(keyword => normalized.includes(normalizeText(keyword)));
+}
+
+function getSmartPortionWeightForIngredient(ingredient, recipe = null) {
+  const ing = normalizeRecipeIngredient(ingredient);
+  if (!ing || !shouldUseGlobalPortionWeight(ing, recipe)) return null;
+  return Math.max(1, Number(getSelectedRecipePortions() || 1) * Number(portionGrams || 0));
+}
+
+function getSmartPortionRuleForIngredient(ingredient, recipe = null) {
+  const ing = normalizeRecipeIngredient(ingredient);
+  if (!ing || !recipe || !isRecipePortionControlled(recipe)) return null;
+
+  const normalized = normalizeText(ing.name);
+  const hasAny = keywords => keywords.some(keyword => normalized.includes(normalizeText(keyword)));
+
+  if (shouldUseGlobalPortionWeight(ing, recipe)) {
+    return { amount: Math.max(1, Number(getSelectedRecipePortions() || 1) * Number(portionGrams || 0)), unit: 'g', label: 'protein' };
+  }
+
+  if (hasAny(['pasta', 'spaghetti', 'makaroner', 'makaroni', 'nudlar', 'couscous', 'bulgur'])) {
+    return { amount: Math.max(1, Number(getSelectedRecipePortions() || 1) * 100), unit: 'g', label: 'pasta' };
+  }
+
+  if (hasAny(['ris', 'quinoa', 'matvete', 'gryn', 'havreris'])) {
+    return { amount: Math.max(1, Number(getSelectedRecipePortions() || 1) * 75), unit: 'g', label: 'ris' };
+  }
+
+  if (hasAny(['potatis', 'pommes', 'potatismos'])) {
+    return { amount: Math.max(1, Number(getSelectedRecipePortions() || 1) * 250), unit: 'g', label: 'potatis' };
+  }
+
+  if (hasAny(['riven ost', 'ost riven', 'pizzaost', 'mozzarella riven', 'cheddar riven']) || isRecipeGratedCheeseName(ing.name)) {
+    return { amount: Math.max(1, Number(getSelectedRecipePortions() || 1) * 25), unit: 'g', label: 'ost' };
+  }
+
+  if (hasAny(['gradde', 'grädde', 'creme fraiche', 'crème fraiche', 'kokosmjolk', 'kokosmjölk', 'mjolk', 'mjölk', 'passata', 'krossade tomater', 'tomatsas', 'tomatsås', 'buljong', 'fond', 'sas', 'sås'])) {
+    return { amount: Math.max(1, Number(getSelectedRecipePortions() || 1) * 75), unit: 'ml', label: 'sås' };
+  }
+
+  if (hasAny(['broccoli', 'blomkal', 'blomkål', 'morot', 'paprika', 'sallad', 'spenat', 'gronsaker', 'grönsaker', 'majs', 'arter', 'ärter', 'lok', 'lök', 'tomat', 'gurka', 'zucchini'])) {
+    return { amount: Math.max(1, Number(getSelectedRecipePortions() || 1) * 100), unit: 'g', label: 'grönsaker' };
+  }
+
+  return null;
+}
+
+function getRecipePortionSummary(recipe = null) {
+  if (!recipe || !isRecipePortionControlled(recipe)) return '';
+  const target = getSelectedRecipePortions();
+  const base = getRecipeBaseYield(recipe);
+  const ratio = getRecipeScaleFactor(recipe);
+  const ratioText = ratio === 1 ? '1×' : `${String(Number(ratio.toFixed(2))).replace('.', ',')}×`;
+  return `${base} portioner sparat → ${target} portioner nu (${ratioText})`;
+}
+
+function refreshPortionSelectLabels(recipe = null) {
+  const yieldWrap = document.getElementById('recipeYieldWrap');
+  const yieldInput = document.getElementById('recipeYield');
+  const yieldLabel = document.getElementById('recipeYieldLabel');
+  const selectedInfo = document.getElementById('recipePortionInfo');
+
+  const categoryValue = normalizeRecipeCategory(document.getElementById('recipeCategory')?.value || recipe?.category || recipe?.type || 'matlagning');
+  const isPortionRecipe = categoryValue !== 'bakverk';
+
+  if (yieldWrap) yieldWrap.style.display = isPortionRecipe ? '' : 'none';
+  if (yieldLabel) yieldLabel.textContent = isPortionRecipe ? 'Receptet räcker till' : 'Bakverk';
+  if (yieldInput) {
+    if (isPortionRecipe) {
+      const nextValue = recipe ? getRecipeBaseYield(recipe) : normalizeRecipeYield(yieldInput.value || 4, 4);
+      if (String(yieldInput.value || '') !== String(nextValue)) yieldInput.value = String(nextValue);
+    }
+  }
+
+  if (selectedInfo) {
+    if (recipe && isRecipePortionControlled(recipe)) {
+      selectedInfo.style.display = 'block';
+      selectedInfo.textContent = `👥 ${getRecipePortionSummary(recipe)} • ${householdSize} personer × ${portionGrams} g = ${formatWeightDisplay(householdSize * portionGrams)}`;
+    } else {
+      selectedInfo.style.display = 'none';
+      selectedInfo.textContent = '';
+    }
+  }
+}
+
+function handlePortionInputChange() {
+  renderSelectedRecipeIngredients();
+  clearRecipeResult();
+}
+
+function getRecipeCategoryMeta(category) {
+  const normalized = normalizeRecipeCategory(category);
+  if (normalized === 'bakverk') return { value: 'bakverk', label: 'Bakverk', icon: '🧁' };
+  if (normalized === 'matlagning') return { value: 'matlagning', label: 'Matlagning', icon: '🍳' };
+  return { value: normalized, label: getRecipeCategoryLabel(normalized), icon: '🍽️' };
+}
+
 function getRecipeTypeMeta(type) {
-  const normalized = normalizeRecipeType(type);
-  return normalized === 'bakverk'
-    ? { value: 'bakverk', label: 'Bakverk', icon: '🧁' }
-    : { value: 'matlagning', label: 'Matlagning', icon: '🍳' };
+  return getRecipeCategoryMeta(type);
 }
 
 if (!recipes.length) {
@@ -40,7 +203,9 @@ if (!recipes.length) {
         { name: 'ost', quantity: 1, unit: 'st', size: null }
       ],
       link: '',
-      type: 'matlagning'
+      type: 'matlagning',
+      category: 'matlagning',
+      yield: 4
     }
   ];
 }
@@ -56,9 +221,12 @@ let recipeDraftItems = [];
 let currentRecipeMissing = [];
 let recipeIngredientChoices = JSON.parse(localStorage.getItem('matlista_recipe_choices') || '{}');
 let householdSize = Math.max(1, Number(localStorage.getItem('matlista_household_size') || 1));
+let portionGrams = Math.max(1, Math.min(300, Math.round(Number(localStorage.getItem('matlista_portion_grams') || 100) || 100)));
 let editingIngredientIndex = null;
 let editingIngredientRecipeIndex = null;
 let selectedAddQuickIndex = null;
+
+let recipeCategoryEditState = { activeFilter: '' };
 
 let draggedItemIndex = null;
 let draggedItemSource = null;
@@ -76,14 +244,14 @@ const lockedPlaceKeys = ['kyl', 'frys', 'kryddor'];
 
 const weightSizeOptions = [14, 28, 50, 100, 150, 200, 250, 500, 750, 1000];
 const spiceWeightSizeOptions = [14, 28, 50, 100, 150, 200];
-const liquidSizeOptions = [250, 500, 1000, 1500, 2000];
+const liquidSizeOptions = [1, 5, 15, 50, 100, 250, 500, 1000, 1500, 2000];
 
 function isWeightUnit(unit) {
   return ['g', 'kg'].includes(String(unit || '').toLowerCase());
 }
 
 function isLiquidUnit(unit) {
-  return ['ml', 'l', 'dl'].includes(String(unit || '').toLowerCase());
+  return ['ml', 'l', 'dl', 'krm', 'tsk', 'msk'].includes(String(unit || '').toLowerCase());
 }
 
 function supportsSize(unit) {
@@ -161,7 +329,7 @@ function getRecipeIngredientContext(value = null) {
 
   if (typeof value === 'string') {
     const raw = String(value).trim();
-    const match = raw.match(/^\d+\s*(st|g|kg|ml|dl|l|pkt)?\s+(.*)$/i);
+    const match = raw.match(/^\d+\s*(st|g|kg|ml|dl|l|krm|tsk|msk|pkt)?\s+(.*)$/i);
     const name = match ? match[2] : raw;
     if (isRecipeGratedCheeseName(name)) return 'RECIPE_RIVEN_OST';
     return isRecipeSpiceName(name) ? 'RECIPE_KRYDDOR' : 'RECIPE';
@@ -198,6 +366,9 @@ function getDisplayUnit(unit, size = null) {
     const value = Number(size || 0);
     if (value >= 1000) return 'l';
     if (value >= 100) return 'dl';
+    if (value < 5 && Number.isInteger(value)) return 'krm';
+    if (value < 15 && value % 5 === 0) return 'tsk';
+    if (value < 100 && value % 15 === 0) return 'msk';
     return 'ml';
   }
   return unit || 'st';
@@ -205,15 +376,14 @@ function getDisplayUnit(unit, size = null) {
 
 function formatItemAmount(item) {
   const amount = Math.max(0, Number(item?.quantity || 0));
-  if (supportsSize(item?.unit)) {
-    const sizeLabel = formatSizeValue(item.unit, item.size);
-    return `${amount} × ${sizeLabel}`;
-  }
-  return `${amount} ${item?.unit || 'st'}`;
-}
 
-function getSelectedRecipePortions() {
-  return Number(document.getElementById('portionSelect')?.value || 2);
+  if (supportsSize(item?.unit)) {
+    const size = Number(item?.size || 0);
+    const total = amount * size;
+    return formatSmartMeasureDisplay(total, item.unit);
+  }
+
+  return `${amount} ${item?.unit || 'st'}`;
 }
 
 function portionToRecipeSize(portions) {
@@ -246,21 +416,41 @@ function portionToRecipeGratedCheeseSize(portions) {
   return map[Number(portions) || 2] || 50;
 }
 
-function applySelectedPortionToIngredient(value) {
+function applySelectedPortionToIngredient(value, recipe = null) {
   const ingredient = normalizeRecipeIngredient(value);
   if (!ingredient) return null;
-  if (isWeightUnit(ingredient.unit)) {
-    const context = getRecipeIngredientContext(ingredient);
+
+  if (!isRecipePortionControlled(recipe)) return { ...ingredient };
+
+  const smartRule = getSmartPortionRuleForIngredient(ingredient, recipe);
+  if (smartRule) {
     return {
       ...ingredient,
-      size: context === 'RECIPE_KRYDDOR'
-        ? portionToRecipeSpiceSize(getSelectedRecipePortions())
-        : context === 'RECIPE_RIVEN_OST'
-          ? portionToRecipeGratedCheeseSize(getSelectedRecipePortions())
-          : portionToRecipeSize(getSelectedRecipePortions())
+      quantity: 1,
+      unit: smartRule.unit,
+      size: smartRule.amount,
+      measureText: supportsSize(smartRule.unit) ? formatSmartMeasureDisplay(smartRule.amount, smartRule.unit) : '',
+      weightText: isWeightUnit(smartRule.unit) ? formatSmartMeasureDisplay(smartRule.amount, smartRule.unit) : ''
     };
   }
-  return ingredient;
+
+  const factor = getRecipeScaleFactor(recipe);
+  if (supportsSize(ingredient.unit)) {
+    const totalAmount = recipeIngredientCanonicalAmount(ingredient);
+    const scaledAmount = Math.max(1, Math.round(totalAmount * factor));
+    return {
+      ...ingredient,
+      quantity: 1,
+      size: scaledAmount,
+      measureText: formatSmartMeasureDisplay(scaledAmount, ingredient.unit),
+      weightText: isWeightUnit(ingredient.unit) ? formatSmartMeasureDisplay(scaledAmount, ingredient.unit) : ''
+    };
+  }
+
+  return {
+    ...ingredient,
+    quantity: Math.max(1, Math.ceil(Number(ingredient.quantity || 1) * factor))
+  };
 }
 
 const recipeReplacementGroups = {
@@ -306,6 +496,7 @@ function setRecipeIngredientChoice(recipeName, ingredientName, value) {
   else delete recipeIngredientChoices[key];
   localStorage.setItem('matlista_recipe_choices', JSON.stringify(recipeIngredientChoices));
   localStorage.setItem('matlista_household_size', String(householdSize));
+  localStorage.setItem('matlista_portion_grams', String(portionGrams));
 }
 
 function clearRecipeChoicesForRecipe(recipeName) {
@@ -330,7 +521,7 @@ function getRecipeReplacementOptions(ingredient) {
 }
 
 function resolveRecipeIngredient(ingredient, recipe = null) {
-  const base = applySelectedPortionToIngredient(ingredient);
+  const base = applySelectedPortionToIngredient(ingredient, recipe);
   if (!base) return null;
   if (!recipe?.name) return base;
 
@@ -641,6 +832,9 @@ function unitToBaseMultiplier(unit) {
   const u = String(unit || '').trim().toLowerCase();
   if (u === 'kg' || u === 'l') return 1000;
   if (u === 'dl') return 100;
+  if (u === 'msk') return 15;
+  if (u === 'tsk') return 5;
+  if (u === 'krm') return 1;
   return 1;
 }
 
@@ -648,7 +842,7 @@ function parseSmartMeasureInput(text, unitHint = 'g') {
   const raw = String(text || '').trim().toLowerCase().replace(',', '.');
   if (!raw) return null;
 
-  const match = raw.match(/^(\d+(?:\.\d+)?)\s*(kg|g|ml|dl|l)?$/i);
+  const match = raw.match(/^(\d+(?:\.\d+)?)\s*(kg|g|ml|dl|l|krm|tsk|msk)?$/i);
   if (!match) return null;
 
   const value = parseFloat(match[1]);
@@ -680,13 +874,23 @@ function formatWeightDisplay(grams) {
 function formatLiquidDisplay(ml) {
   const value = Number(ml || 0);
   if (!Number.isFinite(value) || value <= 0) return '';
+
+  const fmt = (n) => String(Number(n.toFixed(2))).replace('.', ',');
+
   if (value >= 1000) {
-    const l = value / 1000;
-    return `${l.toFixed(l % 1 === 0 ? 0 : 2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1').replace('.', ',')} l`;
+    return `${fmt(value / 1000)} l`;
   }
   if (value >= 100) {
-    const dl = value / 100;
-    return `${dl.toFixed(dl % 1 === 0 ? 0 : 2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1').replace('.', ',')} dl`;
+    return `${fmt(value / 100)} dl`;
+  }
+  if (value < 5 && Number.isInteger(value)) {
+    return `${Math.round(value)} krm`;
+  }
+  if (value < 15 && value % 5 === 0) {
+    return `${Math.round(value / 5)} tsk`;
+  }
+  if (value < 100 && value % 15 === 0) {
+    return `${Math.round(value / 15)} msk`;
   }
   return `${Math.round(value)} ml`;
 }
@@ -701,6 +905,9 @@ function getSmartMeasurePlaceholder(unit) {
   const u = String(unit || '').toLowerCase();
   if (u === 'kg' || u === 'l') return 'Mängd per st, t.ex. 1 eller 1,5';
   if (u === 'dl') return 'Mängd per st, t.ex. 5 eller 2,5';
+  if (u === 'tsk') return 'Mängd per st, t.ex. 1 eller 2';
+  if (u === 'msk') return 'Mängd per st, t.ex. 1 eller 2';
+  if (u === 'krm') return 'Mängd per st, t.ex. 1 eller 3';
   return 'Mängd per st, t.ex. 500 eller 1,5';
 }
 
@@ -796,6 +1003,61 @@ function getEditMeasureTextInput() {
 
 function getEditMeasureSummaryEl() {
   return document.getElementById('editMeasureSummary');
+}
+
+function getIngredientEditMeasureTextInput() {
+  return document.getElementById('ingredientEditMeasureText');
+}
+
+function getIngredientEditMeasureSummaryEl() {
+  return document.getElementById('ingredientEditMeasureSummary');
+}
+
+function updateIngredientEditMeasureSummary() {
+  const amountEl = document.getElementById('ingredientEditQty');
+  const unitEl = document.getElementById('ingredientEditUnit');
+  const inputEl = getIngredientEditMeasureTextInput();
+  const summaryEl = getIngredientEditMeasureSummaryEl();
+
+  if (!amountEl || !unitEl || !inputEl || !summaryEl) return;
+
+  const amount = Math.max(1, Number(amountEl.value || 1));
+  const unit = unitEl.value;
+  const parsed = parseSmartMeasureInput(inputEl.value, unit);
+
+  if (!parsed || !supportsSize(unit)) {
+    summaryEl.textContent = '';
+    summaryEl.style.display = 'none';
+    return;
+  }
+
+  const total = parsed * amount;
+  const warning = getMeasureValidationMessage(parsed, amount, unit);
+  summaryEl.textContent = warning || `${amount} × ${formatSmartMeasureDisplay(parsed, unit)} = ${formatSmartMeasureDisplay(total, unit)}`;
+  summaryEl.style.display = 'block';
+}
+
+function syncIngredientEditMeasureModeVisibility() {
+  const unitEl = document.getElementById('ingredientEditUnit');
+  const sizeWrap = document.getElementById('ingredientEditSizeWrap');
+  const measureWrap = document.getElementById('ingredientEditMeasureTextWrap');
+  const inputEl = getIngredientEditMeasureTextInput();
+
+  if (!unitEl || !sizeWrap || !measureWrap) return;
+
+  const smartMode = supportsSize(unitEl.value);
+  sizeWrap.style.display = smartMode ? 'none' : '';
+  measureWrap.style.display = smartMode ? '' : 'none';
+
+  if (inputEl) inputEl.placeholder = getSmartMeasurePlaceholder(unitEl.value);
+
+  if (smartMode && inputEl?.value) {
+    const parsed = parseSmartMeasureInput(inputEl.value, unitEl.value);
+    if (parsed) inputEl.value = formatSmartMeasureDisplay(parsed, unitEl.value);
+  }
+
+  if (!smartMode && inputEl) inputEl.value = '';
+  updateIngredientEditMeasureSummary();
 }
 
 function updateEditMeasureSummary() {
@@ -956,12 +1218,24 @@ function hydrateData() {
     img: item?.img ? String(item.img) : getAutoImagePath(item?.name || '')
   })).filter(item => item.name);
 
-  recipes = recipes.map(recipe => ({
-    name: String(recipe?.name || '').trim(),
-    items: normalizeRecipeIngredientList(recipe?.items),
-    link: String(recipe?.link || ''),
-    type: normalizeRecipeType(recipe?.type)
-  })).filter(recipe => recipe.name);
+  recipeCategories = [...new Set(
+    recipeCategories
+      .map(cat => normalizeRecipeCategory(cat))
+      .filter(Boolean)
+      .concat(['matlagning', 'bakverk'])
+  )];
+
+  recipes = recipes.map(recipe => {
+    const fallbackCategory = normalizeRecipeCategory(recipe?.category || recipe?.type || 'matlagning');
+    return {
+      name: String(recipe?.name || '').trim(),
+      items: normalizeRecipeIngredientList(recipe?.items),
+      link: String(recipe?.link || ''),
+      type: normalizeRecipeType(recipe?.type || fallbackCategory),
+      category: ensureRecipeCategoryExists(fallbackCategory),
+      yield: normalizeRecipeYield(recipe?.yield, 4)
+    };
+  }).filter(recipe => recipe.name);
 
   if (!categories.includes('MAT')) categories.unshift('MAT');
   categories = [...new Set(categories.map(c => String(c || '').trim().toUpperCase()).filter(Boolean))];
@@ -976,10 +1250,12 @@ function save() {
   localStorage.setItem('matlista_snabb', JSON.stringify(quickItems));
   localStorage.setItem('matlista_recept', JSON.stringify(recipes));
   localStorage.setItem('matlista_categories', JSON.stringify(categories));
+  localStorage.setItem('matlista_recipe_categories', JSON.stringify(recipeCategories));
   localStorage.setItem('matlista_places', JSON.stringify(places));
   localStorage.setItem('homeOpenState', JSON.stringify(homeOpenState));
   localStorage.setItem('matlista_recipe_choices', JSON.stringify(recipeIngredientChoices));
   localStorage.setItem('matlista_household_size', String(householdSize));
+  localStorage.setItem('matlista_portion_grams', String(portionGrams));
   localStorage.setItem('matlista_weekplanner', JSON.stringify(weekPlanner));
   localStorage.setItem('matlista_weekplanner_selected', selectedWeekDay);
 
@@ -987,10 +1263,12 @@ function save() {
   window.quickItems = quickItems;
   window.recipes = recipes;
   window.categories = categories;
+  window.recipeCategories = recipeCategories;
   window.places = places;
   window.homeOpenState = homeOpenState;
   window.recipeIngredientChoices = recipeIngredientChoices;
   window.householdSize = householdSize;
+  window.portionGrams = portionGrams;
   window.weekPlanner = weekPlanner;
   window.selectedWeekDay = selectedWeekDay;
 }
@@ -1108,6 +1386,7 @@ function renderCategoryOptions() {
   }
 
   renderCategoryManager();
+  renderRecipeCategoryOptions();
 }
 
 function renderCategoryManager() {
@@ -1126,6 +1405,167 @@ function renderCategoryManager() {
   });
 }
 
+
+function renderRecipeCategoryOptions() {
+  const recipeCategory = document.getElementById('recipeCategory');
+  if (recipeCategory) {
+    const current = recipeCategory.dataset.currentValue || recipeCategory.value || 'matlagning';
+    recipeCategory.innerHTML = recipeCategories
+      .map(cat => `<option value="${cat}">${getRecipeCategoryMeta(cat).icon} ${getRecipeCategoryLabel(cat)}</option>`)
+      .join('');
+    recipeCategory.value = recipeCategories.includes(current) ? current : 'matlagning';
+  }
+
+  const recipeCategoryFilter = document.getElementById('recipeCategoryFilter');
+  if (recipeCategoryFilter) {
+    const current = recipeCategoryFilter.dataset.currentValue || recipeCategoryFilter.value || recipeCategoryEditState.activeFilter || '';
+    recipeCategoryFilter.innerHTML = '<option value="">Alla kategorier</option>' + recipeCategories
+      .map(cat => `<option value="${cat}">${getRecipeCategoryMeta(cat).icon} ${getRecipeCategoryLabel(cat)}</option>`)
+      .join('');
+    recipeCategoryFilter.value = recipeCategories.includes(current) ? current : '';
+    recipeCategoryEditState.activeFilter = recipeCategoryFilter.value || '';
+  }
+
+  renderRecipeCategoryManager();
+  refreshPortionSelectLabels(getSelectedRecipe());
+}
+
+function renderRecipeCategoryManager() {
+  const wrap = document.getElementById('recipeCategoryChips');
+  if (!wrap) return;
+
+  const active = recipeCategoryEditState.activeFilter || '';
+  wrap.innerHTML = '';
+
+  const allChip = document.createElement('div');
+  allChip.className = `category-chip category-chip-filter ${active === '' ? 'active' : ''}`;
+  allChip.innerHTML = `<button type="button" class="chip-filter-btn" onclick="setRecipeCategoryFilter('')">Alla kategorier</button>`;
+  wrap.appendChild(allChip);
+
+  recipeCategories.forEach(category => {
+    const chip = document.createElement('div');
+    const locked = category === 'matlagning' || category === 'bakverk';
+    const label = `${getRecipeCategoryMeta(category).icon} ${getRecipeCategoryLabel(category)}`;
+    chip.className = `category-chip category-chip-filter ${active === category ? 'active' : ''}`;
+
+    chip.innerHTML = `
+      <button type="button" class="chip-filter-btn" onclick="setRecipeCategoryFilter('${category.replace(/'/g, "\\'")}')">${label}</button>
+      <button type="button" class="chip-edit" onclick="renameRecipeCategoryPrompt('${category.replace(/'/g, "\\'")}')">✏️</button>
+      ${locked ? '<span class="chip-lock">Fallback</span>' : `<button type="button" class="chip-delete" onclick="removeRecipeCategory('${category.replace(/'/g, "\\'")}')">×</button>`}
+    `;
+    wrap.appendChild(chip);
+  });
+}
+
+function setRecipeCategoryFilter(value) {
+  const normalized = value ? normalizeRecipeCategory(value) : '';
+  recipeCategoryEditState.activeFilter = normalized;
+  const recipeCategoryFilter = document.getElementById('recipeCategoryFilter');
+  if (recipeCategoryFilter) {
+    recipeCategoryFilter.value = normalized;
+  }
+  renderRecipeCategoryManager();
+  renderRecipeSelect();
+  clearRecipeResult();
+}
+
+function addRecipeCategory() {
+  const input = document.getElementById('newRecipeCategoryName');
+  if (!input) return;
+
+  const clean = normalizeRecipeCategory(input.value || '');
+  if (!clean) return;
+
+  if (recipeCategories.includes(clean)) {
+    alert('Receptkategori finns redan.');
+    input.value = '';
+    return;
+  }
+
+  recipeCategories.push(clean);
+  save();
+  input.value = '';
+  renderRecipeCategoryOptions();
+  setRecipeCategoryFilter(clean);
+}
+
+function renameRecipeCategoryPrompt(oldName) {
+  const cleanOld = normalizeRecipeCategory(oldName);
+  if (!cleanOld) return;
+
+  const next = prompt('Ändra namn på receptkategori', getRecipeCategoryLabel(cleanOld));
+  if (next === null) return;
+
+  const cleanNew = normalizeRecipeCategory(next);
+  if (!cleanNew) {
+    alert('Kategori kan inte vara tom.');
+    return;
+  }
+
+  if (cleanNew === cleanOld) return;
+
+  if (recipeCategories.includes(cleanNew)) {
+    alert('Receptkategori finns redan.');
+    return;
+  }
+
+  recipeCategories = recipeCategories.map(cat => cat === cleanOld ? cleanNew : cat);
+
+  recipes.forEach(recipe => {
+    if (normalizeRecipeCategory(recipe.category) === cleanOld) {
+      recipe.category = cleanNew;
+    }
+    if (normalizeRecipeType(recipe.type) === cleanOld) {
+      recipe.type = cleanNew === 'bakverk' ? 'bakverk' : 'matlagning';
+    }
+  });
+
+  if (recipeCategoryEditState.activeFilter === cleanOld) {
+    recipeCategoryEditState.activeFilter = cleanNew;
+  }
+
+  const recipeCategory = document.getElementById('recipeCategory');
+  if (recipeCategory && normalizeRecipeCategory(recipeCategory.value) === cleanOld) {
+    recipeCategory.dataset.currentValue = cleanNew;
+  }
+
+  const recipeCategoryFilter = document.getElementById('recipeCategoryFilter');
+  if (recipeCategoryFilter && normalizeRecipeCategory(recipeCategoryFilter.value) === cleanOld) {
+    recipeCategoryFilter.dataset.currentValue = cleanNew;
+  }
+
+  save();
+  renderRecipeCategoryOptions();
+  renderRecipeSelect();
+  renderSelectedRecipeIngredients();
+}
+
+function removeRecipeCategory(name) {
+  const clean = normalizeRecipeCategory(name);
+  if (!clean) return;
+
+  if (clean === 'matlagning' || clean === 'bakverk') {
+    alert('Matlagning och Bakverk kan inte tas bort. De används som fallback.');
+    return;
+  }
+
+  recipeCategories = recipeCategories.filter(cat => cat !== clean);
+
+  recipes.forEach(recipe => {
+    if (normalizeRecipeCategory(recipe.category) === clean) {
+      recipe.category = getRecipeFallbackCategory(recipe);
+    }
+  });
+
+  if (recipeCategoryEditState.activeFilter === clean) {
+    recipeCategoryEditState.activeFilter = '';
+  }
+
+  save();
+  renderRecipeCategoryOptions();
+  renderRecipeSelect();
+  renderSelectedRecipeIngredients();
+}
 function addCategory() {
   const input = document.getElementById('newCategoryName');
   if (!input) return;
@@ -1230,6 +1670,34 @@ function updateHouseholdSize(value) {
   householdSize = Math.max(1, Math.min(8, Number(value || 1)));
   save();
   updateSummary();
+  refreshPortionSelectLabels(getSelectedRecipe());
+  clearRecipeResult();
+  renderSelectedRecipeIngredients();
+}
+
+function setPortionGramsPreset(value) {
+  updatePortionGrams(value);
+}
+
+function updatePortionGrams(value, live = false) {
+  const input = document.getElementById('portionGrams');
+  const parsed = Math.round(Number(value || 0));
+
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    if (!live) {
+      if (input) input.value = String(portionGrams);
+      updateSummary();
+    }
+    return;
+  }
+
+  portionGrams = Math.max(1, Math.min(300, parsed));
+  if (input && input.value !== String(portionGrams)) input.value = String(portionGrams);
+  save();
+  updateSummary();
+  refreshPortionSelectLabels(getSelectedRecipe());
+  clearRecipeResult();
+  renderSelectedRecipeIngredients();
 }
 
 function updateSummary() {
@@ -1240,6 +1708,8 @@ function updateSummary() {
   const buyCost = document.getElementById('buyCost');
   const dinnerCount = document.getElementById('dinnerCount');
   const householdSelect = document.getElementById('householdSize');
+  const portionGramsInput = document.getElementById('portionGrams');
+  const portionLiveSummary = document.getElementById('portionLiveSummary');
 
   if (homeCount) homeCount.textContent = homeItems.length;
   if (buyCount) buyCount.textContent = buyItems.length;
@@ -1249,10 +1719,22 @@ function updateSummary() {
   }
 
   if (householdSelect) householdSelect.value = String(householdSize);
+  if (portionGramsInput) portionGramsInput.value = String(portionGrams);
+
+  document.querySelectorAll('.portion-chip').forEach(btn => {
+    const isActive = Number(btn.textContent.replace(/[^0-9]/g, '')) === Number(portionGrams);
+    btn.classList.toggle('active', isActive);
+  });
+
+  if (portionLiveSummary) {
+    const totalLive = Math.max(1, householdSize * portionGrams);
+    portionLiveSummary.textContent = `${householdSize} × ${portionGrams}g = ${totalLive}g`;
+  }
 
   if (dinnerCount) {
     const totalDinnerWeight = homeItems.reduce((sum, item) => sum + getDinnerWeightFromItem(item), 0);
-    const totalDinners = Math.floor(totalDinnerWeight / (250 * householdSize));
+    const gramsPerDinner = Math.max(1, portionGrams * householdSize);
+    const totalDinners = Math.floor(totalDinnerWeight / gramsPerDinner);
     dinnerCount.textContent = `${totalDinners} st`;
   }
 }
@@ -2265,19 +2747,23 @@ function editDraftIngredient(index) {
   const ingredientEditQty = document.getElementById('ingredientEditQty');
   const ingredientEditUnit = document.getElementById('ingredientEditUnit');
   const ingredientEditSize = document.getElementById('ingredientEditSize');
+  const ingredientEditMeasureText = document.getElementById('ingredientEditMeasureText');
   const ingredientEditModal = document.getElementById('ingredientEditModal');
 
   if (ingredientEditName) ingredientEditName.value = parsed.name || '';
   if (ingredientEditQty) ingredientEditQty.value = Number(parsed.quantity || 1);
   if (ingredientEditUnit) ingredientEditUnit.value = parsed.unit || 'st';
   if (ingredientEditSize) updateSizeSelect('ingredientEditSize', parsed.unit || 'st', parsed.size, getRecipeIngredientContext(parsed));
+  if (ingredientEditMeasureText) ingredientEditMeasureText.value = supportsSize(parsed.unit) ? getMeasureTextFromSize(parsed.size, parsed.unit) : '';
   if (ingredientEditModal) ingredientEditModal.style.display = 'flex';
+  try { syncIngredientEditMeasureModeVisibility(); updateIngredientEditMeasureSummary(); } catch (e) {}
 }
 
 function saveRecipe() {
   const name = document.getElementById('recipeName')?.value.trim() || '';
   const link = document.getElementById('recipeLink')?.value.trim() || '';
-  const recipeType = normalizeRecipeType(document.getElementById('recipeType')?.value || '');
+  const recipeCategory = ensureRecipeCategoryExists(document.getElementById('recipeCategory')?.value || 'matlagning');
+  const recipeType = normalizeRecipeType(recipeCategory);
   if (!name) return;
 
   const existingIndex = recipes.findIndex(r => normalizeText(r.name) === normalizeText(name));
@@ -2285,26 +2771,31 @@ function saveRecipe() {
     name,
     items: recipeDraftItems.length ? normalizeRecipeIngredientList(recipeDraftItems) : (existingIndex >= 0 ? normalizeRecipeIngredientList(recipes[existingIndex].items) : []),
     link,
-    type: recipeType
+    type: recipeType,
+    category: recipeCategory,
+    yield: normalizeRecipeYield(document.getElementById('recipeYield')?.value || (existingIndex >= 0 ? recipes[existingIndex].yield : 4), 4)
   };
 
   if (existingIndex >= 0) recipes[existingIndex] = recipe;
   else recipes.push(recipe);
 
   const recipeName = document.getElementById('recipeName');
-  const recipeTypeSelect = document.getElementById('recipeType');
+  const recipeCategorySelect = document.getElementById('recipeCategory');
   const recipeLink = document.getElementById('recipeLink');
+  const recipeYield = document.getElementById('recipeYield');
   const recipeQuickSearch = document.getElementById('recipeQuickSearch');
   const recipeQuickSuggestions = document.getElementById('recipeQuickSuggestions');
 
   if (recipeName) recipeName.value = '';
-  if (recipeTypeSelect) recipeTypeSelect.value = 'matlagning';
+  if (recipeCategorySelect) recipeCategorySelect.value = 'matlagning';
   if (recipeLink) recipeLink.value = '';
+  if (recipeYield) recipeYield.value = '4';
   if (recipeQuickSearch) recipeQuickSearch.value = '';
   if (recipeQuickSuggestions) recipeQuickSuggestions.style.display = 'none';
 
   recipeDraftItems = [];
   save();
+  renderRecipeCategoryOptions();
   renderRecipeSelect();
   renderDraftIngredients();
 }
@@ -2318,10 +2809,12 @@ function renderRecipeSelect() {
   const select = document.getElementById('recipeSelect');
   if (!select) return;
 
+  refreshPortionSelectLabels(getSelectedRecipe());
+
   const search = (document.getElementById('recipeSearch')?.value || '').toLowerCase().trim();
-  const recipeTypeFilterEl = document.getElementById('recipeTypeFilter');
-  const rawTypeFilter = recipeTypeFilterEl?.value || '';
-  const typeFilter = rawTypeFilter ? normalizeRecipeType(rawTypeFilter) : '';
+  const recipeCategoryFilterEl = document.getElementById('recipeCategoryFilter');
+  const rawCategoryFilter = recipeCategoryFilterEl?.value || recipeCategoryEditState.activeFilter || '';
+  const categoryFilter = rawCategoryFilter ? normalizeRecipeCategory(rawCategoryFilter) : '';
   const previous = select.value;
   select.innerHTML = '';
 
@@ -2329,9 +2822,11 @@ function renderRecipeSelect() {
   if (search) {
     filtered = filtered.filter(recipe => (recipe.name || '').toLowerCase().includes(search));
   }
-  if (typeFilter) {
-    filtered = filtered.filter(recipe => normalizeRecipeType(recipe.type) === typeFilter);
+  if (categoryFilter) {
+    filtered = filtered.filter(recipe => normalizeRecipeCategory(recipe.category || recipe.type) === categoryFilter);
   }
+  recipeCategoryEditState.activeFilter = categoryFilter;
+  renderRecipeCategoryManager();
 
   if (!filtered.length) {
     const opt = document.createElement('option');
@@ -2349,7 +2844,7 @@ function renderRecipeSelect() {
     .sort((a, b) => a.name.localeCompare(b.name, 'sv'))
     .forEach(recipe => {
       const opt = document.createElement('option');
-      const typeMeta = getRecipeTypeMeta(recipe.type);
+      const typeMeta = getRecipeCategoryMeta(recipe.category || recipe.type);
       opt.value = recipe.name;
       opt.textContent = `${typeMeta.icon} ${recipe.name}`;
       select.appendChild(opt);
@@ -2392,9 +2887,12 @@ function renderSelectedRecipeIngredients() {
   const recipe = getSelectedRecipe();
 
   if (!recipe) {
+    refreshPortionSelectLabels();
     target.innerHTML = '<div class="empty">Välj ett recept.</div>';
     return;
   }
+
+  refreshPortionSelectLabels(recipe);
 
   const topActions = document.createElement('div');
   topActions.style.display = 'flex';
@@ -2402,11 +2900,18 @@ function renderSelectedRecipeIngredients() {
   topActions.style.flexWrap = 'wrap';
   topActions.style.marginBottom = '10px';
 
-  const typeMeta = getRecipeTypeMeta(recipe.type);
+  const typeMeta = getRecipeCategoryMeta(recipe.category || recipe.type);
   const typeBadge = document.createElement('span');
   typeBadge.className = `recipe-type-badge recipe-type-${typeMeta.value}`;
   typeBadge.textContent = `${typeMeta.icon} ${typeMeta.label}`;
   topActions.appendChild(typeBadge);
+
+  if (isRecipePortionControlled(recipe)) {
+    const yieldBadge = document.createElement('span');
+    yieldBadge.className = 'recipe-yield-badge';
+    yieldBadge.textContent = `🍽️ ${getRecipeYieldLabel(recipe.category || recipe.type, getRecipeBaseYield(recipe))}`;
+    topActions.appendChild(yieldBadge);
+  }
 
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
@@ -2425,6 +2930,13 @@ function renderSelectedRecipeIngredients() {
 
   target.appendChild(topActions);
 
+  if (isRecipePortionControlled(recipe)) {
+    const summary = document.createElement('div');
+    summary.className = 'recipe-portion-summary';
+    summary.textContent = `👥 ${getRecipePortionSummary(recipe)} • ${householdSize} personer × ${portionGrams} g = ${formatWeightDisplay(householdSize * portionGrams)}`;
+    target.appendChild(summary);
+  }
+
   if (!recipe.items.length) {
     const empty = document.createElement('div');
     empty.className = 'empty';
@@ -2432,7 +2944,7 @@ function renderSelectedRecipeIngredients() {
     target.appendChild(empty);
   } else {
     recipe.items.forEach((ingredient, idx) => {
-      const baseIngredient = applySelectedPortionToIngredient(ingredient);
+      const baseIngredient = applySelectedPortionToIngredient(ingredient, recipe);
       if (!baseIngredient) return;
       const displayIngredient = resolveRecipeIngredient(baseIngredient, recipe);
       const replacements = getRecipeReplacementOptions(baseIngredient);
@@ -2511,7 +3023,8 @@ function normalizeRecipeIngredient(value) {
     quantity: Math.max(1, Number(value.quantity || value.qty || 1)),
     unit,
     size: supportsSize(unit) ? normalizeSize(unit, value.size, context) : null,
-    category: context === 'RECIPE_KRYDDOR' ? 'KRYDDOR' : (context === 'RECIPE_RIVEN_OST' ? 'RECIPE_RIVEN_OST' : '')
+    category: context === 'RECIPE_KRYDDOR' ? 'KRYDDOR' : (context === 'RECIPE_RIVEN_OST' ? 'RECIPE_RIVEN_OST' : ''),
+    smartMode: String(value.smartMode || '').trim().toLowerCase()
   };
 }
 
@@ -2525,7 +3038,8 @@ function recipeIngredientToText(ingredient) {
   const ing = normalizeRecipeIngredient(ingredient);
   if (!ing) return '';
   if (supportsSize(ing.unit)) {
-    return `${ing.quantity} × ${formatSizeValue(ing.unit, ing.size)} ${ing.name}`.trim();
+    const total = Number(ing.quantity || 1) * Number(ing.size || 0);
+    return `${formatSmartMeasureDisplay(total, ing.unit)} ${ing.name}`.trim();
   }
   return `${ing.quantity} ${ing.unit} ${ing.name}`.trim();
 }
@@ -2597,17 +3111,22 @@ function editRecipeIngredient(index) {
   if (!recipe) return;
 
   const parsed = normalizeRecipeIngredient(recipe.items[index]);
+  if (!parsed) return;
 
   const ingredientEditName = document.getElementById('ingredientEditName');
   const ingredientEditQty = document.getElementById('ingredientEditQty');
   const ingredientEditUnit = document.getElementById('ingredientEditUnit');
+  const ingredientEditSize = document.getElementById('ingredientEditSize');
+  const ingredientEditMeasureText = document.getElementById('ingredientEditMeasureText');
   const ingredientEditModal = document.getElementById('ingredientEditModal');
 
   if (ingredientEditName) ingredientEditName.value = parsed.name || '';
   if (ingredientEditQty) ingredientEditQty.value = Number(parsed.quantity || 1);
   if (ingredientEditUnit) ingredientEditUnit.value = parsed.unit || 'st';
-  updateSizeSelect('ingredientEditSize', parsed.unit || 'st', parsed.size, getRecipeIngredientContext(parsed));
+  if (ingredientEditSize) updateSizeSelect('ingredientEditSize', parsed.unit || 'st', parsed.size, getRecipeIngredientContext(parsed));
+  if (ingredientEditMeasureText) ingredientEditMeasureText.value = supportsSize(parsed.unit) ? getMeasureTextFromSize(parsed.size, parsed.unit) : '';
   if (ingredientEditModal) ingredientEditModal.style.display = 'flex';
+  try { syncIngredientEditMeasureModeVisibility(); updateIngredientEditMeasureSummary(); } catch (e) {}
 }
 
 function closeIngredientEdit() {
@@ -2622,11 +3141,27 @@ function saveIngredientEdit() {
   if (editingIngredientIndex === null) return;
 
   const name = document.getElementById('ingredientEditName')?.value.trim() || '';
-  const quantity = Number(document.getElementById('ingredientEditQty')?.value || 1);
+  const quantity = Math.max(1, Number(document.getElementById('ingredientEditQty')?.value || 1));
   const unit = document.getElementById('ingredientEditUnit')?.value || 'st';
-  const size = document.getElementById('ingredientEditSize')?.value || null;
+  let size = document.getElementById('ingredientEditSize')?.value || null;
 
   if (!name) return;
+
+  if (supportsSize(unit)) {
+    const parsedMeasure = parseSmartMeasureInput(document.getElementById('ingredientEditMeasureText')?.value || size, unit);
+    if (!parsedMeasure) {
+      alert(getMeasureInputError(unit));
+      return;
+    }
+    const measureWarning = getMeasureValidationMessage(parsedMeasure, quantity, unit);
+    if (measureWarning) {
+      alert(measureWarning);
+      return;
+    }
+    size = parsedMeasure;
+    const ingredientEditMeasureInput = document.getElementById('ingredientEditMeasureText');
+    if (ingredientEditMeasureInput) ingredientEditMeasureInput.value = formatSmartMeasureDisplay(parsedMeasure, unit);
+  }
 
   const previousIngredient = editingIngredientRecipeIndex === -1
     ? normalizeRecipeIngredient(recipeDraftItems[editingIngredientIndex])
@@ -2979,8 +3514,13 @@ document.addEventListener('click', event => {
 document.addEventListener('DOMContentLoaded', () => {
   hydrateData();
   householdSize = Math.max(1, Math.min(8, Number(householdSize || 1)));
-  const recipeType = document.getElementById('recipeType');
-  if (recipeType) recipeType.value = 'matlagning';
+  const recipeCategory = document.getElementById('recipeCategory');
+  if (recipeCategory) {
+    recipeCategory.value = 'matlagning';
+    recipeCategory.addEventListener('change', () => refreshPortionSelectLabels());
+  }
+  const recipeYield = document.getElementById('recipeYield');
+  if (recipeYield) recipeYield.value = '4';
   renderCategoryOptions();
   renderPlaceOptions();
   updateSizeSelect('itemSize', document.getElementById('itemUnit')?.value || 'st');
@@ -3014,6 +3554,7 @@ function bindStateToWindow() {
     homeOpenState: { get: () => homeOpenState, set: value => { homeOpenState = value && typeof value === 'object' ? value : {}; } },
     recipeIngredientChoices: { get: () => recipeIngredientChoices, set: value => { recipeIngredientChoices = value && typeof value === 'object' ? value : {}; } },
     householdSize: { get: () => householdSize, set: value => { householdSize = Math.max(1, Math.min(8, Number(value || 1))); } },
+    portionGrams: { get: () => portionGrams, set: value => { portionGrams = Math.max(1, Math.min(300, Math.round(Number(value || 100) || 100))); } },
     weekPlanner: { get: () => weekPlanner, set: value => { weekPlanner = value && typeof value === 'object' ? value : {}; } },
     selectedWeekDay: { get: () => selectedWeekDay, set: value => { selectedWeekDay = String(value || getTodayWeekKey()); } }
   };
@@ -3099,7 +3640,7 @@ function buildWeekRecipeOptions(selectedValue) {
   select.innerHTML = '<option value="">Välj recept</option>';
   recipes.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'sv')).forEach(recipe => {
     const opt = document.createElement('option');
-    const typeMeta = getRecipeTypeMeta(recipe.type);
+    const typeMeta = getRecipeCategoryMeta(recipe.category || recipe.type);
     opt.value = recipe.name || '';
     opt.textContent = `${typeMeta.icon} ${recipe.name || ''}`;
     if ((recipe.name || '') === (selectedValue || '')) opt.selected = true;
@@ -3281,8 +3822,7 @@ function syncRecipeSectionToWeekPlan(plan) {
 
   const search = document.getElementById('recipeSearch');
   if (search) search.value = '';
-  const portion = document.getElementById('portionSelect');
-  if (portion && !portion.value) portion.value = '2';
+  if (typeof refreshPortionSelectLabels === 'function') refreshPortionSelectLabels(getSelectedRecipe());
 
   if (typeof renderSelectedRecipeIngredients === 'function') renderSelectedRecipeIngredients();
   if (typeof clearRecipeResult === 'function') clearRecipeResult();
@@ -3450,14 +3990,17 @@ document.addEventListener('input', (e) => {
   if (!e.target) return;
   if (['itemMeasureText', 'itemQuantity'].includes(e.target.id)) updateMeasureSummary();
   if (['editMeasureText', 'editQuantity'].includes(e.target.id)) updateEditMeasureSummary();
+  if (['ingredientEditMeasureText', 'ingredientEditQty'].includes(e.target.id)) updateIngredientEditMeasureSummary();
 });
 
 document.addEventListener('change', (e) => {
   if (!e.target) return;
   if (e.target.id === 'itemUnit') syncMeasureModeVisibility();
   if (e.target.id === 'editUnit') syncEditMeasureModeVisibility();
+  if (e.target.id === 'ingredientEditUnit') syncIngredientEditMeasureModeVisibility();
   if (e.target.id === 'itemMeasureText') formatMeasureInputField(e.target, document.getElementById('itemUnit')?.value || 'g');
   if (e.target.id === 'editMeasureText') formatMeasureInputField(e.target, document.getElementById('editUnit')?.value || 'g');
+  if (e.target.id === 'ingredientEditMeasureText') formatMeasureInputField(e.target, document.getElementById('ingredientEditUnit')?.value || 'g');
 });
 
 document.addEventListener('blur', (e) => {
@@ -3470,6 +4013,10 @@ document.addEventListener('blur', (e) => {
     formatMeasureInputField(e.target, document.getElementById('editUnit')?.value || 'g');
     updateEditMeasureSummary();
   }
+  if (e.target.id === 'ingredientEditMeasureText') {
+    formatMeasureInputField(e.target, document.getElementById('ingredientEditUnit')?.value || 'g');
+    updateIngredientEditMeasureSummary();
+  }
 }, true);
 
-window.addEventListener('load', () => { try { syncMeasureModeVisibility(); syncEditMeasureModeVisibility(); updateMeasureSummary(); updateEditMeasureSummary(); } catch (e) {} });
+window.addEventListener('load', () => { try { syncMeasureModeVisibility(); syncEditMeasureModeVisibility(); syncIngredientEditMeasureModeVisibility(); updateMeasureSummary(); updateEditMeasureSummary(); updateIngredientEditMeasureSummary(); } catch (e) {} });
