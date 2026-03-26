@@ -173,48 +173,89 @@
 
 
     <section class="section week-section-compact">
-      <div class="section-top-row">
-        <div class="section-title">📅 Veckoplan</div>
-        <div class="section-search-spacer"></div>
-        <button type="button" class="ghost-btn" onclick="jumpToTodayPlan()">Idag</button>
+  <div class="section-top-row">
+    <div class="section-title">📅 Veckoplan</div>
+    <div class="section-search-spacer"></div>
+    <button type="button" class="ghost-btn" onclick="jumpToTodayPlan()">Idag</button>
+  </div>
+  <div class="section-subtitle">Lätt, kompakt och snabb veckoplan med frukost, lunch, middag, kvällsmat, efterrätt och godis</div>
+
+  <div class="week-planner compact">
+    <div class="week-day-row compact" id="weekDayRow"></div>
+
+    <div class="week-compact-card">
+      <div class="week-compact-head">
+        <div class="week-compact-left">
+          <div id="weekSelectedDayName" class="week-selected-day compact">Måndag</div>
+          <div id="weekDayStatus" class="week-status-pill week-status-empty">Ingen plan</div>
+        </div>
+        <div class="week-compact-right">
+          <div class="week-mini-line"><strong>Frukost:</strong> <span id="weekPreviewBreakfast">-</span></div>
+          <div class="week-mini-line"><strong>Lunch:</strong> <span id="weekPreviewLunch">-</span></div>
+          <div class="week-mini-line"><strong>Middag:</strong> <span id="weekPreviewMeal">-</span></div>
+          <div class="week-mini-line"><strong>Kvällsmat:</strong> <span id="weekPreviewEvening">-</span></div>
+          <div class="week-mini-line"><strong>Efterrätt:</strong> <span id="weekPreviewDessert">-</span></div>
+          <div class="week-mini-line"><strong>Godis:</strong> <span id="weekPreviewCandy">-</span></div>
+          <div class="week-mini-line"><strong>Notis:</strong> <span id="weekPreviewNote">-</span></div>
+        </div>
       </div>
-      <div class="section-subtitle">Lätt, kompakt och snabb middagsplan</div>
 
-      <div class="week-planner compact">
-        <div class="week-day-row compact" id="weekDayRow"></div>
-
-        <div class="week-compact-card">
-          <div class="week-compact-head">
-            <div class="week-compact-left">
-              <div id="weekSelectedDayName" class="week-selected-day compact">Måndag</div>
-              <div id="weekDayStatus" class="week-status-pill week-status-empty">Ingen plan</div>
-            </div>
-            <div class="week-compact-right">
-              <div class="week-mini-line"><strong>Plan:</strong> <span id="weekPreviewMeal">Ingen plan ännu</span></div>
-              <div class="week-mini-line"><strong>Notis:</strong> <span id="weekPreviewNote">-</span></div>
-            </div>
-          </div>
-
-          <div class="week-compact-grid">
-            <select id="weekRecipeSelect" title="Recept"></select>
-            <input id="weekCustomMeal" placeholder="Egen middag">
-            <input id="weekNote" placeholder="Notis">
-          </div>
-
-          <div class="week-actions compact">
-            <button type="button" onclick="saveWeekPlanForSelectedDay()">Spara</button>
-            <button type="button" class="ghost-btn" onclick="checkSelectedWeekRecipe()">Kolla</button>
-            <button type="button" class="ghost-btn" onclick="addMissingForSelectedWeekRecipe()">Inköp</button>
-            <button type="button" class="ghost-btn" onclick="cookSelectedWeekRecipe()">Lagat</button>
-            <button type="button" class="ghost-btn" onclick="toggleCookedSelectedDay()">Klar</button>
-            <button type="button" class="delete" onclick="clearSelectedWeekPlan()">Rensa</button>
-          </div>
+      <div class="week-compact-grid week-compact-grid-meals" id="weekMealRows">
+        <div class="week-meal-row" data-slot-key="breakfast" draggable="true">
+          <label for="weekBreakfastRecipeSelect">🥐 Frukost</label>
+          <select id="weekBreakfastRecipeSelect" title="Frukost recept"></select>
+          <input id="weekBreakfast" placeholder="🥐 Egen frukost">
         </div>
 
-        <div class="week-overview compact" id="weekOverview"></div>
-      </div>
-    </section>
+        <div class="week-meal-row" data-slot-key="lunch" draggable="true">
+          <label for="weekLunchRecipeSelect">🥗 Lunch</label>
+          <select id="weekLunchRecipeSelect" title="Lunch recept"></select>
+          <input id="weekLunch" placeholder="🥗 Egen lunch">
+        </div>
 
+        <div class="week-meal-row" data-slot-key="dinner" draggable="true">
+          <label for="weekRecipeSelect">🍽️ Middag</label>
+          <select id="weekRecipeSelect" title="Middag recept"></select>
+          <input id="weekCustomMeal" placeholder="🍽️ Egen middag">
+        </div>
+
+        <div class="week-meal-row" data-slot-key="evening" draggable="true">
+          <label for="weekEveningRecipeSelect">🌙 Kvällsmat</label>
+          <select id="weekEveningRecipeSelect" title="Kvällsmat recept"></select>
+          <input id="weekEveningMeal" placeholder="🌙 Egen kvällsmat">
+        </div>
+
+        <div class="week-meal-row" data-slot-key="dessert" draggable="true">
+          <label for="weekDessertRecipeSelect">🍰 Efterrätt</label>
+          <select id="weekDessertRecipeSelect" title="Efterrätt recept"></select>
+          <input id="weekDessertMeal" placeholder="🍰 Egen efterrätt">
+        </div>
+
+        <div class="week-meal-row" data-slot-key="candy" draggable="true">
+          <label for="weekCandyRecipeSelect">🍬 Godis</label>
+          <select id="weekCandyRecipeSelect" title="Godis recept"></select>
+          <input id="weekCandyMeal" placeholder="🍬 Eget godis">
+        </div>
+
+        <div class="week-meal-row week-note-row">
+          <label for="weekNote">📝 Notis</label>
+          <input id="weekNote" placeholder="📝 Notis">
+        </div>
+      </div>
+
+      <div class="week-actions compact">
+        <button type="button" onclick="saveWeekPlanForSelectedDay()">Spara</button>
+        <button type="button" class="ghost-btn" onclick="checkSelectedWeekRecipe()">Kolla</button>
+        <button type="button" class="ghost-btn" onclick="addMissingForSelectedWeekRecipe()">Inköp</button>
+        <button type="button" class="ghost-btn" onclick="cookSelectedWeekRecipe()">Lagat</button>
+        <button type="button" class="ghost-btn" onclick="toggleCookedSelectedDay()">Klar</button>
+        <button type="button" class="delete" onclick="clearSelectedWeekPlan()">Rensa</button>
+      </div>
+    </div>
+
+    <div class="week-overview compact" id="weekOverview"></div>
+  </div>
+</section>
 
     <section class="section">
       <div class="section-top-row">
@@ -249,6 +290,7 @@
                 <input id="recipeQuickSearch" placeholder="Sök ingrediens från snabblistan..." oninput="showNewRecipeQuickSuggestions()">
                 <div id="recipeQuickSuggestions" class="suggestion-box"></div>
               </div>
+              <div class="recipe-quick-hint">Ingredienser hämtas från <strong>Snabblista</strong>, så en ändring där slår igenom på receptets enhet, storlek, kategori och bild.</div>
 
               <div id="recipeDraftList" class="recipe-items"></div>
               <button type="button" onclick="saveRecipe()">💾 Spara recept</button>

@@ -3239,6 +3239,7 @@ function normalizeRecipeIngredient(value) {
 function normalizeRecipeIngredientList(list) {
   return (Array.isArray(list) ? list : [])
     .map(normalizeRecipeIngredient)
+    .map(syncRecipeIngredientFromQuickItem)
     .filter(Boolean);
 }
 
@@ -3252,8 +3253,39 @@ function recipeIngredientToText(ingredient) {
   return `${ing.quantity} ${ing.unit} ${ing.name}`.trim();
 }
 
+function findQuickItemByName(name) {
+  const normalized = normalizeText(name || '');
+  if (!normalized) return null;
+  return quickItems.find(item => normalizeText(item?.name || '') === normalized) || null;
+}
+
+function syncRecipeIngredientFromQuickItem(ingredient) {
+  const normalized = normalizeRecipeIngredient(ingredient);
+  if (!normalized) return null;
+
+  const quickMatch = findQuickItemByName(normalized.name);
+  if (!quickMatch) return normalized;
+
+  const quickUnit = String(quickMatch.unit || normalized.unit || 'st').toLowerCase();
+  const quickContext = getRecipeIngredientContext({
+    ...normalized,
+    name: normalized.name,
+    unit: quickUnit,
+    category: quickMatch.category || normalized.category || ''
+  });
+
+  return normalizeRecipeIngredient({
+    ...normalized,
+    unit: quickUnit,
+    size: supportsSize(quickUnit)
+      ? normalizeSize(quickUnit, quickMatch.size ?? normalized.size, quickContext)
+      : null,
+    category: quickMatch.category || normalized.category || ''
+  });
+}
+
 function buildRecipeIngredient(name, quantity, unit, size = null, category = '') {
-  return normalizeRecipeIngredient({ name, quantity, unit, size, category });
+  return syncRecipeIngredientFromQuickItem({ name, quantity, unit, size, category });
 }
 
 function recipeUnitsCompatible(a, b) {
@@ -3496,45 +3528,7 @@ function addMissingToBuy() {
 
   if (!currentRecipeMissing.length) return;
 
-  currentRecipeMissing.forEach(entry => {
-    const ingredient = normalizeRecipeIngredient(entry?.ingredient || entry);
-    const missingAmount = Number(entry?.missing || getMissingRecipeIngredient(ingredient)?.missing || 0);
-    if (!ingredient || missingAmount <= 0) return;
-
-    const unit = ingredient.unit || 'st';
-    const size = supportsSize(unit) ? normalizeSize(unit, ingredient.size) : null;
-    const buyQuantity = supportsSize(unit)
-      ? Math.ceil(missingAmount / Math.max(1, Number(size || getDefaultSize(unit))))
-      : Math.ceil(missingAmount);
-
-    const existingBuy = items.find(i =>
-      i.type === 'buy' &&
-      normalizeText(i.name) === normalizeText(ingredient.name) &&
-      (i.unit || 'st') === unit &&
-      Number(i.size || 0) === Number(size || 0)
-    );
-
-    if (existingBuy) {
-      existingBuy.quantity = Number(existingBuy.quantity || 0) + buyQuantity;
-    } else {
-      const quickMatch = quickItems.find(q => normalizeText(q.name) === normalizeText(ingredient.name));
-      items.push({
-        name: ingredient.name,
-        price: Number(quickMatch?.price || 0),
-        quantity: buyQuantity,
-        unit,
-        size,
-        category: ensureCategoryExists(quickMatch?.category || 'MAT'),
-        place: quickMatch?.place || 'kyl',
-        type: 'buy',
-        img: quickMatch?.img ? String(quickMatch.img) : ''
-      });
-    }
-  });
-
-  items = mergeItems(items);
-  save();
-  render();
+  addMissingEntriesToBuy(currentRecipeMissing);
   checkRecipe();
 }
 
@@ -3542,68 +3536,8 @@ function useRecipeIngredients() {
   const recipe = getSelectedRecipe();
   if (!recipe) return;
 
-  recipe.items.forEach(rawIngredient => {
-    const ingredient = resolveRecipeIngredient(rawIngredient, recipe);
-    if (!ingredient) return;
-
-    let remaining = recipeIngredientCanonicalAmount(ingredient);
-
-    const homeMatches = items.filter(i => i.type === 'home' && ingredientMatchesName(ingredient, i.name) && recipeUnitsCompatible(ingredient.unit, i.unit));
-
-    homeMatches.forEach(homeItem => {
-      if (remaining <= 0) return;
-
-      if (supportsSize(ingredient.unit) && supportsSize(homeItem.unit)) {
-        const packSize = Number(homeItem.size || 0);
-        const itemAmount = Number(homeItem.quantity || 0) * packSize;
-        const amountToUse = Math.min(itemAmount, remaining);
-        const packsToUse = Math.ceil(amountToUse / Math.max(1, packSize));
-        homeItem.quantity = Math.max(0, Number(homeItem.quantity || 0) - packsToUse);
-        remaining = Math.max(0, remaining - (packsToUse * packSize));
-      } else {
-        const amountToUse = Math.min(Number(homeItem.quantity || 0), remaining);
-        homeItem.quantity = Math.max(0, Number(homeItem.quantity || 0) - amountToUse);
-        remaining = Math.max(0, remaining - amountToUse);
-      }
-    });
-
-    const quickMatch = quickItems.find(q => normalizeText(q.name) === normalizeText(ingredient.name));
-    const unit = ingredient.unit || quickMatch?.unit || 'st';
-    const size = supportsSize(unit) ? normalizeSize(unit, ingredient.size) : null;
-    const refillQuantity = supportsSize(unit)
-      ? Math.max(1, Number(ingredient.quantity || 1))
-      : Math.max(1, Number(ingredient.quantity || 1));
-
-    const existingBuy = items.find(i =>
-      i.type === 'buy' &&
-      normalizeText(i.name) === normalizeText(ingredient.name) &&
-      (i.unit || 'st') === unit &&
-      Number(i.size || 0) === Number(size || 0)
-    );
-
-    if (existingBuy) {
-      existingBuy.quantity = Number(existingBuy.quantity || 0) + refillQuantity;
-    } else {
-      items.push({
-        name: ingredient.name,
-        price: Number(quickMatch?.price || 0),
-        quantity: refillQuantity,
-        unit,
-        size,
-        category: ensureCategoryExists(quickMatch?.category || 'MAT'),
-        place: quickMatch?.place || 'kyl',
-        type: 'buy',
-        img: quickMatch?.img ? String(quickMatch.img) : ''
-      });
-    }
-  });
-
-  items = items.filter(item => !(item.type === 'home' && Number(item.quantity || 0) <= 0));
-  items = mergeItems(items);
-  currentRecipeMissing = [];
-
-  save();
-  render();
+  const combinedEntries = getCombinedRecipeIngredientEntries([{ slot: { label: 'Recept' }, recipe, recipeName: recipe.name }]);
+  consumeIngredientEntries(combinedEntries);
   checkRecipe();
 }
 
@@ -3748,40 +3682,72 @@ const WEEK_DAYS = [
   { key: 'sun', short: 'Sön', long: 'Söndag' }
 ];
 
+const WEEK_MEAL_SLOTS_DEFAULT = [
+  {
+    key: 'breakfast',
+    label: 'Frukost',
+    icon: '🥐',
+    recipeKey: 'breakfastRecipe',
+    customKey: 'breakfast',
+    selectId: 'weekBreakfastRecipeSelect',
+    inputId: 'weekBreakfast',
+    previewId: 'weekPreviewBreakfast'
+  },
+  {
+    key: 'lunch',
+    label: 'Lunch',
+    icon: '🥗',
+    recipeKey: 'lunchRecipe',
+    customKey: 'lunch',
+    selectId: 'weekLunchRecipeSelect',
+    inputId: 'weekLunch',
+    previewId: 'weekPreviewLunch'
+  },
+  {
+    key: 'dinner',
+    label: 'Middag',
+    icon: '🍽️',
+    recipeKey: 'recipe',
+    customKey: 'meal',
+    selectId: 'weekRecipeSelect',
+    inputId: 'weekCustomMeal',
+    previewId: 'weekPreviewMeal'
+  },
+  {
+    key: 'evening',
+    label: 'Kvällsmat',
+    icon: '🌙',
+    recipeKey: 'eveningRecipe',
+    customKey: 'evening',
+    selectId: 'weekEveningRecipeSelect',
+    inputId: 'weekEveningMeal',
+    previewId: 'weekPreviewEvening'
+  },
+  {
+    key: 'dessert',
+    label: 'Efterrätt',
+    icon: '🍰',
+    recipeKey: 'dessertRecipe',
+    customKey: 'dessert',
+    selectId: 'weekDessertRecipeSelect',
+    inputId: 'weekDessertMeal',
+    previewId: 'weekPreviewDessert'
+  },
+  {
+    key: 'candy',
+    label: 'Godis',
+    icon: '🍬',
+    recipeKey: 'candyRecipe',
+    customKey: 'candy',
+    selectId: 'weekCandyRecipeSelect',
+    inputId: 'weekCandyMeal',
+    previewId: 'weekPreviewCandy'
+  }
+];
+
+let weekMealOrder = JSON.parse(localStorage.getItem('matlista_week_meal_order') || '[]');
 let weekPlanner = JSON.parse(localStorage.getItem('matlista_weekplanner') || '{}');
 let selectedWeekDay = localStorage.getItem('matlista_weekplanner_selected') || getTodayWeekKey();
-
-
-function bindStateToWindow() {
-  const bindings = {
-    items: { get: () => items, set: value => { items = Array.isArray(value) ? value : []; } },
-    quickItems: { get: () => quickItems, set: value => { quickItems = Array.isArray(value) ? value : []; } },
-    recipes: { get: () => recipes, set: value => { recipes = Array.isArray(value) ? value : []; } },
-    categories: { get: () => categories, set: value => { categories = Array.isArray(value) && value.length ? value : ['MAT']; } },
-    places: { get: () => places, set: value => { places = Array.isArray(value) && value.length ? value : defaultPlaces.slice(); } },
-    homeOpenState: { get: () => homeOpenState, set: value => { homeOpenState = value && typeof value === 'object' ? value : {}; } },
-    recipeIngredientChoices: { get: () => recipeIngredientChoices, set: value => { recipeIngredientChoices = value && typeof value === 'object' ? value : {}; } },
-    householdSize: { get: () => householdSize, set: value => { householdSize = Math.max(1, Math.min(8, Number(value || 1))); } },
-    portionGrams: { get: () => portionGrams, set: value => { portionGrams = Math.max(1, Math.min(250, Math.round(Number(value || 100) || 100))); } },
-    weekPlanner: { get: () => weekPlanner, set: value => { weekPlanner = value && typeof value === 'object' ? value : {}; } },
-    selectedWeekDay: { get: () => selectedWeekDay, set: value => { selectedWeekDay = String(value || getTodayWeekKey()); } }
-  };
-
-  Object.entries(bindings).forEach(([key, descriptor]) => {
-    try {
-      Object.defineProperty(window, key, {
-        configurable: true,
-        enumerable: true,
-        get: descriptor.get,
-        set: descriptor.set
-      });
-    } catch (error) {
-      window[key] = descriptor.get();
-    }
-  });
-}
-
-bindStateToWindow();
 
 function getTodayWeekKey() {
   const day = new Date().getDay();
@@ -3789,25 +3755,69 @@ function getTodayWeekKey() {
   return map[day] || 'mon';
 }
 
+function getWeekMealSlots() {
+  const defaultKeys = WEEK_MEAL_SLOTS_DEFAULT.map(slot => slot.key);
+  const order = Array.isArray(weekMealOrder) ? weekMealOrder.filter(key => defaultKeys.includes(key)) : [];
+  defaultKeys.forEach(key => {
+    if (!order.includes(key)) order.push(key);
+  });
+  weekMealOrder = order.slice();
+  return weekMealOrder.map(key => WEEK_MEAL_SLOTS_DEFAULT.find(slot => slot.key === key)).filter(Boolean);
+}
+
 function getWeekDayDef(dayKey) {
   return WEEK_DAYS.find(day => day.key === dayKey) || WEEK_DAYS[0];
+}
+
+function getWeekPlanEmptyEntry() {
+  return {
+    recipe: '',
+    meal: '',
+    breakfast: '',
+    breakfastRecipe: '',
+    lunch: '',
+    lunchRecipe: '',
+    evening: '',
+    eveningRecipe: '',
+    dessert: '',
+    dessertRecipe: '',
+    candy: '',
+    candyRecipe: '',
+    note: '',
+    cooked: false,
+    lastCheckMissing: null
+  };
 }
 
 function ensureWeekPlannerShape() {
   if (!weekPlanner || typeof weekPlanner !== 'object' || Array.isArray(weekPlanner)) weekPlanner = {};
   WEEK_DAYS.forEach(day => {
     const entry = weekPlanner[day.key];
+    const base = getWeekPlanEmptyEntry();
+
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-      weekPlanner[day.key] = { recipe: '', meal: '', note: '', cooked: false, lastCheckMissing: null };
-    } else {
-      weekPlanner[day.key] = {
-        recipe: String(entry.recipe || ''),
-        meal: String(entry.meal || ''),
-        note: String(entry.note || ''),
-        cooked: Boolean(entry.cooked),
-        lastCheckMissing: entry.lastCheckMissing === null || entry.lastCheckMissing === undefined ? null : Math.max(0, Number(entry.lastCheckMissing || 0))
-      };
+      weekPlanner[day.key] = { ...base };
+      return;
     }
+
+    weekPlanner[day.key] = {
+      ...base,
+      recipe: String(entry.recipe || ''),
+      meal: String(entry.meal || ''),
+      breakfast: String(entry.breakfast || ''),
+      breakfastRecipe: String(entry.breakfastRecipe || ''),
+      lunch: String(entry.lunch || ''),
+      lunchRecipe: String(entry.lunchRecipe || ''),
+      evening: String(entry.evening || ''),
+      eveningRecipe: String(entry.eveningRecipe || ''),
+      dessert: String(entry.dessert || ''),
+      dessertRecipe: String(entry.dessertRecipe || ''),
+      candy: String(entry.candy || ''),
+      candyRecipe: String(entry.candyRecipe || ''),
+      note: String(entry.note || ''),
+      cooked: Boolean(entry.cooked),
+      lastCheckMissing: entry.lastCheckMissing === null || entry.lastCheckMissing === undefined ? null : Math.max(0, Number(entry.lastCheckMissing || 0))
+    };
   });
 }
 
@@ -3815,20 +3825,68 @@ function saveWeekPlannerState() {
   ensureWeekPlannerShape();
   localStorage.setItem('matlista_weekplanner', JSON.stringify(weekPlanner));
   localStorage.setItem('matlista_weekplanner_selected', selectedWeekDay);
+  localStorage.setItem('matlista_week_meal_order', JSON.stringify(weekMealOrder));
 }
 
 function getWeekPlan(dayKey = selectedWeekDay) {
   ensureWeekPlannerShape();
-  return weekPlanner[dayKey] || { recipe: '', meal: '', note: '', cooked: false, lastCheckMissing: null };
+  return { ...getWeekPlanEmptyEntry(), ...(weekPlanner[dayKey] || {}) };
+}
+
+function getWeekMealValue(plan, slot) {
+  if (!plan || !slot) return '';
+  return String(plan[slot.recipeKey] || plan[slot.customKey] || '').trim();
+}
+
+function getWeekMealDisplay(plan, slot) {
+  return getWeekMealValue(plan, slot) || '-';
+}
+
+function getWeekPlanHasContent(plan) {
+  if (!plan) return false;
+  return Boolean(
+    getWeekMealSlots().some(slot => getWeekMealValue(plan, slot)) ||
+    String(plan.note || '').trim()
+  );
+}
+
+function getWeekPlanRecipes(plan) {
+  return getWeekMealSlots()
+    .map(slot => {
+      const recipeName = String(plan?.[slot.recipeKey] || '').trim();
+      if (!recipeName) return null;
+      const recipe = recipes.find(entry => entry.name === recipeName);
+      if (!recipe) return null;
+      return { slot, recipe, recipeName };
+    })
+    .filter(Boolean);
+}
+
+function getWeekDayBadgeText(plan) {
+  const slots = getWeekMealSlots();
+  const dinnerSlot = slots.find(slot => slot.key === 'dinner');
+  const dinner = getWeekMealValue(plan, dinnerSlot);
+  if (dinner) return dinner;
+  const firstPlanned = slots.find(slot => getWeekMealValue(plan, slot));
+  if (!firstPlanned) return 'Ingen plan';
+  return getWeekMealValue(plan, firstPlanned);
+}
+
+function getWeekDinnerTitle(plan) {
+  return getWeekDayBadgeText(plan);
 }
 
 function getWeekPlanTitle(plan) {
-  if (!plan) return 'Ingen plan';
-  return plan.recipe || plan.meal || 'Ingen plan';
+  if (!getWeekPlanHasContent(plan)) return 'Ingen plan';
+  const parts = getWeekMealSlots()
+    .filter(slot => getWeekMealValue(plan, slot))
+    .map(slot => `${slot.label}: ${getWeekMealValue(plan, slot)}`);
+  if (plan.note) parts.push(`Notis: ${plan.note}`);
+  return parts.join(' • ');
 }
 
 function getWeekPlanStatus(plan) {
-  if (!plan || (!plan.recipe && !plan.meal && !plan.note)) return 'empty';
+  if (!getWeekPlanHasContent(plan)) return 'empty';
   if (plan.cooked) return 'cooked';
   if (Number(plan.lastCheckMissing || 0) > 0) return 'missing';
   return 'planned';
@@ -3842,10 +3900,10 @@ function getWeekPlanStatusLabel(plan) {
   return 'Ingen plan';
 }
 
-function buildWeekRecipeOptions(selectedValue) {
-  const select = document.getElementById('weekRecipeSelect');
+function buildWeekRecipeOptions(selectId, selectedValue, placeholder) {
+  const select = document.getElementById(selectId);
   if (!select) return;
-  select.innerHTML = '<option value="">Välj recept</option>';
+  select.innerHTML = `<option value="">${placeholder}</option>`;
   recipes.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'sv')).forEach(recipe => {
     const opt = document.createElement('option');
     const typeMeta = getRecipeCategoryMeta(recipe.category || recipe.type);
@@ -3853,6 +3911,26 @@ function buildWeekRecipeOptions(selectedValue) {
     opt.textContent = `${typeMeta.icon} ${recipe.name || ''}`;
     if ((recipe.name || '') === (selectedValue || '')) opt.selected = true;
     select.appendChild(opt);
+  });
+}
+
+function buildAllWeekRecipeOptions(plan) {
+  getWeekMealSlots().forEach(slot => {
+    buildWeekRecipeOptions(
+      slot.selectId,
+      plan?.[slot.recipeKey] || '',
+      `Välj ${slot.label.toLowerCase()}-recept`
+    );
+  });
+}
+
+function renderWeekMealRowsByOrder() {
+  const container = document.getElementById('weekMealRows');
+  if (!container) return;
+  const noteRow = container.querySelector('.week-note-row');
+  getWeekMealSlots().forEach(slot => {
+    const row = container.querySelector(`.week-meal-row[data-slot-key="${slot.key}"]`);
+    if (row) container.insertBefore(row, noteRow || null);
   });
 }
 
@@ -3872,7 +3950,7 @@ function renderWeekDayButtons() {
     btn.onclick = () => selectWeekDay(day.key);
     btn.innerHTML = `
       <span class="day-short">${day.short}</span>
-      <span class="day-meal">${escapeHtml(getWeekPlanTitle(plan))}</span>
+      <span class="day-meal">${escapeHtml(getWeekDinnerTitle(plan))}</span>
     `;
     row.appendChild(btn);
   });
@@ -3882,18 +3960,10 @@ function renderWeekOverview() {
   const target = document.getElementById('weekOverview');
   if (!target) return;
 
-  const plannedCount = WEEK_DAYS.filter(day => {
-    const plan = getWeekPlan(day.key);
-    return Boolean(plan.recipe || plan.meal);
-  }).length;
-
+  const plannedCount = WEEK_DAYS.filter(day => getWeekPlanHasContent(getWeekPlan(day.key))).length;
   const cookedCount = WEEK_DAYS.filter(day => getWeekPlan(day.key).cooked).length;
   const missingCount = WEEK_DAYS.filter(day => Number(getWeekPlan(day.key).lastCheckMissing || 0) > 0 && !getWeekPlan(day.key).cooked).length;
-
-  const nextPlanned = WEEK_DAYS.find(day => {
-    const plan = getWeekPlan(day.key);
-    return Boolean(plan.recipe || plan.meal);
-  });
+  const nextPlanned = WEEK_DAYS.find(day => getWeekPlanHasContent(getWeekPlan(day.key)));
 
   target.innerHTML = `
     <div class="week-summary-line" style="grid-column:1/-1;">
@@ -3906,16 +3976,21 @@ function renderWeekOverview() {
 
   WEEK_DAYS.forEach(day => {
     const plan = getWeekPlan(day.key);
-    const card = document.createElement('div');
-    card.className = 'week-overview-card';
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = `week-overview-card status-${getWeekPlanStatus(plan)}`;
+    if (day.key === selectedWeekDay) card.classList.add('active');
+    card.onclick = () => selectWeekDay(day.key);
+
+    const mealsHtml = getWeekMealSlots()
+      .filter(slot => getWeekMealValue(plan, slot))
+      .map(slot => `<div class="week-overview-meta"><strong>${slot.icon}</strong> ${escapeHtml(getWeekMealValue(plan, slot))}</div>`)
+      .join('') || '<div class="week-overview-meta">Ingen plan</div>';
+
     card.innerHTML = `
       <h4>${day.long}</h4>
-      <div class="week-overview-meal">${escapeHtml(getWeekPlanTitle(plan))}</div>
-      <div class="week-overview-note">${escapeHtml(plan.note || '-')}</div>
-      <div class="week-overview-meta">
-        <span>${getWeekPlanStatusLabel(plan)}</span>
-        <span>${plan.recipe ? 'Recept' : (plan.meal ? 'Text' : '-')}</span>
-      </div>
+      <div class="week-overview-meal">${escapeHtml(getWeekDinnerTitle(plan))}</div>
+      ${mealsHtml}
     `;
     target.appendChild(card);
   });
@@ -3940,20 +4015,26 @@ function refreshWeekPlannerUI() {
   const plan = getWeekPlan(selectedWeekDay);
   const dayDef = getWeekDayDef(selectedWeekDay);
 
-  buildWeekRecipeOptions(plan.recipe);
+  buildAllWeekRecipeOptions(plan);
+  renderWeekMealRowsByOrder();
 
   const selectedDayName = document.getElementById('weekSelectedDayName');
-  const customMeal = document.getElementById('weekCustomMeal');
   const note = document.getElementById('weekNote');
-  const previewMeal = document.getElementById('weekPreviewMeal');
   const previewNote = document.getElementById('weekPreviewNote');
   const dayStatus = document.getElementById('weekDayStatus');
 
   if (selectedDayName) selectedDayName.textContent = dayDef.long;
-  if (customMeal) customMeal.value = plan.meal || '';
   if (note) note.value = plan.note || '';
-  if (previewMeal) previewMeal.textContent = getWeekPlanTitle(plan);
   if (previewNote) previewNote.textContent = plan.note || '-';
+
+  getWeekMealSlots().forEach(slot => {
+    const select = document.getElementById(slot.selectId);
+    const input = document.getElementById(slot.inputId);
+    const preview = document.getElementById(slot.previewId);
+    if (select) select.value = plan[slot.recipeKey] || '';
+    if (input) input.value = plan[slot.customKey] || '';
+    if (preview) preview.textContent = getWeekMealDisplay(plan, slot);
+  });
 
   if (dayStatus) {
     dayStatus.textContent = getWeekPlanStatusLabel(plan);
@@ -3980,45 +4061,50 @@ function jumpToTodayPlan() {
 function saveWeekPlanForSelectedDay() {
   ensureWeekPlannerShape();
 
-  const recipe = document.getElementById('weekRecipeSelect')?.value || '';
-  const meal = document.getElementById('weekCustomMeal')?.value.trim() || '';
-  const note = document.getElementById('weekNote')?.value.trim() || '';
-
   const previous = getWeekPlan(selectedWeekDay);
-  weekPlanner[selectedWeekDay] = {
-    recipe,
-    meal,
-    note,
-    cooked: previous.cooked && (recipe || meal || note) ? true : false,
-    lastCheckMissing: recipe === previous.recipe ? previous.lastCheckMissing : null
+  const nextPlan = {
+    ...previous,
+    note: document.getElementById('weekNote')?.value.trim() || ''
   };
 
-  if (!recipe && !meal && !note) {
-    weekPlanner[selectedWeekDay].cooked = false;
-    weekPlanner[selectedWeekDay].lastCheckMissing = null;
+  getWeekMealSlots().forEach(slot => {
+    nextPlan[slot.recipeKey] = document.getElementById(slot.selectId)?.value || '';
+    nextPlan[slot.customKey] = document.getElementById(slot.inputId)?.value.trim() || '';
+  });
+
+  const recipeNames = getWeekMealSlots().map(slot => nextPlan[slot.recipeKey]).filter(Boolean);
+  const previousRecipeNames = getWeekMealSlots().map(slot => previous[slot.recipeKey]).filter(Boolean);
+  const sameRecipes = recipeNames.length === previousRecipeNames.length && recipeNames.every((name, index) => name === previousRecipeNames[index]);
+
+  nextPlan.cooked = previous.cooked && getWeekPlanHasContent(nextPlan) ? true : false;
+  nextPlan.lastCheckMissing = sameRecipes ? previous.lastCheckMissing : null;
+
+  if (!getWeekPlanHasContent(nextPlan)) {
+    nextPlan.cooked = false;
+    nextPlan.lastCheckMissing = null;
   }
 
+  weekPlanner[selectedWeekDay] = nextPlan;
   saveWeekPlannerState();
   refreshWeekPlannerUI();
 }
 
 function clearSelectedWeekPlan() {
-  weekPlanner[selectedWeekDay] = { recipe: '', meal: '', note: '', cooked: false, lastCheckMissing: null };
+  weekPlanner[selectedWeekDay] = getWeekPlanEmptyEntry();
   saveWeekPlannerState();
   refreshWeekPlannerUI();
 }
 
 function toggleCookedSelectedDay() {
   const plan = getWeekPlan(selectedWeekDay);
-  if (!plan.recipe && !plan.meal && !plan.note) return;
+  if (!getWeekPlanHasContent(plan)) return;
   plan.cooked = !plan.cooked;
   weekPlanner[selectedWeekDay] = plan;
   saveWeekPlannerState();
   refreshWeekPlannerUI();
 }
 
-function syncRecipeSectionToWeekPlan(plan) {
-  const recipeName = plan?.recipe || '';
+function syncRecipeSectionToWeekPlan(recipeName) {
   if (!recipeName) return false;
   const select = document.getElementById('recipeSelect');
   if (!select) return false;
@@ -4042,71 +4128,152 @@ function syncRecipeSectionToWeekPlan(plan) {
   return true;
 }
 
-function openSelectedWeekRecipe() {
-  const plan = getWeekPlan(selectedWeekDay);
-  if (!plan.recipe) return;
-  const ok = syncRecipeSectionToWeekPlan(plan);
-  if (!ok) return;
-  const recipeBlock = document.getElementById('recipeSection');
-  if (recipeBlock) recipeBlock.scrollIntoView({ behavior: 'smooth', block: 'start' });
+function getWeekPrimaryRecipeName(plan) {
+  const recipesForDay = getWeekPlanRecipes(plan);
+  const dinnerRecipe = recipesForDay.find(entry => entry.slot.key === 'dinner');
+  return (dinnerRecipe || recipesForDay[0] || {}).recipeName || '';
 }
 
 function checkSelectedWeekRecipe() {
   const plan = getWeekPlan(selectedWeekDay);
-  if (!plan.recipe) return;
+  const recipesForDay = getWeekPlanRecipes(plan);
+  if (!recipesForDay.length) return;
 
-  const ok = syncRecipeSectionToWeekPlan(plan);
-  if (!ok) return;
+  let totalMissing = 0;
 
-  if (typeof checkRecipe === 'function') checkRecipe();
+  recipesForDay.forEach((entry, index) => {
+    const ok = syncRecipeSectionToWeekPlan(entry.recipeName);
+    if (!ok) return;
+    if (typeof checkRecipe === 'function') checkRecipe();
+    totalMissing += Array.isArray(currentRecipeMissing) ? currentRecipeMissing.length : 0;
+  });
 
-  const missingCount = Array.isArray(currentRecipeMissing) ? currentRecipeMissing.length : 0;
-  plan.lastCheckMissing = missingCount;
-  if (missingCount === 0 && (plan.recipe || plan.meal)) {
+  plan.lastCheckMissing = totalMissing;
+  if (totalMissing === 0 && getWeekPlanHasContent(plan)) {
     plan.cooked = false;
   }
   weekPlanner[selectedWeekDay] = plan;
   saveWeekPlannerState();
+
+  const primaryRecipe = getWeekPrimaryRecipeName(plan);
+  if (primaryRecipe) syncRecipeSectionToWeekPlan(primaryRecipe);
   refreshWeekPlannerUI();
 }
 
 function addMissingForSelectedWeekRecipe() {
   const plan = getWeekPlan(selectedWeekDay);
-  if (!plan.recipe) return;
-  checkSelectedWeekRecipe();
-  if (typeof addMissingToBuy === 'function') addMissingToBuy();
+  const recipesForDay = getWeekPlanRecipes(plan);
+  if (!recipesForDay.length) return;
+
+  let totalMissing = 0;
+
+  recipesForDay.forEach(entry => {
+    const ok = syncRecipeSectionToWeekPlan(entry.recipeName);
+    if (!ok) return;
+    if (typeof checkRecipe === 'function') checkRecipe();
+    totalMissing += Array.isArray(currentRecipeMissing) ? currentRecipeMissing.length : 0;
+    if (typeof addMissingToBuy === 'function') addMissingToBuy();
+  });
+
+  plan.lastCheckMissing = totalMissing;
+  weekPlanner[selectedWeekDay] = plan;
+  saveWeekPlannerState();
+
+  const primaryRecipe = getWeekPrimaryRecipeName(plan);
+  if (primaryRecipe) syncRecipeSectionToWeekPlan(primaryRecipe);
   refreshWeekPlannerUI();
 }
 
 function cookSelectedWeekRecipe() {
   const plan = getWeekPlan(selectedWeekDay);
-  if (!plan.recipe) return;
+  const recipesForDay = getWeekPlanRecipes(plan);
+  if (!recipesForDay.length) return;
 
-  const ok = syncRecipeSectionToWeekPlan(plan);
-  if (!ok) return;
+  recipesForDay.forEach(entry => {
+    const ok = syncRecipeSectionToWeekPlan(entry.recipeName);
+    if (!ok) return;
+    if (typeof useRecipeIngredients === 'function') useRecipeIngredients();
+  });
 
-  if (typeof useRecipeIngredients === 'function') useRecipeIngredients();
   plan.cooked = true;
   plan.lastCheckMissing = 0;
   weekPlanner[selectedWeekDay] = plan;
   saveWeekPlannerState();
+
+  const primaryRecipe = getWeekPrimaryRecipeName(plan);
+  if (primaryRecipe) syncRecipeSectionToWeekPlan(primaryRecipe);
   refreshWeekPlannerUI();
+}
+
+function updateWeekMealOrderFromDom() {
+  const rows = Array.from(document.querySelectorAll('#weekMealRows .week-meal-row[data-slot-key]'));
+  const nextOrder = rows
+    .map(row => row.dataset.slotKey || '')
+    .filter(Boolean);
+
+  const defaultKeys = WEEK_MEAL_SLOTS_DEFAULT.map(slot => slot.key);
+  defaultKeys.forEach(key => {
+    if (!nextOrder.includes(key)) nextOrder.push(key);
+  });
+  weekMealOrder = nextOrder;
+  saveWeekPlannerState();
+}
+
+function initWeekMealDragAndDrop() {
+  const container = document.getElementById('weekMealRows');
+  if (!container) return;
+
+  let draggedRow = null;
+
+  container.querySelectorAll('.week-meal-row[data-slot-key]').forEach(row => {
+    row.setAttribute('draggable', 'true');
+
+    row.addEventListener('dragstart', () => {
+      draggedRow = row;
+      row.classList.add('dragging');
+    });
+
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      draggedRow = null;
+      updateWeekMealOrderFromDom();
+      renderWeekMealRowsByOrder();
+    });
+
+    row.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      const currentTarget = row;
+      if (!draggedRow || draggedRow === currentTarget) return;
+
+      const rect = currentTarget.getBoundingClientRect();
+      const before = event.clientY < rect.top + rect.height / 2;
+      if (before) {
+        container.insertBefore(draggedRow, currentTarget);
+      } else {
+        container.insertBefore(draggedRow, currentTarget.nextSibling);
+      }
+    });
+  });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   ensureWeekPlannerShape();
+  renderWeekMealRowsByOrder();
   refreshWeekPlannerUI();
+  initWeekMealDragAndDrop();
 
-  const weekRecipeSelect = document.getElementById('weekRecipeSelect');
-  if (weekRecipeSelect) {
-    weekRecipeSelect.addEventListener('change', () => {
-      const selectedName = weekRecipeSelect.value || '';
-      const customMeal = document.getElementById('weekCustomMeal');
-      if (selectedName && customMeal && !customMeal.value.trim()) customMeal.value = selectedName;
-    });
-  }
+  getWeekMealSlots().forEach(slot => {
+    const select = document.getElementById(slot.selectId);
+    const input = document.getElementById(slot.inputId);
+
+    if (select) {
+      select.addEventListener('change', () => {
+        const selectedName = select.value || '';
+        if (selectedName && input && !input.value.trim()) input.value = selectedName;
+      });
+    }
+  });
 });
-
 
 // ===== THEME SYSTEM =====
 const themes = ["scifi","dark","light","matrix","sunset","ice"];
@@ -4228,3 +4395,47 @@ document.addEventListener('blur', (e) => {
 }, true);
 
 window.addEventListener('load', () => { try { syncMeasureModeVisibility(); syncEditMeasureModeVisibility(); syncIngredientEditMeasureModeVisibility(); updateMeasureSummary(); updateEditMeasureSummary(); updateIngredientEditMeasureSummary(); } catch (e) {} });
+
+
+// Drag & Drop meals
+let draggedMeal = null;
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll('.week-meal-row').forEach(row => {
+
+    row.addEventListener('dragstart', () => {
+      draggedMeal = row;
+      row.classList.add('dragging');
+    });
+
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+    });
+
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      const container = row.parentNode;
+      const afterElement = getDragAfterElement(container, e.clientY);
+      if (afterElement == null) {
+        container.appendChild(draggedMeal);
+      } else {
+        container.insertBefore(draggedMeal, afterElement);
+      }
+    });
+
+  });
+});
+
+function getDragAfterElement(container, y) {
+  const draggableElements = [...container.querySelectorAll('.week-meal-row:not(.dragging)')];
+
+  return draggableElements.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) {
+      return { offset: offset, element: child };
+    } else {
+      return closest;
+    }
+  }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
