@@ -221,7 +221,7 @@ let recipeDraftItems = [];
 let currentRecipeMissing = [];
 let recipeIngredientChoices = JSON.parse(localStorage.getItem('matlista_recipe_choices') || '{}');
 let householdSize = Math.max(1, Number(localStorage.getItem('matlista_household_size') || 1));
-let portionGrams = Math.max(1, Math.min(300, Math.round(Number(localStorage.getItem('matlista_portion_grams') || 100) || 100)));
+let portionGrams = Math.max(1, Math.min(250, Math.round(Number(localStorage.getItem('matlista_portion_grams') || 100) || 100)));
 let editingIngredientIndex = null;
 let editingIngredientRecipeIndex = null;
 let selectedAddQuickIndex = null;
@@ -233,6 +233,10 @@ let draggedItemSource = null;
 let holdAddTimeout = null;
 let holdAddInterval = null;
 let holdAddTriggered = false;
+let draggedRecipeIngredientIndex = null;
+let draggedRecipeIngredientMode = '';
+let draggedRecipeIngredientRecipeName = '';
+let activeRecipeTouchDrag = null;
 
 const defaultPlaces = [
   { key: 'kyl', label: '🧊 Kyl' },
@@ -1691,7 +1695,7 @@ function updatePortionGrams(value, live = false) {
     return;
   }
 
-  portionGrams = Math.max(1, Math.min(300, parsed));
+  portionGrams = Math.max(1, Math.min(250, parsed));
   if (input && input.value !== String(portionGrams)) input.value = String(portionGrams);
   save();
   updateSummary();
@@ -2709,6 +2713,184 @@ function removeItem(index) {
   render();
 }
 
+function saveRecipeIngredientOrder(recipe = null) {
+  if (recipe && recipe.name) {
+    clearRecipeResult();
+    save();
+    renderRecipeSelect();
+    return;
+  }
+  save();
+}
+
+function moveRecipeIngredient(fromIndex, toIndex, mode = 'draft', recipeName = '') {
+  if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex) || fromIndex === toIndex || toIndex < 0) return;
+
+  if (mode === 'selected') {
+    const recipe = recipeName
+      ? recipes.find(entry => entry.name === recipeName)
+      : getSelectedRecipe();
+    if (!recipe || !Array.isArray(recipe.items) || fromIndex >= recipe.items.length || toIndex >= recipe.items.length) return;
+
+    const moved = recipe.items.splice(fromIndex, 1)[0];
+    recipe.items.splice(toIndex, 0, moved);
+    saveRecipeIngredientOrder(recipe);
+    return;
+  }
+
+  if (!Array.isArray(recipeDraftItems) || fromIndex >= recipeDraftItems.length || toIndex >= recipeDraftItems.length) return;
+  const moved = recipeDraftItems.splice(fromIndex, 1)[0];
+  recipeDraftItems.splice(toIndex, 0, moved);
+  renderDraftIngredients();
+}
+
+function resetRecipeDragState() {
+  draggedRecipeIngredientIndex = null;
+  draggedRecipeIngredientMode = '';
+  draggedRecipeIngredientRecipeName = '';
+}
+
+function clearRecipeDropMarkers() {
+  document.querySelectorAll('.recipe-item.drag-over, .recipe-item.is-dragging-source').forEach(el => {
+    el.classList.remove('drag-over', 'is-dragging-source');
+  });
+}
+
+function getRecipeDropRowFromPoint(clientX, clientY) {
+  const elements = document.elementsFromPoint(clientX, clientY) || [];
+  return elements.find(el => el.classList && el.classList.contains('recipe-item')) || null;
+}
+
+function finishRecipeTouchDrag(commitDrop = true) {
+  const state = activeRecipeTouchDrag;
+  if (!state) return;
+
+  if (state.ghost && state.ghost.parentNode) state.ghost.parentNode.removeChild(state.ghost);
+  if (state.sourceEl) {
+    state.sourceEl.classList.remove('is-touch-dragging', 'is-dragging-source');
+    state.sourceEl.style.visibility = '';
+  }
+
+  const finalTarget = state.lastTargetEl;
+  const targetIndex = finalTarget ? Number(finalTarget.dataset.dragIndex) : NaN;
+  if (commitDrop && Number.isInteger(targetIndex) && targetIndex >= 0) {
+    moveRecipeIngredient(state.index, targetIndex, state.mode, state.recipeName);
+  }
+
+  clearRecipeDropMarkers();
+  activeRecipeTouchDrag = null;
+}
+
+function startRecipeTouchDrag(event, row, index, mode = 'draft', recipeName = '') {
+  if (!row || event.pointerType === 'mouse') return;
+  if (event.target && event.target.closest('button, input, select, textarea, a, label, option')) return;
+
+  const rect = row.getBoundingClientRect();
+  const ghost = row.cloneNode(true);
+  ghost.classList.add('recipe-drag-ghost');
+  ghost.style.width = `${Math.max(220, Math.round(rect.width))}px`;
+  ghost.style.left = `${rect.left}px`;
+  ghost.style.top = `${rect.top}px`;
+  document.body.appendChild(ghost);
+
+  row.classList.add('is-touch-dragging', 'is-dragging-source');
+  row.style.visibility = 'hidden';
+
+  activeRecipeTouchDrag = {
+    pointerId: event.pointerId,
+    sourceEl: row,
+    ghost,
+    index,
+    mode,
+    recipeName,
+    offsetX: event.clientX - rect.left,
+    offsetY: event.clientY - rect.top,
+    lastTargetEl: null
+  };
+
+  row.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function updateRecipeTouchDrag(event) {
+  const state = activeRecipeTouchDrag;
+  if (!state || state.pointerId !== event.pointerId) return;
+
+  const ghostLeft = event.clientX - state.offsetX;
+  const ghostTop = event.clientY - state.offsetY;
+  state.ghost.style.left = `${ghostLeft}px`;
+  state.ghost.style.top = `${ghostTop}px`;
+
+  clearRecipeDropMarkers();
+  state.sourceEl.classList.add('is-dragging-source');
+
+  const targetRow = getRecipeDropRowFromPoint(event.clientX, event.clientY);
+  if (targetRow && targetRow !== state.sourceEl && targetRow.dataset.dragMode === state.mode && (state.mode !== 'selected' || targetRow.dataset.recipeName === state.recipeName)) {
+    targetRow.classList.add('drag-over');
+    state.lastTargetEl = targetRow;
+  } else {
+    state.lastTargetEl = null;
+  }
+
+  event.preventDefault();
+}
+
+function bindRecipeRowDrag(row, index, mode = 'draft', recipeName = '') {
+  if (!row) return;
+
+  row.dataset.dragIndex = String(index);
+  row.dataset.dragMode = mode;
+  row.dataset.recipeName = recipeName || '';
+  row.draggable = true;
+
+  row.addEventListener('dragstart', event => {
+    if (event.target && event.target.closest('button, input, select, textarea, a, label, option')) {
+      event.preventDefault();
+      return;
+    }
+    draggedRecipeIngredientIndex = index;
+    draggedRecipeIngredientMode = mode;
+    draggedRecipeIngredientRecipeName = recipeName || '';
+    row.classList.add('is-dragging-source');
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      try { event.dataTransfer.setData('text/plain', `${mode}:${index}`); } catch (err) {}
+    }
+  });
+
+  row.addEventListener('dragover', event => {
+    if (draggedRecipeIngredientIndex === null) return;
+    if (draggedRecipeIngredientMode !== mode) return;
+    if (mode === 'selected' && draggedRecipeIngredientRecipeName !== (recipeName || '')) return;
+    event.preventDefault();
+    row.classList.add('drag-over');
+  });
+
+  row.addEventListener('dragleave', () => {
+    row.classList.remove('drag-over');
+  });
+
+  row.addEventListener('drop', event => {
+    if (draggedRecipeIngredientIndex === null) return;
+    if (draggedRecipeIngredientMode !== mode) return;
+    if (mode === 'selected' && draggedRecipeIngredientRecipeName !== (recipeName || '')) return;
+    event.preventDefault();
+    row.classList.remove('drag-over');
+    moveRecipeIngredient(draggedRecipeIngredientIndex, index, mode, recipeName);
+    resetRecipeDragState();
+  });
+
+  row.addEventListener('dragend', () => {
+    clearRecipeDropMarkers();
+    resetRecipeDragState();
+  });
+
+  row.addEventListener('pointerdown', event => startRecipeTouchDrag(event, row, index, mode, recipeName), { passive: false });
+  row.addEventListener('pointermove', updateRecipeTouchDrag, { passive: false });
+  row.addEventListener('pointerup', () => finishRecipeTouchDrag(true));
+  row.addEventListener('pointercancel', () => finishRecipeTouchDrag(false));
+}
+
 function renderDraftIngredients() {
   const target = document.getElementById('recipeDraftList');
   if (!target) return;
@@ -2721,12 +2903,18 @@ function renderDraftIngredients() {
 
   recipeDraftItems.forEach((ingredient, idx) => {
     const row = document.createElement('div');
-    row.className = 'recipe-item';
+    row.className = 'recipe-item recipe-item-draggable';
     row.innerHTML = `
-      <div>${recipeIngredientToText(ingredient)}</div>
-      <button type="button" class="ghost-btn" onclick="editDraftIngredient(${idx})">✏️</button>
-      <button type="button" class="delete" onclick="removeDraftIngredient(${idx})">🗑️</button>
+      <div class="recipe-item-main">
+        <span class="recipe-drag-handle" aria-hidden="true">☰</span>
+        <div class="recipe-item-text">${recipeIngredientToText(ingredient)}</div>
+      </div>
+      <div class="recipe-item-actions">
+        <button type="button" class="ghost-btn" onclick="editDraftIngredient(${idx})">✏️</button>
+        <button type="button" class="delete" onclick="removeDraftIngredient(${idx})">🗑️</button>
+      </div>
     `;
+    bindRecipeRowDrag(row, idx, 'draft');
     target.appendChild(row);
   });
 }
@@ -2950,7 +3138,7 @@ function renderSelectedRecipeIngredients() {
       const replacements = getRecipeReplacementOptions(baseIngredient);
       const selectedChoice = getRecipeIngredientChoice(recipe.name, baseIngredient.name);
       const row = document.createElement('div');
-      row.className = 'recipe-item';
+      row.className = 'recipe-item recipe-item-draggable';
 
       const controls = replacements.length
         ? `
@@ -2965,13 +3153,19 @@ function renderSelectedRecipeIngredients() {
         : '';
 
       row.innerHTML = `
-        <div>
-          <div>${recipeIngredientToText(displayIngredient)}</div>
-          ${controls}
+        <div class="recipe-item-main">
+          <span class="recipe-drag-handle" aria-hidden="true">☰</span>
+          <div class="recipe-item-content">
+            <div class="recipe-item-text">${recipeIngredientToText(displayIngredient)}</div>
+            ${controls}
+          </div>
         </div>
-        <button type="button" class="ghost-btn" onclick="editRecipeIngredient(${idx})">✏️</button>
-        <button type="button" class="delete" onclick="removeRecipeIngredient(${idx})">🗑️</button>
+        <div class="recipe-item-actions">
+          <button type="button" class="ghost-btn" onclick="editRecipeIngredient(${idx})">✏️</button>
+          <button type="button" class="delete" onclick="removeRecipeIngredient(${idx})">🗑️</button>
+        </div>
       `;
+      bindRecipeRowDrag(row, idx, 'selected', recipe.name);
       target.appendChild(row);
     });
   }
@@ -3554,7 +3748,7 @@ function bindStateToWindow() {
     homeOpenState: { get: () => homeOpenState, set: value => { homeOpenState = value && typeof value === 'object' ? value : {}; } },
     recipeIngredientChoices: { get: () => recipeIngredientChoices, set: value => { recipeIngredientChoices = value && typeof value === 'object' ? value : {}; } },
     householdSize: { get: () => householdSize, set: value => { householdSize = Math.max(1, Math.min(8, Number(value || 1))); } },
-    portionGrams: { get: () => portionGrams, set: value => { portionGrams = Math.max(1, Math.min(300, Math.round(Number(value || 100) || 100))); } },
+    portionGrams: { get: () => portionGrams, set: value => { portionGrams = Math.max(1, Math.min(250, Math.round(Number(value || 100) || 100))); } },
     weekPlanner: { get: () => weekPlanner, set: value => { weekPlanner = value && typeof value === 'object' ? value : {}; } },
     selectedWeekDay: { get: () => selectedWeekDay, set: value => { selectedWeekDay = String(value || getTodayWeekKey()); } }
   };
