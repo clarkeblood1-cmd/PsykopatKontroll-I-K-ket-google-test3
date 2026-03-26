@@ -1245,7 +1245,7 @@ function hydrateData() {
     const fallbackCategory = normalizeRecipeCategory(recipe?.category || recipe?.type || 'matlagning');
     return {
       name: String(recipe?.name || '').trim(),
-      items: normalizeRecipeIngredientList(recipe?.items),
+      items: normalizeRecipeIngredientList(recipe?.items, recipe),
       link: String(recipe?.link || ''),
       type: normalizeRecipeType(recipe?.type || fallbackCategory),
       category: ensureRecipeCategoryExists(fallbackCategory),
@@ -2538,7 +2538,7 @@ function showQuickImage(index) {
   if (modalImg) modalImg.src = src;
 }
 
-function clearInputs() {
+function clearInputs(focusName = false) {
   const itemName = document.getElementById('itemName');
   const itemPrice = document.getElementById('itemPrice');
   const itemQuantity = document.getElementById('itemQuantity');
@@ -2547,6 +2547,7 @@ function clearInputs() {
   const itemUnit = document.getElementById('itemUnit');
   const itemSize = document.getElementById('itemSize');
   const itemPlace = document.getElementById('itemPlace');
+  const itemMeasureText = document.getElementById('itemMeasureText');
 
   if (itemName) itemName.value = '';
   if (itemPrice) itemPrice.value = '';
@@ -2565,9 +2566,10 @@ function clearInputs() {
   selectedAddQuickIndex = null;
   hideMainItemSuggestions();
   try { syncMeasureModeVisibility(); updateMeasureSummary(); } catch (e) {}
+  if (focusName && itemName) itemName.focus();
 }
 
-function addItem() {
+function buildItemFromForm() {
   const nameInput = document.getElementById('itemName');
   const fileInput = document.getElementById('itemImage');
   const qtyInput = document.getElementById('itemQuantity');
@@ -2576,15 +2578,14 @@ function addItem() {
   const unitInput = document.getElementById('itemUnit');
   const sizeInput = document.getElementById('itemSize');
   const placeInput = document.getElementById('itemPlace');
+  const itemMeasureTextInput = document.getElementById('itemMeasureText');
 
   const name = nameInput?.value.trim() || '';
-  if (!name) return;
+  if (!name) return null;
 
   const matchedQuick = quickItems.find(q => normalizeText(q.name) === normalizeText(name));
-
   const resolvedUnit = unitInput?.value || (matchedQuick ? matchedQuick.unit : 'st');
   const quantity = Math.max(1, Number(qtyInput?.value || 1));
-  const itemMeasureTextInput = document.getElementById('itemMeasureText');
   const parsedMeasure = supportsSize(resolvedUnit)
     ? parseSmartMeasureInput(itemMeasureTextInput?.value || matchedQuick?.measureText || matchedQuick?.weightText || matchedQuick?.size, resolvedUnit)
     : null;
@@ -2592,12 +2593,12 @@ function addItem() {
   if (supportsSize(resolvedUnit)) {
     if (!parsedMeasure) {
       alert(getMeasureInputError(resolvedUnit));
-      return;
+      return null;
     }
     const measureWarning = getMeasureValidationMessage(parsedMeasure, quantity, resolvedUnit);
     if (measureWarning) {
       alert(measureWarning);
-      return;
+      return null;
     }
     if (itemMeasureTextInput) itemMeasureTextInput.value = formatSmartMeasureDisplay(parsedMeasure, resolvedUnit);
   }
@@ -2618,52 +2619,72 @@ function addItem() {
     img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name)
   };
 
-  const file = fileInput?.files?.[0];
+  return { item, file: fileInput?.files?.[0] || null, matchedQuick };
+}
+
+function saveQuickTemplate(item) {
+  const normalized = normalizeMeasureItemData({ ...item, quantity: 1 });
+  const existingQuick = quickItems.find(i => normalizeText(i.name) === normalizeText(normalized.name));
+
+  if (existingQuick) {
+    existingQuick.price = Number(normalized.price || existingQuick.price || 0);
+    existingQuick.quantity = 1;
+    existingQuick.unit = normalized.unit || existingQuick.unit || 'st';
+    existingQuick.size = normalizeSize(existingQuick.unit, parseSmartMeasureInput(normalized.measureText || normalized.weightText || normalized.size, existingQuick.unit) || normalized.size || existingQuick.size, normalized.category || existingQuick.category);
+    existingQuick.measureText = supportsSize(existingQuick.unit) ? getMeasureTextFromSize(existingQuick.size, existingQuick.unit) : '';
+    existingQuick.weightText = isWeightUnit(existingQuick.unit) ? existingQuick.measureText : '';
+    existingQuick.category = normalized.category || existingQuick.category || 'MAT';
+    existingQuick.place = normalized.place || existingQuick.place || 'kyl';
+    if (normalized.img) existingQuick.img = normalized.img;
+  } else {
+    quickItems.unshift(normalized);
+  }
+}
+
+function saveHomeItem(item) {
+  const normalizedItem = normalizeMeasureItemData(item);
+  const existingHome = items.find(i => i.type === 'home' && sameVariant(i, normalizedItem));
+
+  if (existingHome) {
+    existingHome.quantity = Number(existingHome.quantity || 0) + Number(normalizedItem.quantity || 0);
+    existingHome.price = Number(normalizedItem.price || existingHome.price || 0);
+    existingHome.category = normalizedItem.category;
+    existingHome.unit = normalizedItem.unit;
+    existingHome.size = normalizedItem.size;
+    existingHome.measureText = normalizedItem.measureText || '';
+    existingHome.weightText = normalizedItem.weightText || '';
+    if (normalizedItem.img) existingHome.img = normalizedItem.img;
+    syncQuickItemFromItem(existingHome);
+  } else {
+    items.push(normalizedItem);
+    syncQuickItemFromItem(normalizedItem);
+  }
+}
+
+function addItem(saveToHome = false) {
+  const formData = buildItemFromForm();
+  if (!formData) return;
+
+  const { item, file } = formData;
 
   const saveItem = imgData => {
     if (imgData) item.img = imgData;
 
-    const existingHome = items.find(i =>
-      i.type === 'home' && sameVariant(i, item)
-    );
-
-    if (existingHome) {
-      existingHome.quantity = Number(existingHome.quantity || 0) + Number(item.quantity || 0);
-      existingHome.price = Number(item.price || existingHome.price || 0);
-      existingHome.category = item.category;
-      existingHome.unit = item.unit;
-      existingHome.size = item.size;
-      existingHome.measureText = item.measureText || '';
-      existingHome.weightText = item.weightText || '';
-      if (item.img) existingHome.img = item.img;
-      syncQuickItemFromItem(existingHome);
-    } else {
-      items.push(normalizeMeasureItemData(item));
-      syncQuickItemFromItem(normalizeMeasureItemData(item));
-    }
-
-    const existsQuick = quickItems.find(i => normalizeText(i.name) === normalizeText(item.name));
-    if (existsQuick) {
-      existsQuick.price = Number(item.price || existsQuick.price || 0);
-      existsQuick.quantity = 1;
-      existsQuick.unit = item.unit || existsQuick.unit || 'st';
-      existsQuick.size = normalizeSize(existsQuick.unit, parseSmartMeasureInput(item.measureText || item.weightText || item.size, existsQuick.unit) || item.size || existsQuick.size, item.category || existsQuick.category);
-      existsQuick.measureText = supportsSize(existsQuick.unit) ? getMeasureTextFromSize(existsQuick.size, existsQuick.unit) : '';
-      existsQuick.weightText = isWeightUnit(existsQuick.unit) ? existsQuick.measureText : '';
-      existsQuick.category = item.category || existsQuick.category || 'MAT';
-      existsQuick.place = item.place || existsQuick.place || 'kyl';
-      if (item.img) existsQuick.img = item.img;
-    } else {
-      quickItems.unshift(normalizeMeasureItemData({ ...item, type: 'home' }));
-    }
+    saveQuickTemplate(item);
+    if (saveToHome) saveHomeItem(item);
 
     save();
     render();
-    clearInputs();
+    clearInputs(true);
+    setActiveKitchenPage('quick');
   };
 
   if (file) resizeImage(file, saveItem);
   else saveItem('');
+}
+
+function addItemAndUse() {
+  addItem(true);
 }
 
 function updateQuantity(index, value) {
@@ -2969,7 +2990,7 @@ function saveRecipe() {
   const existingIndex = recipes.findIndex(r => normalizeText(r.name) === normalizeText(name));
   const recipe = {
     name,
-    items: recipeDraftItems.length ? normalizeRecipeIngredientList(recipeDraftItems) : (existingIndex >= 0 ? normalizeRecipeIngredientList(recipes[existingIndex].items) : []),
+    items: recipeDraftItems.length ? normalizeRecipeIngredientList(recipeDraftItems, { category: recipeCategory, type: recipeType }) : (existingIndex >= 0 ? normalizeRecipeIngredientList(recipes[existingIndex].items, recipes[existingIndex]) : []),
     link,
     type: recipeType,
     category: recipeCategory,
@@ -3236,10 +3257,10 @@ function normalizeRecipeIngredient(value) {
   };
 }
 
-function normalizeRecipeIngredientList(list) {
+function normalizeRecipeIngredientList(list, recipe = null) {
   return (Array.isArray(list) ? list : [])
     .map(normalizeRecipeIngredient)
-    .map(syncRecipeIngredientFromQuickItem)
+    .map(item => syncRecipeIngredientFromQuickItem(item, recipe))
     .filter(Boolean);
 }
 
@@ -3259,12 +3280,23 @@ function findQuickItemByName(name) {
   return quickItems.find(item => normalizeText(item?.name || '') === normalized) || null;
 }
 
-function syncRecipeIngredientFromQuickItem(ingredient) {
+function isBakverkRecipe(recipe = null) {
+  return normalizeRecipeCategory(recipe?.category || recipe?.type || '') === 'bakverk';
+}
+
+function syncRecipeIngredientFromQuickItem(ingredient, recipe = null) {
   const normalized = normalizeRecipeIngredient(ingredient);
   if (!normalized) return null;
 
   const quickMatch = findQuickItemByName(normalized.name);
   if (!quickMatch) return normalized;
+
+  if (isBakverkRecipe(recipe)) {
+    return normalizeRecipeIngredient({
+      ...normalized,
+      category: quickMatch.category || normalized.category || ''
+    });
+  }
 
   const quickUnit = String(quickMatch.unit || normalized.unit || 'st').toLowerCase();
   const quickContext = getRecipeIngredientContext({
@@ -3284,8 +3316,8 @@ function syncRecipeIngredientFromQuickItem(ingredient) {
   });
 }
 
-function buildRecipeIngredient(name, quantity, unit, size = null, category = '') {
-  return syncRecipeIngredientFromQuickItem({ name, quantity, unit, size, category });
+function buildRecipeIngredient(name, quantity, unit, size = null, category = '', recipe = null) {
+  return syncRecipeIngredientFromQuickItem({ name, quantity, unit, size, category }, recipe);
 }
 
 function recipeUnitsCompatible(a, b) {
@@ -3407,7 +3439,7 @@ function saveIngredientEdit() {
     ? normalizeRecipeIngredient(recipeDraftItems[editingIngredientIndex])
     : normalizeRecipeIngredient(recipes[editingIngredientRecipeIndex]?.items[editingIngredientIndex]);
 
-  const updated = buildRecipeIngredient(name, quantity, unit, size, previousIngredient?.category || '');
+  const updated = buildRecipeIngredient(name, quantity, unit, size, previousIngredient?.category || '', editingIngredientRecipeIndex === -1 ? { category: document.getElementById('recipeCategory')?.value || 'matlagning' } : recipes[editingIngredientRecipeIndex]);
   if (!updated) return;
 
   if (editingIngredientRecipeIndex === -1) {
@@ -3567,7 +3599,7 @@ function showEditRecipeSuggestions() {
     row.className = 'suggestion-row';
     row.textContent = item.name;
     row.onclick = () => {
-      const ingredientData = buildRecipeIngredient(item.name, 1, item.unit || 'st', item.size, item.category || '');
+      const ingredientData = buildRecipeIngredient(item.name, 1, item.unit || 'st', item.size, item.category || '', recipe);
       if (!recipe.items.some(i => ingredientMatchesName(i, item.name))) {
         recipe.items.push(ingredientData);
         save();
@@ -3608,7 +3640,7 @@ function showNewRecipeQuickSuggestions() {
     row.className = 'suggestion-row';
     row.textContent = item.name;
     row.onclick = () => {
-      const ingredientData = buildRecipeIngredient(item.name, 1, item.unit || 'st', item.size, item.category || '');
+      const ingredientData = buildRecipeIngredient(item.name, 1, item.unit || 'st', item.size, item.category || '', { category: document.getElementById('recipeCategory')?.value || 'matlagning' });
       if (!recipeDraftItems.some(i => ingredientMatchesName(i, item.name))) {
         recipeDraftItems.push(ingredientData);
         renderDraftIngredients();
@@ -3651,6 +3683,26 @@ document.addEventListener('click', event => {
   const mainInput = document.getElementById('itemName');
   const mainBox = document.getElementById('mainItemSuggestions');
   if (mainInput && mainBox && !mainBox.contains(event.target) && event.target !== mainInput) hideMainItemSuggestions();
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+  const itemName = document.getElementById('itemName');
+  const itemPrice = document.getElementById('itemPrice');
+  const itemQuantity = document.getElementById('itemQuantity');
+  const itemMeasureText = document.getElementById('itemMeasureText');
+
+  const handleQuickAddKeydown = (event) => {
+    const targetId = event.target?.id || '';
+    if (!['itemName', 'itemPrice', 'itemQuantity', 'itemMeasureText'].includes(targetId)) return;
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    if (event.ctrlKey || event.metaKey) addItemAndUse();
+    else addItem();
+  };
+
+  [itemName, itemPrice, itemQuantity, itemMeasureText].forEach(el => {
+    if (el) el.addEventListener('keydown', handleQuickAddKeydown);
+  });
 });
 
 document.addEventListener('DOMContentLoaded', () => {

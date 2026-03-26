@@ -81,7 +81,23 @@
       <button type="button" class="page-tab" data-page-tab="manage">⚙️ Hantera</button>
     </nav>
 
-    <div class="controls" data-page="home">
+    <section class="section quick-add-hero" data-page="quick">
+      <div class="quick-add-hero-card">
+        <div class="quick-add-badge">⚡ Ultimate quick add</div>
+        <div class="quick-add-head">
+          <div>
+            <h2>Lägg till nya varor direkt i Snabblista</h2>
+            <p>Skriv namn, tryck Enter för att spara i snabblistan, eller välj att lägga till direkt hemma också.</p>
+          </div>
+          <div class="quick-add-mini-tips">
+            <span>↵ Enter = spara</span>
+            <span>Ctrl/Cmd + Enter = spara + hemma</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="controls quick-add-controls" data-page="quick">
       <select id="itemCategory" data-category-select onchange="suggestUnit()"></select>
 
       <div style="position:relative;">
@@ -116,7 +132,9 @@
       <input type="file" id="itemImage" class="file-input" accept="image/png, image/jpeg, image/webp">
       <button type="button" class="ghost-btn" onclick="pickGallery()">🖼️ Galleri</button>
       <button type="button" class="ghost-btn" onclick="pickCamera()">📷 Kamera</button>
-      <button type="button" onclick="addItem()">➕ Lägg till</button>
+      <button type="button" class="ghost-btn quick-save-btn" onclick="addItem()">💾 Spara i Snabblista</button>
+      <button type="button" class="quick-home-btn" onclick="addItemAndUse()">🏠 Spara + Lägg hemma</button>
+      <button type="button" class="ghost-btn quick-clear-btn" onclick="clearInputs()">🧹 Rensa</button>
     </div>
 
 
@@ -312,7 +330,7 @@
                 <input id="recipeQuickSearch" placeholder="Sök ingrediens från snabblistan..." oninput="showNewRecipeQuickSuggestions()">
                 <div id="recipeQuickSuggestions" class="suggestion-box"></div>
               </div>
-              <div class="recipe-quick-hint">Ingredienser hämtas från <strong>Snabblista</strong>, så en ändring där slår igenom på receptets enhet, storlek, kategori och bild.</div>
+              <div class="recipe-quick-hint">Ingredienser hämtas från <strong>Snabblista</strong>. För <strong>bakverk</strong> används bara ingrediensnamnet därifrån – mängd och gram sätter du i receptet själv.</div>
 
               <div id="recipeDraftList" class="recipe-items"></div>
               <button type="button" onclick="saveRecipe()">💾 Spara recept</button>
