@@ -3320,34 +3320,343 @@ function buildRecipeIngredient(name, quantity, unit, size = null, category = '',
   return syncRecipeIngredientFromQuickItem({ name, quantity, unit, size, category }, recipe);
 }
 
+function getRecipeUnitFamily(unit) {
+  if (isWeightUnit(unit)) return 'weight';
+  if (isLiquidUnit(unit)) return 'liquid';
+  return String(unit || 'st').toLowerCase();
+}
+
 function recipeUnitsCompatible(a, b) {
-  if (supportsSize(a) && supportsSize(b)) return true;
-  return String(a || 'st').toLowerCase() === String(b || 'st').toLowerCase();
+  return getRecipeUnitFamily(a) === getRecipeUnitFamily(b);
+}
+
+function getItemCanonicalAmount(item, unitHint = null) {
+  if (!item) return 0;
+
+  const unit = String(unitHint || item.unit || 'st').toLowerCase();
+  const quantity = Math.max(0, Number(item.quantity || 0));
+  if (!Number.isFinite(quantity) || quantity <= 0) return 0;
+
+  if (supportsSize(unit)) {
+    const parsedSize = parseSmartMeasureInput(item.measureText || item.weightText || item.size, unit);
+    const size = Math.max(0, Number(parsedSize || item.size || 0));
+    if (!Number.isFinite(size) || size <= 0) return 0;
+    return quantity * size;
+  }
+
+  return quantity;
 }
 
 function recipeIngredientCanonicalAmount(ingredient) {
   const ing = normalizeRecipeIngredient(ingredient);
   if (!ing) return 0;
-  if (supportsSize(ing.unit)) return Number(ing.quantity || 0) * Number(ing.size || 0);
-  return Number(ing.quantity || 0);
+  return getItemCanonicalAmount(ing, ing.unit);
 }
 
 function ingredientMatchesName(ingredient, name) {
   return normalizeText(normalizeRecipeIngredient(ingredient)?.name || '') === normalizeText(name || '');
 }
 
+function getMatchingHomeItemsForIngredient(ingredient) {
+  const ing = normalizeRecipeIngredient(ingredient);
+  if (!ing) return [];
+
+  return items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.type === 'home' && ingredientMatchesName(ing, item.name) && recipeUnitsCompatible(ing.unit, item.unit));
+}
+
 function getHomeAmountForIngredient(ingredient) {
   const ing = normalizeRecipeIngredient(ingredient);
   if (!ing) return 0;
 
-  return items
-    .filter(item => item.type === 'home' && ingredientMatchesName(ing, item.name) && recipeUnitsCompatible(ing.unit, item.unit))
-    .reduce((sum, item) => {
-      if (supportsSize(ing.unit) && supportsSize(item.unit)) {
-        return sum + (Number(item.quantity || 0) * Number(item.size || 0));
+  return getMatchingHomeItemsForIngredient(ing)
+    .reduce((sum, { item }) => sum + getItemCanonicalAmount(item, ing.unit), 0);
+}
+
+function cloneTemplateForIngredient(ingredient) {
+  const ing = normalizeRecipeIngredient(ingredient);
+  if (!ing) return null;
+
+  const quickMatch = findQuickItemByName(ing.name);
+  const homeMatch = getMatchingHomeItemsForIngredient(ing)[0]?.item || null;
+  const base = quickMatch || homeMatch || {};
+  const unit = String(base.unit || ing.unit || 'st').toLowerCase();
+  const unitFamilyMatches = recipeUnitsCompatible(unit, ing.unit);
+  const resolvedUnit = unitFamilyMatches ? unit : ing.unit;
+  const context = getRecipeIngredientContext({
+    ...base,
+    ...ing,
+    unit: resolvedUnit,
+    category: base.category || ing.category || ''
+  });
+
+  const normalizedSize = supportsSize(resolvedUnit)
+    ? normalizeSize(resolvedUnit, base.size ?? ing.size, context)
+    : null;
+
+  return {
+    name: base.name || ing.name,
+    price: Number(base.price || 0),
+    quantity: 1,
+    unit: resolvedUnit,
+    size: normalizedSize,
+    measureText: supportsSize(resolvedUnit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, resolvedUnit) : '',
+    weightText: isWeightUnit(resolvedUnit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, resolvedUnit) : '',
+    category: ensureCategoryExists(base.category || ing.category || 'MAT'),
+    place: ensurePlaceExists(base.place || 'kyl'),
+    img: base.img ? String(base.img) : ''
+  };
+}
+
+function createBuyItemFromMissingEntry(entry) {
+  if (!entry) return null;
+
+  const ingredient = normalizeRecipeIngredient(entry.ingredient || entry);
+  if (!ingredient) return null;
+
+  const missingAmount = Math.max(0, Number(entry.missing || 0));
+  if (!missingAmount) return null;
+
+  const template = cloneTemplateForIngredient(ingredient) || {
+    name: ingredient.name,
+    price: 0,
+    quantity: 1,
+    unit: ingredient.unit || 'st',
+    size: supportsSize(ingredient.unit) ? normalizeSize(ingredient.unit, ingredient.size, ingredient) : null,
+    measureText: '',
+    weightText: '',
+    category: ensureCategoryExists(ingredient.category || 'MAT'),
+    place: ensurePlaceExists('kyl'),
+    img: ''
+  };
+
+  const unit = String(template.unit || ingredient.unit || 'st').toLowerCase();
+  if (supportsSize(unit)) {
+    const totalAmount = Math.max(1, Math.round(missingAmount));
+    return {
+      ...template,
+      type: 'buy',
+      quantity: 1,
+      unit,
+      size: totalAmount,
+      measureText: formatSmartMeasureDisplay(totalAmount, unit),
+      weightText: isWeightUnit(unit) ? formatSmartMeasureDisplay(totalAmount, unit) : ''
+    };
+  }
+
+  return {
+    ...template,
+    type: 'buy',
+    quantity: Math.max(1, Math.ceil(missingAmount)),
+    unit,
+    size: null,
+    measureText: '',
+    weightText: ''
+  };
+}
+
+function mergeCanonicalItemIntoList(nextItem, type = 'buy') {
+  if (!nextItem) return;
+
+  const normalizedType = type === 'home' ? 'home' : 'buy';
+  const copy = {
+    ...nextItem,
+    type: normalizedType,
+    quantity: Math.max(1, Number(nextItem.quantity || 1)),
+    unit: String(nextItem.unit || 'st').toLowerCase(),
+    size: supportsSize(nextItem.unit) ? Math.max(1, Math.round(Number(nextItem.size || 0))) : null,
+    price: Number(nextItem.price || 0),
+    category: ensureCategoryExists(nextItem.category || 'MAT'),
+    place: ensurePlaceExists(nextItem.place || 'kyl'),
+    img: nextItem.img ? String(nextItem.img) : ''
+  };
+
+  const existing = items.find(entry =>
+    entry.type === normalizedType &&
+    normalizeText(entry.name) === normalizeText(copy.name) &&
+    recipeUnitsCompatible(entry.unit, copy.unit)
+  );
+
+  if (existing) {
+    if (supportsSize(copy.unit)) {
+      const currentTotal = getItemCanonicalAmount(existing, copy.unit);
+      const incomingTotal = getItemCanonicalAmount(copy, copy.unit);
+      const mergedTotal = Math.max(0, Math.round(currentTotal + incomingTotal));
+      existing.quantity = 1;
+      existing.unit = copy.unit;
+      existing.size = mergedTotal;
+      existing.measureText = formatSmartMeasureDisplay(mergedTotal, copy.unit);
+      existing.weightText = isWeightUnit(copy.unit) ? formatSmartMeasureDisplay(mergedTotal, copy.unit) : '';
+    } else {
+      existing.quantity = Math.max(0, Number(existing.quantity || 0) + Number(copy.quantity || 0));
+      existing.size = null;
+      existing.measureText = '';
+      existing.weightText = '';
+    }
+
+    if (Number(existing.price || 0) === 0 && Number(copy.price || 0) > 0) existing.price = Number(copy.price || 0);
+    existing.category = copy.category || existing.category || 'MAT';
+    existing.place = copy.place || existing.place || 'kyl';
+    if (!existing.img && copy.img) existing.img = copy.img;
+    return;
+  }
+
+  items.push(copy);
+}
+
+function addMissingEntriesToBuy(entries = []) {
+  (Array.isArray(entries) ? entries : []).forEach(entry => {
+    const buyItem = createBuyItemFromMissingEntry(entry);
+    if (buyItem) mergeCanonicalItemIntoList(buyItem, 'buy');
+  });
+  save();
+}
+
+function createRestockBuyItemFromQuick(ingredient) {
+  const ing = normalizeRecipeIngredient(ingredient);
+  if (!ing) return null;
+
+  const quickMatch = findQuickItemByName(ing.name);
+  if (!quickMatch) return null;
+
+  const unit = String(quickMatch.unit || ing.unit || 'st').toLowerCase();
+  const context = getRecipeIngredientContext({
+    ...quickMatch,
+    ...ing,
+    unit,
+    category: quickMatch.category || ing.category || ''
+  });
+  const normalizedSize = supportsSize(unit)
+    ? normalizeSize(unit, quickMatch.size, context)
+    : null;
+
+  return {
+    name: quickMatch.name || ing.name,
+    price: Number(quickMatch.price || 0),
+    quantity: Math.max(1, Number(quickMatch.quantity || 1)),
+    unit,
+    size: normalizedSize,
+    measureText: supportsSize(unit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, unit) : '',
+    weightText: isWeightUnit(unit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, unit) : '',
+    category: ensureCategoryExists(quickMatch.category || ing.category || 'MAT'),
+    place: ensurePlaceExists(quickMatch.place || 'kyl'),
+    img: quickMatch.img ? String(quickMatch.img) : '',
+    type: 'buy'
+  };
+}
+
+function queueRestockIfDepleted(ingredient, amountBefore = 0) {
+  const ing = normalizeRecipeIngredient(ingredient);
+  if (!ing || amountBefore <= 0) return;
+
+  const amountAfter = getHomeAmountForIngredient(ing);
+  if (amountAfter > 0) return;
+
+  const buyItem = createRestockBuyItemFromQuick(ing);
+  if (!buyItem) return;
+
+  mergeCanonicalItemIntoList(buyItem, 'buy');
+}
+
+function consumeIngredientEntries(entries = []) {
+  const normalizedEntries = Array.isArray(entries) ? entries : [];
+
+  normalizedEntries.forEach(entry => {
+    const ingredient = normalizeRecipeIngredient(entry?.ingredient || entry);
+    if (!ingredient) return;
+
+    const amountBefore = getHomeAmountForIngredient(ingredient);
+    let remaining = recipeIngredientCanonicalAmount(ingredient);
+    if (!remaining) return;
+
+    const matches = getMatchingHomeItemsForIngredient(ingredient)
+      .sort((a, b) => getItemCanonicalAmount(b.item, ingredient.unit) - getItemCanonicalAmount(a.item, ingredient.unit));
+
+    matches.forEach(({ item, index }) => {
+      if (remaining <= 0 || !items[index]) return;
+
+      const available = getItemCanonicalAmount(item, ingredient.unit);
+      if (available <= 0) return;
+
+      if (supportsSize(ingredient.unit)) {
+        const nextAmount = Math.max(0, Math.round(available - remaining));
+        remaining = Math.max(0, remaining - available);
+
+        if (nextAmount <= 0) {
+          items.splice(index, 1);
+          return;
+        }
+
+        const stored = items[index];
+        if (!stored) return;
+        stored.quantity = 1;
+        stored.unit = ingredient.unit;
+        stored.size = nextAmount;
+        stored.measureText = formatSmartMeasureDisplay(nextAmount, ingredient.unit);
+        stored.weightText = isWeightUnit(ingredient.unit) ? formatSmartMeasureDisplay(nextAmount, ingredient.unit) : '';
+      } else {
+        const availableCount = Math.max(0, Number(item.quantity || 0));
+        const consumed = Math.min(availableCount, remaining);
+        remaining = Math.max(0, remaining - consumed);
+
+        const stored = items[index];
+        if (!stored) return;
+        stored.quantity = Math.max(0, availableCount - consumed);
+        if (stored.quantity <= 0) items.splice(index, 1);
       }
-      return sum + Number(item.quantity || 0);
-    }, 0);
+    });
+
+    queueRestockIfDepleted(ingredient, amountBefore);
+  });
+
+  save();
+}
+
+function getCombinedRecipeIngredientEntries(recipeEntries = []) {
+  const combinedMap = new Map();
+
+  (Array.isArray(recipeEntries) ? recipeEntries : []).forEach(entry => {
+    const recipe = entry?.recipe;
+    if (!recipe || !Array.isArray(recipe.items)) return;
+
+    recipe.items.forEach(rawIngredient => {
+      const ingredient = resolveRecipeIngredient(rawIngredient, recipe);
+      if (!ingredient) return;
+
+      const key = `${normalizeText(ingredient.name)}__${getRecipeUnitFamily(ingredient.unit)}`;
+      const existing = combinedMap.get(key);
+      const canonical = recipeIngredientCanonicalAmount(ingredient);
+
+      if (!existing) {
+        combinedMap.set(key, {
+          ingredient: supportsSize(ingredient.unit)
+            ? {
+                ...ingredient,
+                quantity: 1,
+                size: canonical,
+                measureText: formatSmartMeasureDisplay(canonical, ingredient.unit),
+                weightText: isWeightUnit(ingredient.unit) ? formatSmartMeasureDisplay(canonical, ingredient.unit) : ''
+              }
+            : { ...ingredient },
+          amount: canonical
+        });
+        return;
+      }
+
+      existing.amount += canonical;
+      if (supportsSize(existing.ingredient.unit)) {
+        existing.ingredient.quantity = 1;
+        existing.ingredient.size = Math.max(1, Math.round(existing.amount));
+        existing.ingredient.measureText = formatSmartMeasureDisplay(existing.ingredient.size, existing.ingredient.unit);
+        existing.ingredient.weightText = isWeightUnit(existing.ingredient.unit) ? formatSmartMeasureDisplay(existing.ingredient.size, existing.ingredient.unit) : '';
+      } else {
+        existing.ingredient.quantity = Math.max(1, Math.ceil(existing.amount));
+      }
+    });
+  });
+
+  return [...combinedMap.values()];
 }
 
 function formatRecipeAmount(unit, amount) {
@@ -3562,6 +3871,7 @@ function addMissingToBuy() {
 
   addMissingEntriesToBuy(currentRecipeMissing);
   checkRecipe();
+  render();
 }
 
 function useRecipeIngredients() {
@@ -3571,6 +3881,7 @@ function useRecipeIngredients() {
   const combinedEntries = getCombinedRecipeIngredientEntries([{ slot: { label: 'Recept' }, recipe, recipeName: recipe.name }]);
   consumeIngredientEntries(combinedEntries);
   checkRecipe();
+  render();
 }
 
 function showEditRecipeSuggestions() {
