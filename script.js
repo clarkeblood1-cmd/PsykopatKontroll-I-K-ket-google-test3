@@ -815,6 +815,18 @@ function getItemImage(item) {
   return item.img ? String(item.img) : getAutoImagePath(item.name || '');
 }
 
+function getRecipeIngredientImage(ingredient) {
+  if (!ingredient) return getNoImagePlaceholder();
+
+  if (ingredient.img) return String(ingredient.img);
+
+  const normalizedName = normalizeText(ingredient.name || '');
+  const matchedItem = [...quickItems, ...items].find(entry => normalizeText(entry?.name || '') === normalizedName && entry?.img);
+  if (matchedItem?.img) return String(matchedItem.img);
+
+  return getAutoImagePath(ingredient.name || '') || getNoImagePlaceholder();
+}
+
 
 
 // === SMART WEIGHT TEXT + TOTAL DISPLAY ===
@@ -3152,9 +3164,11 @@ function renderSelectedRecipeIngredients() {
         `
         : '';
 
+      const ingredientImage = getRecipeIngredientImage(displayIngredient);
       row.innerHTML = `
         <div class="recipe-item-main">
           <span class="recipe-drag-handle" aria-hidden="true">☰</span>
+          <img class="recipe-item-image" src="${ingredientImage}" alt="${displayIngredient.name}" data-item-name="${displayIngredient.name}" onerror="handleItemImageError(this)">
           <div class="recipe-item-content">
             <div class="recipe-item-text">${recipeIngredientToText(displayIngredient)}</div>
             ${controls}
