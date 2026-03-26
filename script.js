@@ -1223,7 +1223,7 @@ function hydrateData() {
   quickItems = quickItems.map(item => ({
     name: String(item?.name || '').trim(),
     price: Number(item?.price || 0),
-    quantity: 1,
+    quantity: Math.max(1, Number(item?.quantity || 1)),
     unit: String(item?.unit || 'st'),
     size: normalizeSize(item?.unit || 'st', parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size),
     measureText: supportsSize(item?.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size, item?.unit || 'st') : '',
@@ -1300,7 +1300,7 @@ function syncQuickItemFromItem(changedItem) {
   quick.size = normalizeSize(quick.unit, parseSmartMeasureInput(changedItem.measureText || changedItem.weightText || changedItem.size, quick.unit) || changedItem.size || quick.size);
   quick.measureText = supportsSize(quick.unit) ? getMeasureTextFromSize(quick.size, quick.unit) : '';
   quick.weightText = isWeightUnit(quick.unit) ? quick.measureText : '';
-  quick.quantity = 1;
+  quick.quantity = Math.max(1, Number(quick.quantity || 1));
 }
 
 function updateToggleButtons() {
@@ -2623,12 +2623,12 @@ function buildItemFromForm() {
 }
 
 function saveQuickTemplate(item) {
-  const normalized = normalizeMeasureItemData({ ...item, quantity: 1 });
+  const normalized = normalizeMeasureItemData({ ...item, quantity: Math.max(1, Number(item?.quantity || 1)) });
   const existingQuick = quickItems.find(i => normalizeText(i.name) === normalizeText(normalized.name));
 
   if (existingQuick) {
     existingQuick.price = Number(normalized.price || existingQuick.price || 0);
-    existingQuick.quantity = 1;
+    existingQuick.quantity = Math.max(1, Number(normalized.quantity || existingQuick.quantity || 1));
     existingQuick.unit = normalized.unit || existingQuick.unit || 'st';
     existingQuick.size = normalizeSize(existingQuick.unit, parseSmartMeasureInput(normalized.measureText || normalized.weightText || normalized.size, existingQuick.unit) || normalized.size || existingQuick.size, normalized.category || existingQuick.category);
     existingQuick.measureText = supportsSize(existingQuick.unit) ? getMeasureTextFromSize(existingQuick.size, existingQuick.unit) : '';
@@ -3559,6 +3559,38 @@ function queueRestockIfDepleted(ingredient, amountBefore = 0) {
   mergeCanonicalItemIntoList(buyItem, 'buy');
 }
 
+function queueConsumedCountToBuy(ingredient, consumedAmount = 0) {
+  const ing = normalizeRecipeIngredient(ingredient);
+  const countToBuy = Math.max(0, Math.ceil(Number(consumedAmount || 0)));
+  if (!ing || countToBuy <= 0) return;
+
+  const template = cloneTemplateForIngredient(ing) || {
+    name: ing.name,
+    price: 0,
+    quantity: 1,
+    unit: ing.unit || 'st',
+    size: null,
+    measureText: '',
+    weightText: '',
+    category: ensureCategoryExists(ing.category || 'MAT'),
+    place: ensurePlaceExists('kyl'),
+    img: ''
+  };
+
+  const unit = String(template.unit || ing.unit || 'st').toLowerCase();
+  if (supportsSize(unit)) return;
+
+  mergeCanonicalItemIntoList({
+    ...template,
+    type: 'buy',
+    unit,
+    size: null,
+    measureText: '',
+    weightText: '',
+    quantity: countToBuy
+  }, 'buy');
+}
+
 function consumeIngredientEntries(entries = []) {
   const normalizedEntries = Array.isArray(entries) ? entries : [];
 
@@ -3568,6 +3600,7 @@ function consumeIngredientEntries(entries = []) {
 
     const amountBefore = getHomeAmountForIngredient(ingredient);
     let remaining = recipeIngredientCanonicalAmount(ingredient);
+    const requestedAmount = remaining;
     if (!remaining) return;
 
     const matches = getMatchingHomeItemsForIngredient(ingredient)
@@ -3607,7 +3640,12 @@ function consumeIngredientEntries(entries = []) {
       }
     });
 
-    queueRestockIfDepleted(ingredient, amountBefore);
+    const consumedTotal = Math.max(0, requestedAmount - remaining);
+    if (supportsSize(ingredient.unit)) {
+      queueRestockIfDepleted(ingredient, amountBefore);
+    } else {
+      queueConsumedCountToBuy(ingredient, consumedTotal);
+    }
   });
 
   save();
