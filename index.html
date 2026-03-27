@@ -38,6 +38,22 @@
         <button type="button" id="googleLoginBtn" onclick="loginWithGoogle()">Logga in med Google</button>
         <button type="button" id="googleLogoutBtn" class="ghost-btn" onclick="logoutGoogle()" style="display:none;">Logga ut</button>
       </div>
+      <div id="householdPanel" class="household-panel" style="display:none;">
+        <div class="household-panel-head">
+          <div class="household-title">🏠 Delat hushåll</div>
+          <div id="householdStatus" class="household-status">Logga in för att skapa eller gå med i ett hushåll.</div>
+          <div id="householdMeta" class="household-meta"></div>
+        </div>
+        <div class="household-actions">
+          <button type="button" id="householdCreateBtn" class="ghost-btn" onclick="createHousehold()" style="display:none;">Skapa hushåll</button>
+          <div id="householdJoinWrap" class="household-join-wrap" style="display:none;">
+            <input id="householdCodeInput" maxlength="8" placeholder="Hushållskod" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')">
+            <button type="button" onclick="joinHousehold()">Gå med</button>
+          </div>
+          <button type="button" id="copyHouseholdCodeBtn" class="ghost-btn" onclick="copyHouseholdCode()" style="display:none;">Kopiera kod</button>
+          <button type="button" id="householdLeaveBtn" class="ghost-btn" onclick="leaveHousehold()" style="display:none;">Lämna hushåll</button>
+        </div>
+      </div>
     </section>
 
     <div class="summary-bar">
@@ -487,6 +503,7 @@
          <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
          <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
         <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
 <script src="firebase-config.js"></script>
 <script src="cloud-sync.js"></script>
 <script src="script.js"></script>

@@ -327,6 +327,7 @@ button:hover{background:var(--green-dark);color:#fff}
 /* Cloud sync / auth */
 .auth-panel{
   display:flex;
+  flex-wrap:wrap;
   align-items:center;
   justify-content:space-between;
   gap:14px;
@@ -347,7 +348,15 @@ button:hover{background:var(--green-dark);color:#fff}
   .auth-actions{flex-direction:column}
 }
 
-
+.household-panel{display:grid;gap:12px;width:100%;padding-top:14px;border-top:1px solid rgba(255,255,255,.08)}
+.household-panel-head{display:grid;gap:4px}
+.household-title{font-size:16px;font-weight:800}
+.household-status{color:#dbeafe;font-weight:700}
+.household-meta{color:var(--muted);font-size:13px;line-height:1.4}
+.household-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.household-join-wrap{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.household-join-wrap input{min-width:180px;max-width:220px}
+@media (max-width:700px){.household-actions,.household-join-wrap{flex-direction:column;align-items:stretch}.household-join-wrap input{max-width:none}}
 
 /* ===== APP INSTALL HEADER ===== */
 .app-header{
