@@ -17,3 +17,11 @@ window.auth = firebase.auth();
 window.db = firebase.firestore();
 
 console.log("✅ Firebase init klart");
+
+firebase.auth().signInAnonymously()
+  .then(() => {
+    console.log("✅ Auto login klar");
+  })
+  .catch(err => {
+    console.error("❌ Login error:", err);
+  });
