@@ -1128,23 +1128,6 @@ function getAutoImagePath(name) {
   return getAutoImageCandidates(name)[0] || '';
 }
 
-function isCloudImageUrl(src) {
-  const value = String(src || '').trim();
-  return /^https?:\/\//i.test(value) && value.includes('firebasestorage');
-}
-
-function isInlineImage(src) {
-  return String(src || '').startsWith('data:image/');
-}
-
-function resolvePreferredItemImage(name, currentImg = '') {
-  const src = String(currentImg || '').trim();
-  if (!src) return getAutoImagePath(name);
-  if (isInlineImage(src) || isCloudImageUrl(src)) return src;
-  if (src.startsWith('images/')) return src;
-  return src;
-}
-
 function getNextAutoImagePath(name, currentSrc = '') {
   const candidates = getAutoImageCandidates(name);
   if (!candidates.length) return '';
@@ -1585,7 +1568,7 @@ function hydrateData() {
       place: ensurePlaceExists(item?.place || fallbackPlace, room),
       room,
       type: item?.type === 'buy' ? 'buy' : 'home',
-      img: resolvePreferredItemImage(item?.name || '', item?.img),
+      img: item?.img ? String(item.img) : getAutoImagePath(item?.name || ''),
       openedAmount: Math.max(0, Number(item?.openedAmount || 0)),
       packMode: item?.packMode === 'bags' ? 'bags' : ''
     };
@@ -1606,7 +1589,7 @@ function hydrateData() {
       place: ensurePlaceExists(item?.place || fallbackPlace, room),
       room,
       type: 'home',
-      img: resolvePreferredItemImage(item?.name || '', item?.img)
+      img: item?.img ? String(item.img) : getAutoImagePath(item?.name || '')
     };
   }).filter(item => item.name);
 
@@ -2411,7 +2394,7 @@ function addHomeItemFromTemplate(sourceItem, quantity = 1, targetPlace = null) {
     category: ensureCategoryExists(sourceItem.category || getRoomFallbackCategory(sourceItem.room || activeRoom), sourceItem.room || activeRoom),
     place: ensurePlaceExists(targetPlace || sourceItem.place || 'kyl'),
     type: 'home',
-    img: resolvePreferredItemImage(sourceItem.name || '', sourceItem.img),
+    img: sourceItem.img ? String(sourceItem.img) : '',
     openedAmount: Math.max(0, Number(sourceItem.openedAmount || 0)),
     packMode: isWeightUnit(sourceItem.unit || 'st') && (Number(quantity || sourceItem.quantity || 0) > 1 || Number(sourceItem.openedAmount || 0) > 0 || sourceItem.packMode === 'bags') ? 'bags' : ''
   };
@@ -2452,7 +2435,7 @@ function addBuyItemFromTemplate(sourceItem, quantity = 1) {
     category: ensureCategoryExists(sourceItem.category || getRoomFallbackCategory(sourceItem.room || activeRoom), sourceItem.room || activeRoom),
     place: ensurePlaceExists(sourceItem.place || 'kyl'),
     type: 'buy',
-    img: resolvePreferredItemImage(sourceItem.name || '', sourceItem.img),
+    img: sourceItem.img ? String(sourceItem.img) : '',
     openedAmount: 0,
     packMode: ''
   };
@@ -3169,7 +3152,9 @@ function saveEditItem() {
     room: updatedRoom,
     category: ensureCategoryExists(document.getElementById('editCategory')?.value || currentItem.category || getRoomFallbackCategory(updatedRoom), updatedRoom),
     place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || getPlacesForRoom(updatedRoom)[0]?.key || 'kyl', updatedRoom),
-    img: resolvePreferredItemImage(updatedName, currentItem?.img)
+    img: currentItem?.img && String(currentItem.img).startsWith('data:')
+      ? String(currentItem.img)
+      : getAutoImagePath(updatedName)
   };
 
   if (!updated.name) return;
@@ -3308,7 +3293,7 @@ function buildItemFromForm() {
     category: ensureCategoryExists(categoryInput?.value || (matchedQuick ? matchedQuick.category : getRoomFallbackCategory(itemRoom)), itemRoom),
     place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : fallbackPlace), itemRoom),
     type: 'home',
-    img: resolvePreferredItemImage(matchedQuick ? matchedQuick.name : name, matchedQuick?.img)
+    img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name)
   };
 
   return { item, file: fileInput?.files?.[0] || null, matchedQuick };
@@ -3365,36 +3350,26 @@ function saveHomeItem(item) {
   }
 }
 
-async function addItem(saveToHome = false) {
+function addItem(saveToHome = false) {
   const formData = buildItemFromForm();
   if (!formData) return;
 
   const { item, file } = formData;
-  let finalImage = item.img || '';
 
-  if (file) {
-    try {
-      if (typeof window.uploadItemImageToCloud === 'function') {
-        finalImage = await window.uploadItemImageToCloud(file, item.name || 'vara');
-      } else {
-        finalImage = await new Promise(resolve => resizeImage(file, resolve));
-      }
-    } catch (error) {
-      console.error('Image upload error:', error);
-      alert('Bild kunde inte laddas upp till molnet. Kontrollera att du är inloggad och att Firebase Storage är aktiverat.');
-      return;
-    }
-  }
+  const saveItem = imgData => {
+    if (imgData) item.img = imgData;
 
-  if (finalImage) item.img = finalImage;
+    saveQuickTemplate(item);
+    if (saveToHome) saveHomeItem(item);
 
-  saveQuickTemplate(item);
-  if (saveToHome) saveHomeItem(item);
+    save();
+    render();
+    clearInputs(true);
+    setActiveKitchenPage('quick');
+  };
 
-  save();
-  render();
-  clearInputs(true);
-  setActiveKitchenPage('quick');
+  if (file) resizeImage(file, saveItem);
+  else saveItem('');
 }
 
 function addItemAndUse() {
@@ -3433,7 +3408,7 @@ function updateQuantity(index, value) {
         category: ensureCategoryExists(item.category || getRoomFallbackCategory(item.room || activeRoom), item.room || activeRoom),
         place: item.place || 'kyl',
         type: 'buy',
-        img: resolvePreferredItemImage(item.name || '', item.img)
+        img: item.img || ''
       });
     }
   }
@@ -4288,7 +4263,7 @@ function mergeCanonicalItemIntoList(nextItem, type = 'buy') {
     price: Number(nextItem.price || 0),
     category: ensureCategoryExists(nextItem.category || getRoomFallbackCategory(nextItem.room || activeRoom), nextItem.room || activeRoom),
     place: ensurePlaceExists(nextItem.place || 'kyl'),
-    img: resolvePreferredItemImage(nextItem.name || '', nextItem.img)
+    img: nextItem.img ? String(nextItem.img) : ''
   };
 
   const existing = items.find(entry =>
@@ -4360,7 +4335,7 @@ function createRestockBuyItemFromQuick(ingredient) {
     weightText: isWeightUnit(unit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, unit) : '',
     category: ensureCategoryExists(quickMatch.category || ing.category || getRoomFallbackCategory(quickMatch.room || activeRoom), quickMatch.room || activeRoom),
     place: ensurePlaceExists(quickMatch.place || 'kyl'),
-    img: resolvePreferredItemImage(quickMatch.name || '', quickMatch.img),
+    img: quickMatch.img ? String(quickMatch.img) : '',
     type: 'buy'
   };
 }
