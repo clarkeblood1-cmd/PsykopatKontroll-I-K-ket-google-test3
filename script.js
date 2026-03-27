@@ -1128,23 +1128,6 @@ function getAutoImagePath(name) {
   return getAutoImageCandidates(name)[0] || '';
 }
 
-function isCloudImageUrl(src) {
-  const value = String(src || '').trim();
-  return /^https?:\/\//i.test(value) && value.includes('firebasestorage');
-}
-
-function isInlineImage(src) {
-  return String(src || '').startsWith('data:image/');
-}
-
-function resolvePreferredItemImage(name, currentImg = '') {
-  const src = String(currentImg || '').trim();
-  if (!src) return getAutoImagePath(name);
-  if (isInlineImage(src) || isCloudImageUrl(src)) return src;
-  if (src.startsWith('images/')) return src;
-  return src;
-}
-
 function getNextAutoImagePath(name, currentSrc = '') {
   const candidates = getAutoImageCandidates(name);
   if (!candidates.length) return '';
@@ -1585,7 +1568,7 @@ function hydrateData() {
       place: ensurePlaceExists(item?.place || fallbackPlace, room),
       room,
       type: item?.type === 'buy' ? 'buy' : 'home',
-      img: resolvePreferredItemImage(item?.name || '', item?.img),
+      img: item?.img ? String(item.img) : getAutoImagePath(item?.name || ''),
       openedAmount: Math.max(0, Number(item?.openedAmount || 0)),
       packMode: item?.packMode === 'bags' ? 'bags' : ''
     };
@@ -1606,7 +1589,7 @@ function hydrateData() {
       place: ensurePlaceExists(item?.place || fallbackPlace, room),
       room,
       type: 'home',
-      img: resolvePreferredItemImage(item?.name || '', item?.img)
+      img: item?.img ? String(item.img) : getAutoImagePath(item?.name || '')
     };
   }).filter(item => item.name);
 
@@ -1648,6 +1631,7 @@ function save() {
   localStorage.setItem('matlista_portion_grams', String(portionGrams));
   localStorage.setItem('matlista_weekplanner', JSON.stringify(weekPlanner));
   localStorage.setItem('matlista_weekplanner_selected', selectedWeekDay);
+  localStorage.setItem('matlista_week_meal_order', JSON.stringify(weekMealOrder));
 
   window.items = items;
   window.quickItems = quickItems;
@@ -1665,7 +1649,46 @@ function save() {
   window.portionGrams = portionGrams;
   window.weekPlanner = weekPlanner;
   window.selectedWeekDay = selectedWeekDay;
+  window.weekMealOrder = weekMealOrder;
+  window.activeKitchenPage = localStorage.getItem(PAGE_TAB_STORAGE_KEY) || 'home';
 }
+
+window.applyCloudState = function applyCloudState(data) {
+  if (!data || typeof data !== 'object') return;
+
+  if (Array.isArray(data.items)) items = data.items;
+  if (Array.isArray(data.quickItems)) quickItems = data.quickItems;
+  if (Array.isArray(data.recipes)) recipes = data.recipes;
+  if (Array.isArray(data.categories)) categories = data.categories;
+  if (Array.isArray(data.recipeCategories)) recipeCategories = data.recipeCategories;
+  if (Array.isArray(data.places)) places = data.places;
+  if (data.roomConfigs && typeof data.roomConfigs === 'object' && !Array.isArray(data.roomConfigs)) roomConfigs = data.roomConfigs;
+  if (Array.isArray(data.roomDefs)) roomDefs = data.roomDefs;
+  if (typeof data.activeRoom === 'string' && data.activeRoom) activeRoom = data.activeRoom;
+  if (typeof data.activePlaceFilter === 'string') activePlaceFilter = data.activePlaceFilter;
+  if (data.homeOpenState && typeof data.homeOpenState === 'object') homeOpenState = data.homeOpenState;
+  if (data.recipeIngredientChoices && typeof data.recipeIngredientChoices === 'object') recipeIngredientChoices = data.recipeIngredientChoices;
+  if (typeof data.householdSize !== 'undefined') householdSize = Math.max(1, Math.min(8, Number(data.householdSize || 1)));
+  if (typeof data.portionGrams !== 'undefined') portionGrams = Math.max(1, Math.min(250, Math.round(Number(data.portionGrams || 100) || 100)));
+  if (data.weekPlanner && typeof data.weekPlanner === 'object') weekPlanner = data.weekPlanner;
+  if (typeof data.selectedWeekDay === 'string' && data.selectedWeekDay) selectedWeekDay = data.selectedWeekDay;
+  if (Array.isArray(data.weekMealOrder)) weekMealOrder = data.weekMealOrder;
+
+  if (typeof data.activeKitchenPage === 'string' && data.activeKitchenPage) {
+    localStorage.setItem(PAGE_TAB_STORAGE_KEY, data.activeKitchenPage);
+  }
+
+  if (typeof data.theme === 'string' && data.theme) {
+    localStorage.setItem('theme', data.theme);
+  }
+
+  hydrateData();
+  save();
+
+  if (typeof data.activeKitchenPage === 'string' && data.activeKitchenPage && typeof window.setActiveKitchenPage === 'function') {
+    window.setActiveKitchenPage(data.activeKitchenPage, false);
+  }
+};
 
 function syncQuickItemFromItem(changedItem) {
   const quick = quickItems.find(q => normalizeText(q.name) === normalizeText(changedItem.name));
@@ -2371,7 +2394,7 @@ function addHomeItemFromTemplate(sourceItem, quantity = 1, targetPlace = null) {
     category: ensureCategoryExists(sourceItem.category || getRoomFallbackCategory(sourceItem.room || activeRoom), sourceItem.room || activeRoom),
     place: ensurePlaceExists(targetPlace || sourceItem.place || 'kyl'),
     type: 'home',
-    img: resolvePreferredItemImage(sourceItem.name || '', sourceItem.img),
+    img: sourceItem.img ? String(sourceItem.img) : '',
     openedAmount: Math.max(0, Number(sourceItem.openedAmount || 0)),
     packMode: isWeightUnit(sourceItem.unit || 'st') && (Number(quantity || sourceItem.quantity || 0) > 1 || Number(sourceItem.openedAmount || 0) > 0 || sourceItem.packMode === 'bags') ? 'bags' : ''
   };
@@ -2412,7 +2435,7 @@ function addBuyItemFromTemplate(sourceItem, quantity = 1) {
     category: ensureCategoryExists(sourceItem.category || getRoomFallbackCategory(sourceItem.room || activeRoom), sourceItem.room || activeRoom),
     place: ensurePlaceExists(sourceItem.place || 'kyl'),
     type: 'buy',
-    img: resolvePreferredItemImage(sourceItem.name || '', sourceItem.img),
+    img: sourceItem.img ? String(sourceItem.img) : '',
     openedAmount: 0,
     packMode: ''
   };
@@ -2529,7 +2552,7 @@ function dropToQuickList() {
       category: ensureCategoryExists(item.category || getRoomFallbackCategory(item.room || activeRoom), item.room || activeRoom),
       place: item.place || 'kyl',
       type: 'home',
-      img: resolvePreferredItemImage(item.name || '', item.img)
+      img: item.img ? String(item.img) : ''
     });
   }
 
@@ -3129,7 +3152,9 @@ function saveEditItem() {
     room: updatedRoom,
     category: ensureCategoryExists(document.getElementById('editCategory')?.value || currentItem.category || getRoomFallbackCategory(updatedRoom), updatedRoom),
     place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || getPlacesForRoom(updatedRoom)[0]?.key || 'kyl', updatedRoom),
-    img: resolvePreferredItemImage(updatedName, currentItem?.img)
+    img: currentItem?.img && String(currentItem.img).startsWith('data:')
+      ? String(currentItem.img)
+      : getAutoImagePath(updatedName)
   };
 
   if (!updated.name) return;
@@ -3268,7 +3293,7 @@ function buildItemFromForm() {
     category: ensureCategoryExists(categoryInput?.value || (matchedQuick ? matchedQuick.category : getRoomFallbackCategory(itemRoom)), itemRoom),
     place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : fallbackPlace), itemRoom),
     type: 'home',
-    img: resolvePreferredItemImage(matchedQuick ? matchedQuick.name : name, matchedQuick?.img)
+    img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name)
   };
 
   return { item, file: fileInput?.files?.[0] || null, matchedQuick };
@@ -3325,37 +3350,26 @@ function saveHomeItem(item) {
   }
 }
 
-async function addItem(saveToHome = false) {
+function addItem(saveToHome = false) {
   const formData = buildItemFromForm();
   if (!formData) return;
 
   const { item, file } = formData;
 
-  let finalImage = item.img || '';
+  const saveItem = imgData => {
+    if (imgData) item.img = imgData;
 
-  if (file) {
-    try {
-      if (typeof window.uploadItemImageToCloud === 'function') {
-        finalImage = await window.uploadItemImageToCloud(file, item.name || 'vara');
-      } else {
-        finalImage = await new Promise(resolve => resizeImage(file, resolve));
-      }
-    } catch (error) {
-      console.error('Image upload error:', error);
-      alert('Bild kunde inte laddas upp till molnet. Kontrollera att du är inloggad och att Firebase Storage är aktiverat.');
-      return;
-    }
-  }
+    saveQuickTemplate(item);
+    if (saveToHome) saveHomeItem(item);
 
-  if (finalImage) item.img = finalImage;
+    save();
+    render();
+    clearInputs(true);
+    setActiveKitchenPage('quick');
+  };
 
-  saveQuickTemplate(item);
-  if (saveToHome) saveHomeItem(item);
-
-  save();
-  render();
-  clearInputs(true);
-  setActiveKitchenPage('quick');
+  if (file) resizeImage(file, saveItem);
+  else saveItem('');
 }
 
 function addItemAndUse() {
@@ -4185,7 +4199,7 @@ function cloneTemplateForIngredient(ingredient) {
     weightText: isWeightUnit(resolvedUnit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, resolvedUnit) : '',
     category: ensureCategoryExists(base.category || ing.category || getRoomFallbackCategory(activeRoom), activeRoom),
     place: ensurePlaceExists(base.place || 'kyl'),
-    img: resolvePreferredItemImage(base.name || '', base.img)
+    img: base.img ? String(base.img) : ''
   };
 }
 
@@ -4249,7 +4263,7 @@ function mergeCanonicalItemIntoList(nextItem, type = 'buy') {
     price: Number(nextItem.price || 0),
     category: ensureCategoryExists(nextItem.category || getRoomFallbackCategory(nextItem.room || activeRoom), nextItem.room || activeRoom),
     place: ensurePlaceExists(nextItem.place || 'kyl'),
-    img: resolvePreferredItemImage(nextItem.name || '', nextItem.img)
+    img: nextItem.img ? String(nextItem.img) : ''
   };
 
   const existing = items.find(entry =>
@@ -4321,7 +4335,7 @@ function createRestockBuyItemFromQuick(ingredient) {
     weightText: isWeightUnit(unit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, unit) : '',
     category: ensureCategoryExists(quickMatch.category || ing.category || getRoomFallbackCategory(quickMatch.room || activeRoom), quickMatch.room || activeRoom),
     place: ensurePlaceExists(quickMatch.place || 'kyl'),
-    img: resolvePreferredItemImage(quickMatch.name || '', quickMatch.img),
+    img: quickMatch.img ? String(quickMatch.img) : '',
     type: 'buy'
   };
 }
@@ -5975,6 +5989,8 @@ function setActiveKitchenPage(page, pushHash = true) {
     document.querySelectorAll('.page-switching').forEach(node => node.classList.remove('page-switching'));
   }, 220);
 }
+
+window.setActiveKitchenPage = setActiveKitchenPage;
 
 function initKitchenPageTabs() {
   document.querySelectorAll('[data-page-tab]').forEach(button => {
