@@ -87,54 +87,71 @@
         <div class="quick-add-head">
           <div>
             <h2>Lägg till nya varor direkt i Snabblista</h2>
-            <p>Skriv namn, tryck Enter för att spara i snabblistan, eller välj att lägga till direkt hemma också.</p>
+            <p>Skriv namn, tryck Enter för att spara i snabblistan, eller välj att spara i snabblistan + lägga till i rummet direkt.</p>
           </div>
           <div class="quick-add-mini-tips">
             <span>↵ Enter = spara</span>
-            <span>Ctrl/Cmd + Enter = spara + hemma</span>
+            <span>Ctrl/Cmd + Enter = snabblista + rum</span>
           </div>
         </div>
       </div>
     </section>
 
     <div class="controls quick-add-controls" data-page="quick">
-      <select id="itemCategory" data-category-select onchange="suggestUnit()"></select>
+      <div class="quick-field quick-field-room">
+        <select id="quickRoom" class="quick-room-select" onchange="handleQuickRoomChange(this.value)"></select>
+      </div>
 
-      <div style="position:relative;">
+      <div class="quick-field quick-field-place">
+        <select id="itemPlace" data-place-select></select>
+      </div>
+
+      <div class="quick-field quick-field-category">
+        <select id="itemCategory" data-category-select onchange="suggestUnit()"></select>
+      </div>
+
+      <div class="quick-field quick-field-search" style="position:relative;">
         <input id="itemName" placeholder="Sök eller skriv vara..." oninput="showMainItemSuggestions()">
         <div id="mainItemSuggestions" class="suggestion-box"></div>
       </div>
 
-      <input id="itemPrice" type="number" min="0" placeholder="Pris (kr)">
-      <input id="itemQuantity" type="number" min="1" placeholder="Antal">
+      <div class="quick-field quick-field-quantity">
+        <input id="itemQuantity" type="number" min="1" placeholder="Antal">
+      </div>
 
-      <div id="itemSizeWrap"><select id="itemSize" style="display:none"></select></div>
-      <div id="itemMeasureTextWrap" style="display:none;">
+      <div class="quick-field quick-field-unit">
+        <select id="itemUnit" onchange="updateSizeSelect('itemSize', this.value); syncMeasureModeVisibility();">
+          <option value="st">st</option>
+          <option value="g">g</option>
+          <option value="kg">kg</option>
+          <option value="ml">ml</option>
+          <option value="dl">dl</option>
+          <option value="l">l</option>
+          <option value="krm">krm</option>
+          <option value="tsk">tsk</option>
+          <option value="msk">msk</option>
+          <option value="pkt">pkt</option>
+        </select>
+      </div>
+
+      <input type="file" id="itemImage" class="file-input" accept="image/png, image/jpeg, image/webp">
+
+      <button type="button" class="ghost-btn quick-gallery-btn" onclick="pickGallery()">🖼️ Galleri</button>
+      <button type="button" class="ghost-btn quick-camera-btn" onclick="pickCamera()">📷 Kamera</button>
+      <button type="button" class="quick-home-btn" onclick="addItemAndUse()">Lägg till</button>
+      <button type="button" class="ghost-btn quick-save-btn" onclick="addItem()">💾 Spara i snabblista</button>
+
+      <div class="quick-field quick-field-price">
+        <input id="itemPrice" type="number" min="0" placeholder="Pris (kr)">
+      </div>
+
+      <button type="button" class="ghost-btn quick-clear-btn" onclick="clearInputs()">🧹 Rensa</button>
+
+      <div id="itemSizeWrap" class="quick-hidden-field"><select id="itemSize" style="display:none"></select></div>
+      <div id="itemMeasureTextWrap" class="quick-hidden-field" style="display:none;">
         <input id="itemMeasureText" type="text" placeholder="Mängd per st, t.ex. 500 eller 1,5">
         <div id="itemMeasureSummary" class="measure-summary" style="display:none;"></div>
       </div>
-
-      <select id="itemUnit" onchange="updateSizeSelect('itemSize', this.value); syncMeasureModeVisibility();">
-        <option value="st">st</option>
-        <option value="g">g</option>
-        <option value="kg">kg</option>
-        <option value="ml">ml</option>
-        <option value="dl">dl</option>
-        <option value="l">l</option>
-        <option value="krm">krm</option>
-        <option value="tsk">tsk</option>
-        <option value="msk">msk</option>
-        <option value="pkt">pkt</option>
-      </select>
-
-      <select id="itemPlace" data-place-select></select>
-
-      <input type="file" id="itemImage" class="file-input" accept="image/png, image/jpeg, image/webp">
-      <button type="button" class="ghost-btn" onclick="pickGallery()">🖼️ Galleri</button>
-      <button type="button" class="ghost-btn" onclick="pickCamera()">📷 Kamera</button>
-      <button type="button" class="ghost-btn quick-save-btn" onclick="addItem()">💾 Spara i Snabblista</button>
-      <button type="button" class="quick-home-btn" onclick="addItemAndUse()">🏠 Spara + Lägg hemma</button>
-      <button type="button" class="ghost-btn quick-clear-btn" onclick="clearInputs()">🧹 Rensa</button>
     </div>
 
 
@@ -144,6 +161,7 @@
         <h2>Hantera kategorier och platser separat</h2>
         <p>Här samlar du allt för strukturering av appen: skapa nya kategorier, lägg till egna platser och håll listorna rena utan att Har hemma-sidan blir rörig.</p>
         <div class="manage-hero-stats">
+          <div class="manage-stat-pill"><span>🏠</span><strong id="manageActiveRoomLabel">Köket</strong></div>
           <div class="manage-stat-pill"><span>🏷️</span><strong id="manageCategoryCount">0 kategorier</strong></div>
           <div class="manage-stat-pill"><span>📍</span><strong id="managePlaceCount">0 platser</strong></div>
         </div>
@@ -151,6 +169,19 @@
     </section>
 
     <section class="section category-manager-section manage-card" data-page="manage">
+      <div class="section-top-row manage-room-create-row">
+        <div class="section-title">🏠 Rum</div>
+        <div class="section-search-wrap category-manager-bar">
+          <input id="newRoomName" placeholder="Nytt rum..." onkeydown="if(event.key==='Enter'){event.preventDefault(); addRoom();}">
+          <button type="button" onclick="addRoom()">Lägg till rum</button>
+        </div>
+        <div class="section-search-spacer"></div>
+      </div>
+      <div class="room-tabs-wrap manage-room-tabs-wrap">
+        <button type="button" class="room-arrow" onclick="scrollManageRoomTabs(-1)">◀</button>
+        <div id="manageRoomTabs" class="manage-room-tabs"></div>
+        <button type="button" class="room-arrow" onclick="scrollManageRoomTabs(1)">▶</button>
+      </div>
       <div class="section-top-row">
         <div class="section-title">🏷️ Kategorier</div>
         <div class="section-search-wrap category-manager-bar">
@@ -161,7 +192,7 @@
           <option value="">Alla kategorier</option>
         </select>
       </div>
-      <div class="section-subtitle">MAT är fallback och kan inte tas bort</div>
+      <div class="section-subtitle">ÖVRIGT är fallback i rummet och kan inte tas bort</div>
       <div id="categoryChips" class="category-chips"></div>
     </section>
 
@@ -179,7 +210,7 @@
     </section>
 
     <section class="section" data-page="quick">
-      <div class="section-top-row">
+      <div class="section-top-row sticky-search-row">
         <div class="section-title">⚡ Snabblista</div>
         <div class="section-search-wrap" style="position:relative;">
           <input class="search section-search" id="quickItemName" placeholder="Sök i snabblistan..." oninput="filterQuickList()" autocomplete="off">
@@ -187,17 +218,27 @@
         </div>
         <button type="button" id="quickToggleBtn" class="ghost-btn" onclick="toggleQuickList()">Dölj</button>
       </div>
-      <div class="section-subtitle">Egen sida för snabblistan – sök, redigera, dra om ordning och lägg till till listan</div>
+      <div class="section-subtitle">Sorterad på vara A-Ö – sök, redigera och se RUM • KATEGORI • PLATS direkt på varje vara</div>
       <div class="container" id="quickList" ondragover="allowDrop(event)" ondragleave="removeDropHover(event)" ondrop="dropToQuickList()"></div>
     </section>
 
     <section class="section" data-page="home">
-      <div class="section-top-row">
+      <div class="section-top-row sticky-search-row">
         <div class="section-title">🏠 Har hemma</div>
         <input class="search section-search" id="searchInput" placeholder="🔍 Sök vara, kategori eller plats..." oninput="render()">
         <button type="button" id="homeToggleBtn" class="ghost-btn" onclick="toggleHomeList()">Dölj</button>
       </div>
-      <div class="section-subtitle">Uppdelat på kyl, frys och kryddor</div>
+      <div class="room-tabs-wrap">
+        <button type="button" class="room-arrow" onclick="scrollRoomTabs(-1)">◀</button>
+        <div id="homeRoomTabs" class="room-tabs"></div>
+        <button type="button" class="room-arrow" onclick="scrollRoomTabs(1)">▶</button>
+      </div>
+      <div class="room-tabs-wrap room-subtabs-wrap">
+        <button type="button" class="room-arrow" onclick="scrollPlaceTabs(-1)">◀</button>
+        <div id="homePlaceTabs" class="room-subtabs"></div>
+        <button type="button" class="room-arrow" onclick="scrollPlaceTabs(1)">▶</button>
+      </div>
+      <div class="section-subtitle" id="homeRoomSubtitle">Uppdelat per rum och plats</div>
       <div class="container" id="homeList"></div>
     </section>
 

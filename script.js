@@ -4,7 +4,7 @@ let recipes = JSON.parse(localStorage.getItem('matlista_recept') || '[]');
 
 let categories = JSON.parse(localStorage.getItem('matlista_categories') || 'null');
 if (!Array.isArray(categories) || !categories.length) {
-  categories = ['MAT'];
+  categories = ['ÖVRIGT'];
 }
 
 let recipeCategories = JSON.parse(localStorage.getItem('matlista_recipe_categories') || 'null');
@@ -21,6 +21,280 @@ if (!Array.isArray(places) || !places.length) {
   ];
 }
 
+
+let roomConfigs = JSON.parse(localStorage.getItem('matlista_room_configs') || 'null');
+const BASE_ROOM_DEFS = [
+  { key: 'koket', label: 'KÖKET', defaultCategories: ['ÖVRIGT', 'MAT', 'KÖTTFÄRS', 'BAKINGREDIENSER'], defaultPlaces: [{ key: 'kyl', label: '🧊 Kyl' }, { key: 'frys', label: '❄️ Frys' }, { key: 'kryddor', label: '🌶️ Kryddor' }, { key: 'skafferi', label: '🥫 Skafferi' }] },
+  { key: 'badrummet', label: 'BADRUMMET', defaultCategories: ['ÖVRIGT'], defaultPlaces: [{ key: 'hylla', label: '🧴 Hylla' }] },
+  { key: 'hallen', label: 'HALLEN', defaultCategories: ['ÖVRIGT'], defaultPlaces: [{ key: 'hylla', label: '🧺 Hylla' }] },
+  { key: 'sovrummet-1', label: 'SOVRUMMET 1', defaultCategories: ['ÖVRIGT'], defaultPlaces: [{ key: 'hylla', label: '🗄️ Hylla' }] }
+];
+const PROTECTED_ROOM_KEYS = BASE_ROOM_DEFS.map(room => room.key);
+const DEPRECATED_ROOM_MIGRATIONS = {
+  'sovrummet-2': 'sovrummet-1',
+  'sovrummet-3': 'sovrummet-1'
+};
+let roomDefs = JSON.parse(localStorage.getItem('matlista_rooms') || 'null');
+let activeRoom = localStorage.getItem('matlista_active_room') || 'koket';
+let activePlaceFilter = localStorage.getItem('matlista_active_place_filter') || '';
+
+
+function normalizeRoomKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+}
+
+function cleanRoomLabel(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim().toUpperCase();
+}
+
+
+function getRoomTheme(roomOrKey = activeRoom) {
+  const room = typeof roomOrKey === 'object' && roomOrKey
+    ? roomOrKey
+    : getAllRoomDefs().find(entry => entry.key === roomOrKey) || null;
+
+  const key = normalizeRoomKey(room?.key || roomOrKey || '');
+  const label = cleanRoomLabel(room?.label || room?.key || roomOrKey || '');
+  const haystack = `${key} ${label}`.toLowerCase();
+
+  if (haystack.includes('kok') || haystack.includes('kitchen')) {
+    return { icon: '🍳', accent: '#22c55e', accentSoft: 'rgba(34,197,94,.18)' };
+  }
+  if (haystack.includes('badrum') || haystack.includes('toalett') || haystack.includes('dusch') || haystack.includes('bath')) {
+    return { icon: '🚿', accent: '#38bdf8', accentSoft: 'rgba(56,189,248,.18)' };
+  }
+  if (haystack.includes('hall') || haystack.includes('entre') || haystack.includes('entr') || haystack.includes('door')) {
+    return { icon: '🚪', accent: '#f59e0b', accentSoft: 'rgba(245,158,11,.18)' };
+  }
+  if (haystack.includes('sovrum') || haystack.includes('bedroom') || haystack.includes('guestroom') || haystack.includes('gasterum')) {
+    return { icon: '🛏️', accent: '#a78bfa', accentSoft: 'rgba(167,139,250,.18)' };
+  }
+  if (haystack.includes('tvatt') || haystack.includes('tvätt') || haystack.includes('laundry')) {
+    return { icon: '🧺', accent: '#14b8a6', accentSoft: 'rgba(20,184,166,.18)' };
+  }
+  if (haystack.includes('kontor') || haystack.includes('office') || haystack.includes('arbets')) {
+    return { icon: '💻', accent: '#60a5fa', accentSoft: 'rgba(96,165,250,.18)' };
+  }
+  if (haystack.includes('garage') || haystack.includes('verkstad')) {
+    return { icon: '🧰', accent: '#ef4444', accentSoft: 'rgba(239,68,68,.18)' };
+  }
+  return { icon: '🏠', accent: '#22c55e', accentSoft: 'rgba(34,197,94,.18)' };
+}
+
+function getRoomThemeStyle(roomOrKey = activeRoom) {
+  const theme = getRoomTheme(roomOrKey);
+  return `--room-accent:${theme.accent};--room-accent-soft:${theme.accentSoft};`;
+}
+
+function ensureRoomDefs() {
+  const map = new Map();
+  BASE_ROOM_DEFS.forEach(room => map.set(room.key, {
+    key: normalizeRoomKey(room.key),
+    label: cleanRoomLabel(room.label),
+    defaultCategories: Array.isArray(room.defaultCategories) && room.defaultCategories.length ? room.defaultCategories.slice() : ['ÖVRIGT'],
+    defaultPlaces: Array.isArray(room.defaultPlaces) && room.defaultPlaces.length ? room.defaultPlaces.map(place => ({
+      key: normalizePlaceKey(place.key || place.label || 'hylla'),
+      label: cleanPlaceLabel(place.label || place.key || '📦 Plats')
+    })) : [{ key: 'hylla', label: '📦 Plats' }]
+  }));
+
+  if (!Array.isArray(roomDefs)) roomDefs = [];
+  roomDefs.forEach(room => {
+    const key = normalizeRoomKey(room?.key || room?.label);
+    const label = cleanRoomLabel(room?.label || room?.key);
+    if (!key || !label) return;
+    const base = map.get(key);
+    map.set(key, {
+      key,
+      label,
+      defaultCategories: Array.isArray(room?.defaultCategories) && room.defaultCategories.length ? room.defaultCategories.map(v => String(v || '').trim().toUpperCase()).filter(Boolean) : (base?.defaultCategories || ['ÖVRIGT']),
+      defaultPlaces: Array.isArray(room?.defaultPlaces) && room.defaultPlaces.length ? room.defaultPlaces.map(place => ({
+        key: normalizePlaceKey(place?.key || place?.label || 'hylla'),
+        label: cleanPlaceLabel(place?.label || place?.key || '📦 Plats')
+      })) : (base?.defaultPlaces || [{ key: 'hylla', label: '📦 Plats' }])
+    });
+  });
+
+  roomDefs = Array.from(map.values());
+}
+
+function getAllRoomDefs() {
+  ensureRoomDefs();
+  return roomDefs;
+}
+
+function getRoomDef(roomKey = activeRoom) {
+  const defs = getAllRoomDefs();
+  return defs.find(room => room.key === roomKey) || defs[0] || { key: 'koket', label: 'KÖKET', defaultCategories: ['ÖVRIGT'], defaultPlaces: [{ key: 'hylla', label: '📦 Plats' }] };
+}
+
+function getRoomLabel(roomKey = activeRoom) {
+  return getRoomDef(roomKey).label;
+}
+
+
+function getRoomFallbackCategory(roomKey = activeRoom) {
+  const roomConfig = getRoomConfig(roomKey);
+  const categories = Array.isArray(roomConfig?.categories) ? roomConfig.categories : [];
+  const fallback = categories.find(cat => String(cat || '').trim().toUpperCase() === 'ÖVRIGT');
+  if (fallback) return fallback;
+  if (categories.length) return String(categories[0] || '').trim().toUpperCase();
+  roomConfig.categories = ['ÖVRIGT'];
+  refreshLegacyCollections();
+  return 'ÖVRIGT';
+}
+
+
+function getQuickRoomSelection() {
+  return document.getElementById('quickRoom')?.value || activeRoom;
+}
+
+function populateQuickRoomSelect(selectedRoom = getQuickRoomSelection()) {
+  const quickRoom = document.getElementById('quickRoom');
+  if (!quickRoom) return;
+  const roomDefs = getAllRoomDefs();
+  const fallbackRoom = roomDefs.some(room => room.key === selectedRoom) ? selectedRoom : (roomDefs[0]?.key || activeRoom || 'koket');
+  quickRoom.innerHTML = roomDefs.map(room => {
+    const theme = getRoomTheme(room.key);
+    return `<option value="${room.key}">${theme.icon} ${room.label}</option>`;
+  }).join('');
+  quickRoom.value = fallbackRoom;
+}
+
+function renderQuickAddRoomOptions(roomKey = getQuickRoomSelection(), keepSelections = true) {
+  const safeRoom = getAllRoomDefs().some(room => room.key === roomKey) ? roomKey : activeRoom;
+  const itemCategory = document.getElementById('itemCategory');
+  const itemPlace = document.getElementById('itemPlace');
+
+  if (itemCategory) {
+    const categories = getCategoriesForRoom(safeRoom);
+    const fallbackCategory = getRoomFallbackCategory(safeRoom);
+    const currentCategory = keepSelections ? (itemCategory.dataset.currentValue || itemCategory.value || fallbackCategory) : fallbackCategory;
+    const nextCategory = categories.includes(currentCategory) ? currentCategory : fallbackCategory;
+    itemCategory.innerHTML = categories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
+    itemCategory.value = nextCategory;
+    itemCategory.dataset.currentValue = nextCategory;
+  }
+
+  if (itemPlace) {
+    const places = getPlacesForRoom(safeRoom);
+    const fallbackPlace = places[0]?.key || 'kyl';
+    const currentPlace = keepSelections ? (itemPlace.dataset.currentValue || itemPlace.value || fallbackPlace) : fallbackPlace;
+    const nextPlace = findPlace(currentPlace, safeRoom) ? currentPlace : fallbackPlace;
+    itemPlace.innerHTML = places.map(place => `<option value="${place.key}">${place.label}</option>`).join('');
+    itemPlace.value = nextPlace;
+    itemPlace.dataset.currentValue = nextPlace;
+  }
+}
+
+function handleQuickRoomChange(roomKey) {
+  populateQuickRoomSelect(roomKey);
+  renderQuickAddRoomOptions(roomKey, false);
+  try { suggestUnit(); } catch (e) {}
+}
+
+function isRoomProtected(roomKey) {
+  return PROTECTED_ROOM_KEYS.includes(roomKey);
+}
+
+function migrateDeprecatedRooms() {
+  ensureRoomDefs();
+  const migrations = DEPRECATED_ROOM_MIGRATIONS || {};
+  const validKeys = new Set(getAllRoomDefs().map(room => room.key));
+
+  Object.entries(migrations).forEach(([oldKey, targetKey]) => {
+    if (!targetKey || !validKeys.has(targetKey)) return;
+
+    items.forEach(item => {
+      if ((item.room || 'koket') === oldKey) item.room = targetKey;
+    });
+
+    quickItems.forEach(item => {
+      if ((item.room || 'koket') === oldKey) item.room = targetKey;
+    });
+
+    if (roomConfigs?.[oldKey] && !roomConfigs[targetKey]) {
+      roomConfigs[targetKey] = roomConfigs[oldKey];
+    }
+
+    if (activeRoom === oldKey) activeRoom = targetKey;
+  });
+
+  if (Array.isArray(roomDefs)) {
+    roomDefs = roomDefs.filter(room => !migrations[room.key]);
+  }
+
+  if (roomConfigs && typeof roomConfigs === 'object') {
+    Object.keys(migrations).forEach(oldKey => {
+      delete roomConfigs[oldKey];
+    });
+  }
+}
+
+function createDefaultRoomConfigs() {
+  const configs = {};
+  getAllRoomDefs().forEach(room => {
+    configs[room.key] = {
+      categories: [...new Set((room.defaultCategories || ['ÖVRIGT']).map(value => String(value || '').trim().toUpperCase()).filter(Boolean))],
+      places: (room.defaultPlaces || [{ key: 'hylla', label: '📦 Plats' }]).map(place => ({
+        key: normalizePlaceKey(place.key || place.label || 'hylla'),
+        label: cleanPlaceLabel(place.label || place.key || 'Plats')
+      }))
+    };
+  });
+  return configs;
+}
+
+function ensureRoomConfigs() {
+  migrateDeprecatedRooms();
+  if (!roomConfigs || typeof roomConfigs !== 'object' || Array.isArray(roomConfigs)) roomConfigs = {};
+  const fallbackConfigs = createDefaultRoomConfigs();
+
+  getAllRoomDefs().forEach(room => {
+    const current = roomConfigs[room.key];
+    const fallback = fallbackConfigs[room.key];
+    const nextCategories = Array.isArray(current?.categories) ? current.categories : fallback.categories;
+    const nextPlaces = Array.isArray(current?.places) ? current.places : fallback.places;
+
+    roomConfigs[room.key] = {
+      categories: [...new Set(nextCategories.map(value => String(value || '').trim().toUpperCase()).filter(Boolean).concat(['ÖVRIGT']))],
+      places: nextPlaces.map(place => ({
+        key: normalizePlaceKey(place?.key || place?.label || 'hylla'),
+        label: cleanPlaceLabel(place?.label || place?.key || 'Plats')
+      })).filter(place => place.key && place.label)
+    };
+
+    if (!roomConfigs[room.key].categories.length) roomConfigs[room.key].categories = fallback.categories.slice();
+    if (!roomConfigs[room.key].places.length) roomConfigs[room.key].places = fallback.places.slice();
+  });
+
+  if (!getAllRoomDefs().some(room => room.key === activeRoom)) activeRoom = getAllRoomDefs()[0]?.key || 'koket';
+}
+
+function getRoomConfig(roomKey = activeRoom) {
+  ensureRoomConfigs();
+  return roomConfigs[roomKey] || roomConfigs.koket;
+}
+
+function getCategoriesForRoom(roomKey = activeRoom) {
+  return getRoomConfig(roomKey).categories.slice();
+}
+
+function getPlacesForRoom(roomKey = activeRoom) {
+  return getRoomConfig(roomKey).places.slice();
+}
+
+function refreshLegacyCollections() {
+  ensureRoomConfigs();
+  categories = [...new Set(Object.values(roomConfigs).flatMap(config => config.categories || []).map(value => String(value || '').trim().toUpperCase()).filter(Boolean))];
+  places = [...new Map(Object.values(roomConfigs).flatMap(config => (config.places || []).map(place => [normalizePlaceKey(place.key), { key: normalizePlaceKey(place.key), label: cleanPlaceLabel(place.label) }]))).values()];
+}
 
 function normalizeRecipeType(type) {
   const value = String(type || '').trim().toLowerCase();
@@ -100,12 +374,49 @@ function getSmartPortionWeightForIngredient(ingredient, recipe = null) {
   return Math.max(1, Number(getSelectedRecipePortions() || 1) * Number(portionGrams || 0));
 }
 
+function isTacoSpiceRecipeIngredient(ingredient) {
+  const ing = normalizeRecipeIngredient(ingredient);
+  if (!ing) return false;
+  const normalized = normalizeText(ing.name);
+  return normalized.includes('tacokrydda') || normalized.includes('taco krydda');
+}
+
+function getReferenceProteinAmountForRecipe(recipe = null) {
+  if (!recipe || !Array.isArray(recipe.items)) return 450;
+
+  const proteinIngredient = recipe.items
+    .map(normalizeRecipeIngredient)
+    .find(item => item && shouldUseGlobalPortionWeight(item, recipe));
+
+  if (!proteinIngredient) {
+    return Math.max(1, Number(getSelectedRecipePortions() || 1) * Number(portionGrams || 0)) || 450;
+  }
+
+  const proteinRule = shouldUseGlobalPortionWeight(proteinIngredient, recipe)
+    ? { amount: Math.max(1, Number(getSelectedRecipePortions() || 1) * Number(portionGrams || 0)), unit: 'g' }
+    : null;
+
+  if (proteinRule && isWeightUnit(proteinRule.unit)) return Math.max(1, Math.round(Number(proteinRule.amount || 0)));
+
+  const canonicalAmount = recipeIngredientCanonicalAmount(proteinIngredient);
+  return Math.max(1, Math.round(Number(canonicalAmount || 0))) || 450;
+}
+
+function getTacoSpiceWeightForRecipe(recipe = null) {
+  const meatGrams = getReferenceProteinAmountForRecipe(recipe);
+  return Math.max(1, Math.round((Number(meatGrams || 450) / 450) * 28));
+}
+
 function getSmartPortionRuleForIngredient(ingredient, recipe = null) {
   const ing = normalizeRecipeIngredient(ingredient);
   if (!ing || !recipe || !isRecipePortionControlled(recipe)) return null;
 
   const normalized = normalizeText(ing.name);
   const hasAny = keywords => keywords.some(keyword => normalized.includes(normalizeText(keyword)));
+
+  if (isTacoSpiceRecipeIngredient(ing)) {
+    return { amount: getTacoSpiceWeightForRecipe(recipe), unit: 'g', label: 'taco-krydda' };
+  }
 
   if (shouldUseGlobalPortionWeight(ing, recipe)) {
     return { amount: Math.max(1, Number(getSelectedRecipePortions() || 1) * Number(portionGrams || 0)), unit: 'g', label: 'protein' };
@@ -238,13 +549,10 @@ let draggedRecipeIngredientMode = '';
 let draggedRecipeIngredientRecipeName = '';
 let activeRecipeTouchDrag = null;
 
-const defaultPlaces = [
-  { key: 'kyl', label: '🧊 Kyl' },
-  { key: 'frys', label: '❄️ Frys' },
-  { key: 'kryddor', label: '🌶️ Kryddor' }
-];
-
-const lockedPlaceKeys = ['kyl', 'frys', 'kryddor'];
+const defaultPlaces = getPlacesForRoom('koket');
+const lockedPlaceKeysByRoom = {
+  koket: ['kyl', 'frys', 'kryddor', 'skafferi']
+};
 
 const weightSizeOptions = [14, 28, 50, 100, 150, 200, 250, 500, 750, 1000];
 const spiceWeightSizeOptions = [14, 28, 50, 100, 150, 200];
@@ -378,10 +686,47 @@ function getDisplayUnit(unit, size = null) {
   return unit || 'st';
 }
 
+function isPackTrackedItem(item) {
+  if (!item || item.type !== 'home' || !isWeightUnit(item.unit)) return false;
+  const size = Math.max(0, Number(item.size || 0));
+  const unopened = Math.max(0, Number(item.quantity || 0));
+  const opened = Math.max(0, Number(item.openedAmount || 0));
+  return size > 0 && (unopened > 1 || opened > 0 || item.packMode === 'bags');
+}
+
+function getOpenedAmount(item) {
+  if (!item) return 0;
+  const size = Math.max(0, Number(item.size || 0));
+  const opened = Math.max(0, Number(item.openedAmount || 0));
+  if (!size) return 0;
+  return Math.min(size, opened);
+}
+
+function formatPackState(item) {
+  if (!isPackTrackedItem(item)) return '';
+  const unopened = Math.max(0, Number(item.quantity || 0));
+  const size = Math.max(0, Number(item.size || 0));
+  const opened = getOpenedAmount(item);
+  const parts = [];
+
+  if (unopened > 0) parts.push(`${unopened} påsar × ${formatSmartMeasureDisplay(size, item.unit)}`);
+  if (opened > 0) parts.push(`öppnad påse: ${formatSmartMeasureDisplay(opened, item.unit)} kvar`);
+
+  return parts.join(' + ');
+}
+
 function formatItemAmount(item) {
   const amount = Math.max(0, Number(item?.quantity || 0));
 
   if (supportsSize(item?.unit)) {
+    if (isPackTrackedItem(item)) {
+      const size = Math.max(0, Number(item?.size || 0));
+      const opened = getOpenedAmount(item);
+      const total = (amount * size) + opened;
+      const packText = formatPackState(item);
+      return packText ? `${formatSmartMeasureDisplay(total, item.unit)} totalt • ${packText}` : formatSmartMeasureDisplay(total, item.unit);
+    }
+
     const size = Number(item?.size || 0);
     const total = amount * size;
     return formatSmartMeasureDisplay(total, item.unit);
@@ -566,6 +911,7 @@ function sameVariant(a, b, includeType = true) {
   if (!a || !b) return false;
   return normalizeText(a.name) === normalizeText(b.name)
     && (!includeType || (a.type || 'home') === (b.type || 'home'))
+    && (a.room || 'koket') === (b.room || 'koket')
     && (a.place || 'kyl') === (b.place || 'kyl')
     && (a.unit || 'st') === (b.unit || 'st')
     && Number(a.size || 0) === Number(b.size || 0);
@@ -616,24 +962,31 @@ function cleanPlaceLabel(label) {
     .trim();
 }
 
-function findPlace(placeKey) {
-  return places.find(place => place.key === placeKey) || null;
+function findPlace(placeKey, roomKey = activeRoom) {
+  const clean = normalizePlaceKey(placeKey);
+  return getPlacesForRoom(roomKey).find(place => place.key === clean) || null;
 }
 
-function ensurePlaceExists(placeValue) {
-  const clean = normalizePlaceKey(placeValue || 'kyl');
-  if (!clean) return 'kyl';
-  if (!findPlace(clean)) {
-    if (clean === 'kyl') places.unshift({ key: 'kyl', label: '🧊 Kyl' });
-    else places.push({ key: clean, label: clean });
+function ensurePlaceExists(placeValue, roomKey = activeRoom) {
+  ensureRoomConfigs();
+  const fallbackPlace = getPlacesForRoom(roomKey)[0]?.key || 'kyl';
+  const clean = normalizePlaceKey(placeValue || fallbackPlace);
+  if (!clean) return fallbackPlace;
+  const roomConfig = getRoomConfig(roomKey);
+  if (!roomConfig.places.some(place => place.key === clean)) {
+    roomConfig.places.push({ key: clean, label: cleanPlaceLabel(placeValue || clean) });
   }
+  refreshLegacyCollections();
   return clean;
 }
 
-function ensureCategoryExists(category) {
+function ensureCategoryExists(category, roomKey = activeRoom) {
+  ensureRoomConfigs();
   const clean = String(category || '').trim().toUpperCase();
-  if (!clean) return 'MAT';
-  if (!categories.includes(clean)) categories.push(clean);
+  if (!clean) return getRoomFallbackCategory(roomKey);
+  const roomConfig = getRoomConfig(roomKey);
+  if (!roomConfig.categories.includes(clean)) roomConfig.categories.push(clean);
+  refreshLegacyCollections();
   return clean;
 }
 
@@ -836,7 +1189,7 @@ const MAX_LIQUID_ML = 100000; // 100 l
 function getUnitFamily(unit) {
   const u = String(unit || '').trim().toLowerCase();
   if (u === 'g' || u === 'kg') return 'weight';
-  if (u === 'ml' || u === 'dl' || u === 'l') return 'liquid';
+  if (['ml', 'dl', 'l', 'msk', 'tsk', 'krm'].includes(u)) return 'liquid';
   return '';
 }
 
@@ -949,12 +1302,17 @@ function normalizeMeasureItemData(item, unitHint = null) {
   const hint = unitHint || item.unit || 'g';
   const parsed = parseSmartMeasureInput(item.measureText || item.weightText || item.size, hint);
   if (!parsed) return item;
+  const openedAmount = getUnitFamily(hint) === 'weight'
+    ? Math.max(0, Math.min(parsed, Number(item?.openedAmount || 0)))
+    : 0;
   return {
     ...item,
     unit: hint,
     size: parsed,
     measureText: formatSmartMeasureDisplay(parsed, hint),
-    weightText: getUnitFamily(hint) === 'weight' ? formatSmartMeasureDisplay(parsed, hint) : ''
+    weightText: getUnitFamily(hint) === 'weight' ? formatSmartMeasureDisplay(parsed, hint) : '',
+    openedAmount,
+    packMode: getUnitFamily(hint) === 'weight' && (Number(item?.quantity || 0) > 1 || openedAmount > 0 || item?.packMode === 'bags') ? 'bags' : ''
   };
 }
 
@@ -1171,9 +1529,10 @@ function smartIngredientMatch(a, b) {
   return normalizeText(String(a || '').replace(/^(\d+)\s*(st|g|kg|ml|dl|l|pkt)?\s*/i, '')) === normalizeText(String(b || ''));
 }
 
-function getPlaceMeta(place) {
-  const found = findPlace(place);
-  if (!found) return { key: 'kyl', label: '🧊 Kyl', cls: 'place-kyl' };
+function getPlaceMeta(place, roomKey = activeRoom) {
+  const fallbackPlace = getPlacesForRoom(roomKey)[0] || { key: 'kyl', label: '🧊 Kyl' };
+  const found = findPlace(place, roomKey);
+  if (!found) return { key: fallbackPlace.key, label: fallbackPlace.label, cls: 'place-custom' };
 
   const classMap = {
     kyl: 'place-kyl',
@@ -1192,53 +1551,50 @@ function hydrateData() {
   items = Array.isArray(items) ? items : [];
   quickItems = Array.isArray(quickItems) ? quickItems : [];
   recipes = Array.isArray(recipes) ? recipes : [];
+  ensureRoomConfigs();
 
-  places = places
-    .map(place => ({
-      key: normalizePlaceKey(place?.key || place?.label || ''),
-      label: cleanPlaceLabel(place?.label || place?.key || '')
-    }))
-    .filter(place => place.key && place.label);
+  items = items.map(item => {
+    const room = getAllRoomDefs().some(entry => entry.key === item?.room) ? item.room : (getAllRoomDefs()[0]?.key || 'koket');
+    const fallbackPlace = getPlacesForRoom(room)[0]?.key || 'kyl';
+    return {
+      name: String(item?.name || '').trim(),
+      price: Number(item?.price || 0),
+      quantity: Math.max(0, Number(item?.quantity || 0)),
+      unit: String(item?.unit || 'st'),
+      size: normalizeSize(item?.unit || 'st', parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size),
+      measureText: supportsSize(item?.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size, item?.unit || 'st') : '',
+      weightText: isWeightUnit(item?.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size, item?.unit || 'st') : '',
+      category: ensureCategoryExists(item?.category || getRoomFallbackCategory(room), room),
+      place: ensurePlaceExists(item?.place || fallbackPlace, room),
+      room,
+      type: item?.type === 'buy' ? 'buy' : 'home',
+      img: item?.img ? String(item.img) : getAutoImagePath(item?.name || ''),
+      openedAmount: Math.max(0, Number(item?.openedAmount || 0)),
+      packMode: item?.packMode === 'bags' ? 'bags' : ''
+    };
+  }).filter(item => item.name);
 
-  defaultPlaces.slice().reverse().forEach(defaultPlace => {
-    if (!findPlace(defaultPlace.key)) places.unshift({ ...defaultPlace });
-  });
-
-  places = places.filter((place, index, arr) => arr.findIndex(p => p.key === place.key) === index);
-
-  items = items.map(item => ({
-    name: String(item?.name || '').trim(),
-    price: Number(item?.price || 0),
-    quantity: Math.max(0, Number(item?.quantity || 0)),
-    unit: String(item?.unit || 'st'),
-    size: normalizeSize(item?.unit || 'st', parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size),
-    measureText: supportsSize(item?.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size, item?.unit || 'st') : '',
-    weightText: isWeightUnit(item?.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size, item?.unit || 'st') : '',
-    category: ensureCategoryExists(item?.category || 'MAT'),
-    place: ensurePlaceExists(item?.place || 'kyl'),
-    type: item?.type === 'buy' ? 'buy' : 'home',
-    img: item?.img ? String(item.img) : getAutoImagePath(item?.name || '')
-  })).filter(item => item.name);
-
-  quickItems = quickItems.map(item => ({
-    name: String(item?.name || '').trim(),
-    price: Number(item?.price || 0),
-    quantity: Math.max(1, Number(item?.quantity || 1)),
-    unit: String(item?.unit || 'st'),
-    size: normalizeSize(item?.unit || 'st', parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size),
-    measureText: supportsSize(item?.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size, item?.unit || 'st') : '',
-    weightText: isWeightUnit(item?.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size, item?.unit || 'st') : '',
-    category: ensureCategoryExists(item?.category || 'MAT'),
-    place: ensurePlaceExists(item?.place || 'kyl'),
-    type: 'home',
-    img: item?.img ? String(item.img) : getAutoImagePath(item?.name || '')
-  })).filter(item => item.name);
+  quickItems = quickItems.map(item => {
+    const room = getAllRoomDefs().some(entry => entry.key === item?.room) ? item.room : (getAllRoomDefs()[0]?.key || 'koket');
+    const fallbackPlace = getPlacesForRoom(room)[0]?.key || 'kyl';
+    return {
+      name: String(item?.name || '').trim(),
+      price: Number(item?.price || 0),
+      quantity: Math.max(1, Number(item?.quantity || 1)),
+      unit: String(item?.unit || 'st'),
+      size: normalizeSize(item?.unit || 'st', parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size),
+      measureText: supportsSize(item?.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size, item?.unit || 'st') : '',
+      weightText: isWeightUnit(item?.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(item?.measureText || item?.weightText || item?.size, item?.unit || 'st') || item?.size, item?.unit || 'st') : '',
+      category: ensureCategoryExists(item?.category || getRoomFallbackCategory(room), room),
+      place: ensurePlaceExists(item?.place || fallbackPlace, room),
+      room,
+      type: 'home',
+      img: item?.img ? String(item.img) : getAutoImagePath(item?.name || '')
+    };
+  }).filter(item => item.name);
 
   recipeCategories = [...new Set(
-    recipeCategories
-      .map(cat => normalizeRecipeCategory(cat))
-      .filter(Boolean)
-      .concat(['matlagning', 'bakverk'])
+    recipeCategories.map(cat => normalizeRecipeCategory(cat)).filter(Boolean).concat(['matlagning', 'bakverk'])
   )];
 
   recipes = recipes.map(recipe => {
@@ -1253,21 +1609,22 @@ function hydrateData() {
     };
   }).filter(recipe => recipe.name);
 
-  if (!categories.includes('MAT')) categories.unshift('MAT');
-  categories = [...new Set(categories.map(c => String(c || '').trim().toUpperCase()).filter(Boolean))];
-  places = places.map(place => ({
-    key: normalizePlaceKey(place.key),
-    label: cleanPlaceLabel(place.label)
-  }));
+  refreshLegacyCollections();
+  if (!getAllRoomDefs().some(room => room.key === activeRoom)) activeRoom = getAllRoomDefs()[0]?.key || 'koket';
 }
 
 function save() {
+  refreshLegacyCollections();
   localStorage.setItem('matlista', JSON.stringify(items));
   localStorage.setItem('matlista_snabb', JSON.stringify(quickItems));
   localStorage.setItem('matlista_recept', JSON.stringify(recipes));
   localStorage.setItem('matlista_categories', JSON.stringify(categories));
   localStorage.setItem('matlista_recipe_categories', JSON.stringify(recipeCategories));
   localStorage.setItem('matlista_places', JSON.stringify(places));
+  localStorage.setItem('matlista_room_configs', JSON.stringify(roomConfigs));
+  localStorage.setItem('matlista_rooms', JSON.stringify(getAllRoomDefs()));
+  localStorage.setItem('matlista_active_room', activeRoom);
+  localStorage.setItem('matlista_active_place_filter', activePlaceFilter);
   localStorage.setItem('homeOpenState', JSON.stringify(homeOpenState));
   localStorage.setItem('matlista_recipe_choices', JSON.stringify(recipeIngredientChoices));
   localStorage.setItem('matlista_household_size', String(householdSize));
@@ -1281,6 +1638,10 @@ function save() {
   window.categories = categories;
   window.recipeCategories = recipeCategories;
   window.places = places;
+  window.roomConfigs = roomConfigs;
+  window.roomDefs = getAllRoomDefs();
+  window.activeRoom = activeRoom;
+  window.activePlaceFilter = activePlaceFilter;
   window.homeOpenState = homeOpenState;
   window.recipeIngredientChoices = recipeIngredientChoices;
   window.householdSize = householdSize;
@@ -1292,8 +1653,9 @@ function save() {
 function syncQuickItemFromItem(changedItem) {
   const quick = quickItems.find(q => normalizeText(q.name) === normalizeText(changedItem.name));
   if (!quick) return;
-  quick.place = ensurePlaceExists(changedItem.place || quick.place || 'kyl');
-  quick.category = ensureCategoryExists(changedItem.category || quick.category || 'MAT');
+  quick.room = changedItem.room || quick.room || activeRoom;
+  quick.place = ensurePlaceExists(changedItem.place || quick.place || getPlacesForRoom(quick.room)[0]?.key || 'kyl', quick.room);
+  quick.category = ensureCategoryExists(changedItem.category || quick.category || getRoomFallbackCategory(quick.room), quick.room);
   if (!quick.img && changedItem.img) quick.img = changedItem.img;
   if (Number(changedItem.price || 0) > 0) quick.price = Number(changedItem.price || 0);
   quick.unit = changedItem.unit || quick.unit || 'st';
@@ -1316,30 +1678,101 @@ function updateToggleButtons() {
 }
 
 function renderPlaceOptions() {
+  const roomPlaces = getPlacesForRoom(activeRoom);
+  const fallbackPlace = roomPlaces[0]?.key || 'kyl';
   document.querySelectorAll('[data-place-select]').forEach(select => {
-    const current = select.dataset.currentValue || select.value || 'kyl';
-    const fallback = findPlace(current) ? current : 'kyl';
-    select.innerHTML = places.map(place => `<option value="${place.key}">${place.label}</option>`).join('');
+    const current = select.dataset.currentValue || select.value || fallbackPlace;
+    const fallback = findPlace(current, activeRoom) ? current : fallbackPlace;
+    select.innerHTML = roomPlaces.map(place => `<option value="${place.key}">${place.label}</option>`).join('');
     select.value = fallback;
   });
 
   renderPlaceManager();
+  renderHomePlaceTabs();
 }
 
 function renderPlaceManager() {
   const wrap = document.getElementById('placeChips');
   if (!wrap) return;
 
-  wrap.innerHTML = '';
-  places.forEach(place => {
+  const roomPlaces = getPlacesForRoom(activeRoom);
+  const lockedKeys = lockedPlaceKeysByRoom[activeRoom] || [];
+  wrap.innerHTML = '<div class="room-empty-hint">Platser i ' + getRoomLabel(activeRoom) + '</div>';
+
+  roomPlaces.forEach(place => {
     const chip = document.createElement('div');
     chip.className = 'category-chip';
-    chip.innerHTML = `
-      <span>${place.label}</span>
-      <button type="button" class="chip-delete" onclick="removePlace('${place.key.replace(/'/g, "\\'")}')">×</button>
-    `;
+
+    const label = document.createElement('span');
+    label.textContent = place.label;
+    chip.appendChild(label);
+
+    if (!lockedKeys.includes(place.key)) {
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'chip-edit';
+      editBtn.textContent = '✏️';
+      editBtn.onclick = () => renamePlacePrompt(place.key);
+      chip.appendChild(editBtn);
+    }
+
+    if (lockedKeys.includes(place.key)) {
+      const lock = document.createElement('span');
+      lock.className = 'chip-lock';
+      lock.textContent = 'Låst';
+      chip.appendChild(lock);
+    } else {
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'chip-delete';
+      deleteBtn.textContent = '×';
+      deleteBtn.onclick = () => removePlace(place.key);
+      chip.appendChild(deleteBtn);
+    }
+
     wrap.appendChild(chip);
   });
+}
+
+function renamePlacePrompt(oldKey) {
+  const cleanOld = normalizePlaceKey(oldKey);
+  if (!cleanOld) return;
+  if ((lockedPlaceKeysByRoom[activeRoom] || []).includes(cleanOld)) {
+    alert('Den här platsen kan inte byta namn i detta rum.');
+    return;
+  }
+
+  const current = findPlace(cleanOld, activeRoom);
+  const next = prompt('Ändra namn på plats', current?.label || cleanOld);
+  if (next === null) return;
+
+  const label = cleanPlaceLabel(next);
+  const key = normalizePlaceKey(label);
+  if (!label || !key) {
+    alert('Plats kan inte vara tom.');
+    return;
+  }
+
+  if (key !== cleanOld && findPlace(key, activeRoom)) {
+    alert('Plats finns redan i det här rummet.');
+    return;
+  }
+
+  const roomConfig = getRoomConfig(activeRoom);
+  roomConfig.places = roomConfig.places.map(place => place.key === cleanOld ? { key, label } : place);
+  items.forEach(item => {
+    if ((item.room || 'koket') === activeRoom && item.place === cleanOld) item.place = key;
+  });
+  quickItems.forEach(item => {
+    if ((item.room || 'koket') === activeRoom && item.place === cleanOld) item.place = key;
+  });
+  if (activePlaceFilter === cleanOld) activePlaceFilter = key;
+  if (homeOpenState[cleanOld]) {
+    homeOpenState[key] = homeOpenState[cleanOld];
+    delete homeOpenState[cleanOld];
+  }
+  save();
+  render();
 }
 
 function addPlace() {
@@ -1350,55 +1783,67 @@ function addPlace() {
   const key = normalizePlaceKey(label);
   if (!label || !key) return;
 
-  if (findPlace(key)) {
-    alert('Plats finns redan.');
+  if (findPlace(key, activeRoom)) {
+    alert('Plats finns redan i det här rummet.');
     input.value = '';
     return;
   }
 
-  places.push({ key, label });
+  getRoomConfig(activeRoom).places.push({ key, label });
   save();
   renderPlaceOptions();
   input.value = '';
 }
 
 function removePlace(key) {
-  const clean = normalizePlaceKey(key);
-  if (!clean) return;
-
-  if (lockedPlaceKeys.includes(clean)) {
-    alert('Kyl, Frys och Kryddor kan inte tas bort.');
+  const roomPlacesNow = getPlacesForRoom(activeRoom);
+  if (roomPlacesNow.length <= 1) {
+    alert('Rummet måste ha minst en plats kvar.');
     return;
   }
 
-  places = places.filter(place => place.key !== clean);
+  const clean = normalizePlaceKey(key);
+  if (!clean) return;
+
+  const lockedKeys = lockedPlaceKeysByRoom[activeRoom] || [];
+  if (lockedKeys.includes(clean)) {
+    alert('Den här platsen kan inte tas bort i detta rum.');
+    return;
+  }
+
+  const roomPlaces = getPlacesForRoom(activeRoom);
+  const fallbackPlace = roomPlaces.find(place => place.key !== clean)?.key || roomPlaces[0]?.key || 'kyl';
+  getRoomConfig(activeRoom).places = roomPlaces.filter(place => place.key !== clean);
 
   items.forEach(item => {
-    if (item.place === clean) item.place = 'kyl';
+    if ((item.room || 'koket') === activeRoom && item.place === clean) item.place = fallbackPlace;
   });
 
   quickItems.forEach(item => {
-    if (item.place === clean) item.place = 'kyl';
+    if ((item.room || 'koket') === activeRoom && item.place === clean) item.place = fallbackPlace;
   });
 
   delete homeOpenState[clean];
+  if (activePlaceFilter === clean) activePlaceFilter = '';
   save();
   render();
 }
 
 function renderCategoryOptions() {
+  const roomCategories = getCategoriesForRoom(activeRoom);
   document.querySelectorAll('[data-category-select]').forEach(select => {
-    const current = select.dataset.currentValue || select.value || 'MAT';
-    const fallback = categories.includes(current) ? current : 'MAT';
-    select.innerHTML = categories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
+    const fallbackCategory = getRoomFallbackCategory(activeRoom);
+    const current = select.dataset.currentValue || select.value || fallbackCategory;
+    const fallback = roomCategories.includes(current) ? current : fallbackCategory;
+    select.innerHTML = roomCategories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
     select.value = fallback;
   });
 
   const categoryFilter = document.getElementById('categoryFilter');
   if (categoryFilter) {
     const current = categoryFilter.dataset.currentValue || categoryFilter.value || '';
-    categoryFilter.innerHTML = '<option value="">Alla kategorier</option>' + categories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
-    categoryFilter.value = categories.includes(current) ? current : '';
+    categoryFilter.innerHTML = '<option value="">Alla kategorier</option>' + roomCategories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
+    categoryFilter.value = roomCategories.includes(current) ? current : '';
   }
 
   renderCategoryManager();
@@ -1409,18 +1854,44 @@ function renderCategoryManager() {
   const wrap = document.getElementById('categoryChips');
   if (!wrap) return;
 
-  wrap.innerHTML = '';
-  categories.forEach(category => {
+  wrap.innerHTML = '<div class="room-empty-hint">Kategorier i ' + getRoomLabel(activeRoom) + '</div>';
+  const roomCategories = getCategoriesForRoom(activeRoom);
+
+  roomCategories.forEach(category => {
     const chip = document.createElement('div');
     chip.className = 'category-chip';
-    chip.innerHTML = `
-      <span>${category}</span>
-      <button type="button" class="chip-delete" onclick="removeCategory('${category.replace(/'/g, "\\'")}')">×</button>
-    `;
+
+    const label = document.createElement('span');
+    label.textContent = category;
+    chip.appendChild(label);
+
+    const fallbackCategory = getRoomFallbackCategory(activeRoom);
+    if (category !== fallbackCategory) {
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'chip-edit';
+      editBtn.textContent = '✏️';
+      editBtn.onclick = () => renameCategoryPrompt(category);
+      chip.appendChild(editBtn);
+    }
+
+    if (category === fallbackCategory) {
+      const lock = document.createElement('span');
+      lock.className = 'chip-lock';
+      lock.textContent = 'Fallback';
+      chip.appendChild(lock);
+    } else {
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'chip-delete';
+      deleteBtn.textContent = '×';
+      deleteBtn.onclick = () => removeCategory(category);
+      chip.appendChild(deleteBtn);
+    }
+
     wrap.appendChild(chip);
   });
 }
-
 
 function renderRecipeCategoryOptions() {
   const recipeCategory = document.getElementById('recipeCategory');
@@ -1582,6 +2053,43 @@ function removeRecipeCategory(name) {
   renderRecipeSelect();
   renderSelectedRecipeIngredients();
 }
+
+function renameCategoryPrompt(oldName) {
+  const cleanOld = String(oldName || '').trim().toUpperCase();
+  if (!cleanOld) return;
+  if (cleanOld === getRoomFallbackCategory(activeRoom)) {
+    alert(getRoomFallbackCategory(activeRoom) + ' kan inte byta namn.');
+    return;
+  }
+
+  const next = prompt('Ändra namn på kategori', cleanOld);
+  if (next === null) return;
+
+  const cleanNew = String(next || '').trim().toUpperCase();
+  if (!cleanNew) {
+    alert('Kategori kan inte vara tom.');
+    return;
+  }
+
+  if (cleanNew === cleanOld) return;
+
+  const roomConfig = getRoomConfig(activeRoom);
+  if (roomConfig.categories.includes(cleanNew)) {
+    alert('Kategori finns redan i det här rummet.');
+    return;
+  }
+
+  roomConfig.categories = roomConfig.categories.map(cat => cat === cleanOld ? cleanNew : cat);
+  items.forEach(item => {
+    if ((item.room || 'koket') === activeRoom && String(item.category || '').trim().toUpperCase() === cleanOld) item.category = cleanNew;
+  });
+  quickItems.forEach(item => {
+    if ((item.room || 'koket') === activeRoom && String(item.category || '').trim().toUpperCase() === cleanOld) item.category = cleanNew;
+  });
+  save();
+  render();
+}
+
 function addCategory() {
   const input = document.getElementById('newCategoryName');
   if (!input) return;
@@ -1589,13 +2097,14 @@ function addCategory() {
   const clean = String(input.value || '').trim().toUpperCase();
   if (!clean) return;
 
-  if (categories.includes(clean)) {
-    alert('Kategori finns redan.');
+  const roomConfig = getRoomConfig(activeRoom);
+  if (roomConfig.categories.includes(clean)) {
+    alert('Kategori finns redan i det här rummet.');
     input.value = '';
     return;
   }
 
-  categories.push(clean);
+  roomConfig.categories.push(clean);
   save();
   renderCategoryOptions();
   input.value = '';
@@ -1605,22 +2114,53 @@ function removeCategory(name) {
   const clean = String(name || '').trim().toUpperCase();
   if (!clean) return;
 
-  if (clean === 'MAT') {
-    alert('MAT kan inte tas bort. Den används som fallback.');
+  const roomCategories = getCategoriesForRoom(activeRoom);
+  if (roomCategories.length <= 1) {
+    alert('Rummet måste ha minst en kategori kvar.');
     return;
   }
 
-  categories = categories.filter(cat => cat !== clean);
+  const fallbackCategory = getRoomFallbackCategory(activeRoom);
+  if (clean === fallbackCategory) {
+    alert(fallbackCategory + ' kan inte tas bort. Den används som fallback i rummet.');
+    return;
+  }
+
+  const roomConfig = getRoomConfig(activeRoom);
+  roomConfig.categories = roomCategories.filter(cat => String(cat || '').trim().toUpperCase() !== clean);
 
   items.forEach(item => {
-    if (item.category === clean) item.category = 'MAT';
+    if ((item.room || 'koket') === activeRoom && String(item.category || '').trim().toUpperCase() === clean) {
+      item.category = fallbackCategory;
+    }
   });
 
   quickItems.forEach(item => {
-    if (item.category === clean) item.category = 'MAT';
+    if ((item.room || 'koket') === activeRoom && String(item.category || '').trim().toUpperCase() === clean) {
+      item.category = fallbackCategory;
+    }
   });
 
+  const itemCategory = document.getElementById('itemCategory');
+  if (itemCategory && String(itemCategory.value || '').trim().toUpperCase() === clean) {
+    itemCategory.dataset.currentValue = fallbackCategory;
+    itemCategory.value = fallbackCategory;
+  }
+
+  const editCategory = document.getElementById('editCategory');
+  if (editCategory && String(editCategory.value || '').trim().toUpperCase() === clean) {
+    editCategory.dataset.currentValue = fallbackCategory;
+    editCategory.value = fallbackCategory;
+  }
+
+  const categoryFilter = document.getElementById('categoryFilter');
+  if (categoryFilter && String(categoryFilter.value || '').trim().toUpperCase() === clean) {
+    categoryFilter.value = '';
+    categoryFilter.dataset.currentValue = '';
+  }
+
   save();
+  renderCategoryOptions();
   render();
 }
 
@@ -1780,9 +2320,18 @@ function mergeItems(list) {
 
     if (existing) {
       existing.quantity = Number(existing.quantity || 0) + Number(current.quantity || 0);
+      if (isWeightUnit(existing.unit)) {
+        existing.openedAmount = Math.max(0, Number(existing.openedAmount || 0)) + Math.max(0, Number(current.openedAmount || 0));
+        const packSize = Math.max(0, Number(existing.size || current.size || 0));
+        while (packSize > 0 && existing.openedAmount >= packSize) {
+          existing.quantity += 1;
+          existing.openedAmount -= packSize;
+        }
+        existing.packMode = (existing.quantity > 1 || existing.openedAmount > 0 || current.packMode === 'bags') ? 'bags' : '';
+      }
       if (!existing.img && current.img) existing.img = current.img;
       if (Number(existing.price || 0) === 0 && Number(current.price || 0) > 0) existing.price = Number(current.price || 0);
-      existing.category = existing.category || current.category || 'MAT';
+      existing.category = existing.category || current.category || getRoomFallbackCategory(current.room || activeRoom);
       existing.size = normalizeSize(existing.unit, existing.size || current.size);
     } else {
       acc.push({ ...current, size: normalizeSize(current.unit, current.size) });
@@ -1802,10 +2351,12 @@ function addHomeItemFromTemplate(sourceItem, quantity = 1, targetPlace = null) {
     size: normalizeSize(sourceItem.unit || 'st', parseSmartMeasureInput(sourceItem.measureText || sourceItem.weightText || sourceItem.size, sourceItem.unit || 'st') || sourceItem.size),
     measureText: supportsSize(sourceItem.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(sourceItem.measureText || sourceItem.weightText || sourceItem.size, sourceItem.unit || 'st') || sourceItem.size, sourceItem.unit || 'st') : '',
     weightText: isWeightUnit(sourceItem.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(sourceItem.measureText || sourceItem.weightText || sourceItem.size, sourceItem.unit || 'st') || sourceItem.size, sourceItem.unit || 'st') : '',
-    category: ensureCategoryExists(sourceItem.category || 'MAT'),
+    category: ensureCategoryExists(sourceItem.category || getRoomFallbackCategory(sourceItem.room || activeRoom), sourceItem.room || activeRoom),
     place: ensurePlaceExists(targetPlace || sourceItem.place || 'kyl'),
     type: 'home',
-    img: sourceItem.img ? String(sourceItem.img) : ''
+    img: sourceItem.img ? String(sourceItem.img) : '',
+    openedAmount: Math.max(0, Number(sourceItem.openedAmount || 0)),
+    packMode: isWeightUnit(sourceItem.unit || 'st') && (Number(quantity || sourceItem.quantity || 0) > 1 || Number(sourceItem.openedAmount || 0) > 0 || sourceItem.packMode === 'bags') ? 'bags' : ''
   };
 
   const existing = items.find(entry =>
@@ -1814,6 +2365,12 @@ function addHomeItemFromTemplate(sourceItem, quantity = 1, targetPlace = null) {
 
   if (existing) {
     existing.quantity = Number(existing.quantity || 0) + Number(copy.quantity || 0);
+    existing.openedAmount = Math.max(0, Number(existing.openedAmount || 0)) + Math.max(0, Number(copy.openedAmount || 0));
+    while (Number(existing.size || 0) > 0 && existing.openedAmount >= Number(existing.size || 0)) {
+      existing.quantity += 1;
+      existing.openedAmount -= Number(existing.size || 0);
+    }
+    existing.packMode = isWeightUnit(existing.unit) && (existing.quantity > 1 || existing.openedAmount > 0 || existing.packMode === 'bags' || copy.packMode === 'bags') ? 'bags' : '';
     existing.price = Number(copy.price || existing.price || 0);
     existing.category = copy.category;
     if (copy.img) existing.img = copy.img;
@@ -1835,10 +2392,12 @@ function addBuyItemFromTemplate(sourceItem, quantity = 1) {
     size: normalizeSize(sourceItem.unit || 'st', parseSmartMeasureInput(sourceItem.measureText || sourceItem.weightText || sourceItem.size, sourceItem.unit || 'st') || sourceItem.size),
     measureText: supportsSize(sourceItem.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(sourceItem.measureText || sourceItem.weightText || sourceItem.size, sourceItem.unit || 'st') || sourceItem.size, sourceItem.unit || 'st') : '',
     weightText: isWeightUnit(sourceItem.unit || 'st') ? getMeasureTextFromSize(parseSmartMeasureInput(sourceItem.measureText || sourceItem.weightText || sourceItem.size, sourceItem.unit || 'st') || sourceItem.size, sourceItem.unit || 'st') : '',
-    category: ensureCategoryExists(sourceItem.category || 'MAT'),
+    category: ensureCategoryExists(sourceItem.category || getRoomFallbackCategory(sourceItem.room || activeRoom), sourceItem.room || activeRoom),
     place: ensurePlaceExists(sourceItem.place || 'kyl'),
     type: 'buy',
-    img: sourceItem.img ? String(sourceItem.img) : ''
+    img: sourceItem.img ? String(sourceItem.img) : '',
+    openedAmount: 0,
+    packMode: ''
   };
 
   const existing = items.find(entry =>
@@ -1853,6 +2412,21 @@ function addBuyItemFromTemplate(sourceItem, quantity = 1) {
   } else {
     items.push(copy);
   }
+}
+
+function getTransferQuantity(sourceItem, targetType) {
+  if (!sourceItem) return 1;
+
+  const normalizedTargetType = targetType === 'buy' ? 'buy' : 'home';
+  const sourceType = sourceItem.type === 'buy' ? 'buy' : 'home';
+  const currentQuantity = Math.max(1, Number(sourceItem.quantity || 1));
+  const unit = String(sourceItem.unit || 'st').toLowerCase();
+
+  if (sourceType === 'buy' && normalizedTargetType === 'home' && unit === 'st') {
+    return currentQuantity;
+  }
+
+  return 1;
 }
 
 function transferSingleItem(index, targetType, targetPlace = null) {
@@ -1870,17 +2444,18 @@ function transferSingleItem(index, targetType, targetPlace = null) {
     if ((sourceItem.place || 'kyl') === resolvedTargetPlace) return;
   }
 
-  const movedOne = {
+  const transferQuantity = getTransferQuantity(sourceItem, normalizedTargetType);
+  const movedItem = {
     ...sourceItem,
-    quantity: 1,
+    quantity: transferQuantity,
     type: normalizedTargetType,
     place: resolvedTargetPlace
   };
 
-  if (normalizedTargetType === 'home') addHomeItemFromTemplate(movedOne, 1, resolvedTargetPlace);
-  else addBuyItemFromTemplate(movedOne, 1);
+  if (normalizedTargetType === 'home') addHomeItemFromTemplate(movedItem, transferQuantity, resolvedTargetPlace);
+  else addBuyItemFromTemplate(movedItem, transferQuantity);
 
-  sourceItem.quantity = Math.max(0, Number(sourceItem.quantity || 0) - 1);
+  sourceItem.quantity = Math.max(0, Number(sourceItem.quantity || 0) - transferQuantity);
 
   if (sourceItem.quantity === 0) {
     items.splice(index, 1);
@@ -1934,7 +2509,7 @@ function dropToQuickList() {
       size: normalizeSize(item.unit || 'st', item.size),
       measureText: supportsSize(item.unit || 'st') ? getMeasureTextFromSize(item.size, item.unit || 'st') : '',
       weightText: isWeightUnit(item.unit || 'st') ? getMeasureTextFromSize(item.size, item.unit || 'st') : '',
-      category: ensureCategoryExists(item.category || 'MAT'),
+      category: ensureCategoryExists(item.category || getRoomFallbackCategory(item.room || activeRoom), item.room || activeRoom),
       place: item.place || 'kyl',
       type: 'home',
       img: item.img ? String(item.img) : ''
@@ -1975,7 +2550,8 @@ function changeQuickPlace(index, newPlace) {
   const item = quickItems[index];
   if (!item) return;
 
-  item.place = ensurePlaceExists(newPlace || 'kyl');
+  const itemRoom = item.room || activeRoom;
+  item.place = ensurePlaceExists(newPlace || 'kyl', itemRoom);
   items.forEach(entry => {
     if (normalizeText(entry.name) === normalizeText(item.name)) entry.place = item.place;
   });
@@ -1988,13 +2564,20 @@ function changeQuickCategory(index, newCategory) {
   const item = quickItems[index];
   if (!item) return;
 
-  item.category = ensureCategoryExists(newCategory || 'MAT');
+  item.category = ensureCategoryExists(newCategory || getRoomFallbackCategory(item.room || activeRoom), item.room || activeRoom);
   items.forEach(entry => {
     if (normalizeText(entry.name) === normalizeText(item.name)) entry.category = item.category;
   });
 
   save();
   render();
+}
+
+function getQuickItemSearchHaystack(item) {
+  const roomKey = item?.room || activeRoom;
+  const roomLabel = getRoomLabel(roomKey);
+  const placeLabel = getPlaceMeta(item?.place, roomKey).label;
+  return `${item?.name || ''} ${roomLabel || ''} ${item?.category || ''} ${placeLabel || ''} ${item?.place || ''}`.toLowerCase();
 }
 
 function matchesSearch(item, textSearch, categoryFilter) {
@@ -2005,15 +2588,35 @@ function matchesSearch(item, textSearch, categoryFilter) {
   return hay.includes(search);
 }
 
-function createCategorySelect(current, onchangeCode) {
-  const options = categories.map(cat => `<option value="${cat}" ${current === cat ? 'selected' : ''}>${cat}</option>`).join('');
+function compareQuickItemsByName(a, b) {
+  const nameCompare = String(a?.name || '').localeCompare(String(b?.name || ''), 'sv', { sensitivity: 'base', numeric: true });
+  if (nameCompare !== 0) return nameCompare;
+
+  const roomCompare = getRoomLabel(a?.room || activeRoom).localeCompare(getRoomLabel(b?.room || activeRoom), 'sv', { sensitivity: 'base', numeric: true });
+  if (roomCompare !== 0) return roomCompare;
+
+  const categoryCompare = String(a?.category || '').localeCompare(String(b?.category || ''), 'sv', { sensitivity: 'base', numeric: true });
+  if (categoryCompare !== 0) return categoryCompare;
+
+  return getPlaceMeta(a?.place, a?.room || activeRoom).label.localeCompare(getPlaceMeta(b?.place, b?.room || activeRoom).label, 'sv', { sensitivity: 'base', numeric: true });
+}
+
+function createRoomBadge(roomKey = activeRoom) {
+  const theme = getRoomTheme(roomKey);
+  return `<div class="room-badge">${theme.icon} ${getRoomLabel(roomKey)}</div>`;
+}
+
+function createCategorySelect(current, onchangeCode, roomKey = activeRoom) {
+  const roomCategories = getCategoriesForRoom(roomKey);
+  const options = roomCategories.map(cat => `<option value="${cat}" ${current === cat ? 'selected' : ''}>${cat}</option>`).join('');
   return `<select class="category-select" data-category-select onchange="${onchangeCode}">${options}</select>`;
 }
 
-function createPlaceSelect(current, onchangeCode) {
+function createPlaceSelect(current, onchangeCode, roomKey = activeRoom) {
+  const roomPlaces = getPlacesForRoom(roomKey);
   return `
-    <select class="place-select" data-place-select data-current-value="${current || 'kyl'}" onchange="${onchangeCode}">
-      ${places.map(place => `<option value="${place.key}" ${current === place.key ? 'selected' : ''}>${place.label}</option>`).join('')}
+    <select class="place-select" data-place-select data-current-value="${current || roomPlaces[0]?.key || 'kyl'}" onchange="${onchangeCode}">
+      ${roomPlaces.map(place => `<option value="${place.key}" ${current === place.key ? 'selected' : ''}>${place.label}</option>`).join('')}
     </select>
   `;
 }
@@ -2021,7 +2624,7 @@ function createPlaceSelect(current, onchangeCode) {
 function createCard(item, source = 'items') {
   const realIndex = source === 'quick' ? quickItems.indexOf(item) : items.indexOf(item);
   const img = getItemImage(item) || 'https://via.placeholder.com/100?text=Bild';
-  const moveText = item.type === 'home' ? '↔ Flytta 1 till köp' : '↔ Flytta 1 till hemma';
+  const moveText = item.type === 'home' ? '↔ Flytta 1 till köp' : (String(item.unit || 'st').toLowerCase() === 'st' ? '↔ Flytta alla till hemma' : '↔ Flytta 1 till hemma');
   const placeMeta = getPlaceMeta(item.place);
   const div = document.createElement('div');
   div.className = 'card';
@@ -2030,12 +2633,14 @@ function createCard(item, source = 'items') {
   div.ondragend = () => dragEndItem();
 
   if (source === 'quick') {
+    const quickRoom = item.room || activeRoom;
     div.innerHTML = `
       <img src="${img}" alt="${item.name}" data-item-name="${item.name}" onerror="handleItemImageError(this)" onclick="showQuickImage(${realIndex})">
       <div class="info">
-        <div class="top-tags">
-          ${createCategorySelect(item.category || 'MAT', `changeQuickCategory(${realIndex}, this.value)`)}
-          ${createPlaceSelect(item.place || 'kyl', `changeQuickPlace(${realIndex}, this.value)`)}
+        <div class="top-tags quick-top-tags">
+          ${createRoomBadge(quickRoom)}
+          ${createCategorySelect(item.category || getRoomFallbackCategory(quickRoom), `changeQuickCategory(${realIndex}, this.value)`, quickRoom)}
+          ${createPlaceSelect(item.place || 'kyl', `changeQuickPlace(${realIndex}, this.value)`, quickRoom)}
         </div>
         <div class="name">${item.name || ''}</div>
         <div class="meta">
@@ -2043,6 +2648,7 @@ function createCard(item, source = 'items') {
             <span>${formatItemAmount(item)}</span>
           </div>
         </div>
+        <div class="quick-path">${getRoomLabel(quickRoom)} • ${item.category || getRoomFallbackCategory(quickRoom)} • ${getPlaceMeta(item.place, quickRoom).label}</div>
       </div>
       <div class="actions">
         <button type="button" class="ghost-btn" onclick="changeQuickImage(${realIndex})">🖼️ Byt bild</button>
@@ -2058,7 +2664,7 @@ function createCard(item, source = 'items') {
     <img src="${img}" alt="${item.name}" data-item-name="${item.name}" onerror="handleItemImageError(this)" onclick="showImage(${realIndex})">
     <div class="info">
       <div class="top-tags">
-        <div class="category">${item.category || 'MAT'}</div>
+        <div class="category">${item.category || getRoomFallbackCategory(item.room || activeRoom)}</div>
         <div class="place-label ${placeMeta.cls}">${placeMeta.label}</div>
       </div>
       <div class="name">${item.name || ''}</div>
@@ -2095,11 +2701,14 @@ function renderHomeList(searchText, categoryFilter) {
     return;
   }
 
+  const roomItems = items.filter(item => (item.room || 'koket') === activeRoom && item.type === 'home');
+  const roomPlaces = getPlacesForRoom(activeRoom);
+  const visiblePlaces = activePlaceFilter ? roomPlaces.filter(place => place.key === activePlaceFilter) : roomPlaces;
+
   let hasAny = false;
 
-  places.forEach(place => {
-    const filtered = items.filter(item =>
-      item.type === 'home' &&
+  visiblePlaces.forEach(place => {
+    const filtered = roomItems.filter(item =>
       item.place === place.key &&
       matchesSearch(item, searchText, categoryFilter)
     );
@@ -2107,16 +2716,17 @@ function renderHomeList(searchText, categoryFilter) {
     if (!filtered.length) return;
     hasAny = true;
 
-    const isOpen = homeOpenState[place.key] !== false;
+    const openKey = `${activeRoom}__${place.key}`;
+    const isOpen = homeOpenState[openKey] !== false;
     const section = document.createElement('div');
     section.className = 'subsection';
 
     const title = document.createElement('div');
-    title.className = 'subsection-title';
+    title.className = 'room-section-title';
     title.style.cursor = 'pointer';
     title.textContent = `${place.label}${isOpen ? ' ▲' : ' ▼'}`;
     title.onclick = () => {
-      homeOpenState[place.key] = !isOpen;
+      homeOpenState[openKey] = !isOpen;
       save();
       render();
     };
@@ -2135,7 +2745,7 @@ function renderHomeList(searchText, categoryFilter) {
   });
 
   if (!hasAny) {
-    target.innerHTML = '<div class="empty">Inga varor hemma här ännu.</div>';
+    target.innerHTML = `<div class="empty">Inga varor hemma i ${getRoomLabel(activeRoom)} ännu.</div>`;
   }
 }
 
@@ -2176,7 +2786,7 @@ function applyQuickItemToMainForm(index) {
   if (itemName) itemName.value = item.name || '';
   if (itemPrice) itemPrice.value = Number(item.price || 0) || '';
   if (itemQuantity) itemQuantity.value = 1;
-  if (itemCategory) itemCategory.value = item.category || 'MAT';
+  if (itemCategory) itemCategory.value = item.category || getRoomFallbackCategory(item.room || activeRoom);
   if (itemUnit) itemUnit.value = item.unit || 'st';
   if (itemSize) updateSizeSelect('itemSize', item.unit || 'st', item.size);
   if (itemMeasureText) itemMeasureText.value = supportsSize(item.unit) ? getMeasureTextFromSize(item.size, item.unit) : '';
@@ -2204,7 +2814,9 @@ function showMainItemSuggestions() {
     return;
   }
 
-  const matches = quickItems.filter(item => normalizeText(item.name).includes(search));
+  const matches = quickItems
+    .filter(item => getQuickItemSearchHaystack(item).includes(search))
+    .sort(compareQuickItemsByName);
   if (!matches.length) {
     box.style.display = 'none';
     return;
@@ -2214,7 +2826,7 @@ function showMainItemSuggestions() {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'suggestion-row';
-    row.textContent = `${item.name}${item.category ? ' • ' + item.category : ''}`;
+    row.textContent = `${item.name} • ${getRoomLabel(item.room || activeRoom)} • ${item.category || ''} • ${getPlaceMeta(item.place, item.room || activeRoom).label}`;
     row.onclick = () => {
       const realIndex = quickItems.indexOf(item);
       if (realIndex !== -1) applyQuickItemToMainForm(realIndex);
@@ -2247,7 +2859,7 @@ function renderQuickSuggestions(list) {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'suggestion-row';
-    row.textContent = `${item.name}${item.category ? ' • ' + item.category : ''}`;
+    row.textContent = `${item.name} • ${getRoomLabel(item.room || activeRoom)} • ${item.category || ''} • ${getPlaceMeta(item.place, item.room || activeRoom).label}`;
     row.onclick = () => {
       const realIndex = quickItems.indexOf(item);
       if (realIndex !== -1) useQuickItem(realIndex);
@@ -2302,26 +2914,48 @@ function renderQuickList() {
     return;
   }
 
+  const quickSubtitle = document.querySelector('[data-page="quick"] .section-subtitle');
   const search = String(quickInput?.value || '').toLowerCase().trim();
-  let list = quickItems.slice();
+  let list = quickItems.slice().sort(compareQuickItemsByName);
 
   if (search) {
-    list = list.filter(item =>
-      String(item.name || '').toLowerCase().includes(search) ||
-      String(item.category || '').toLowerCase().includes(search) ||
-      String(item.place || '').toLowerCase().includes(search)
-    );
+    list = list.filter(item => getQuickItemSearchHaystack(item).includes(search));
     renderQuickSuggestions(list);
   } else {
     hideQuickSuggestions();
   }
+
+  if (quickSubtitle) quickSubtitle.textContent = 'Sorterad på vara A-Ö • visar också RUM • KATEGORI • PLATS';
 
   if (!list.length) {
     target.innerHTML = '<div class="empty">Inga träffar</div>';
     return;
   }
 
-  list.forEach(item => target.appendChild(createCard(item, 'quick')));
+  const grouped = new Map();
+  list.forEach(item => {
+    const letter = String(item.name || '#').trim().charAt(0).toUpperCase() || '#';
+    const key = /[A-ZÅÄÖ]/.test(letter) ? letter : '#';
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(item);
+  });
+
+  grouped.forEach((groupItems, letter) => {
+    const section = document.createElement('div');
+    section.className = 'subsection';
+
+    const title = document.createElement('h3');
+    title.className = 'subsection-title';
+    title.textContent = letter;
+    section.appendChild(title);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'container';
+    groupItems.forEach(item => wrap.appendChild(createCard(item, 'quick')));
+    section.appendChild(wrap);
+
+    target.appendChild(section);
+  });
 }
 
 function filterQuickList() {
@@ -2386,9 +3020,9 @@ function openEditModal(item, isQuick, index) {
   if (editSize) updateSizeSelect('editSize', item.unit || 'st', item.size);
   if (editMeasureText) editMeasureText.value = supportsSize(item.unit) ? getMeasureTextFromSize(item.size, item.unit) : '';
   if (editCategory) {
-    editCategory.dataset.currentValue = item.category || 'MAT';
+    editCategory.dataset.currentValue = item.category || getRoomFallbackCategory(item.room || activeRoom);
     renderCategoryOptions();
-    editCategory.value = item.category || 'MAT';
+    editCategory.value = item.category || getRoomFallbackCategory(item.room || activeRoom);
   }
   if (editPlace) {
     editPlace.dataset.currentValue = item.place || 'kyl';
@@ -2464,6 +3098,7 @@ function saveEditItem() {
     if (editMeasureInput) editMeasureInput.value = formatSmartMeasureDisplay(parsedMeasure, updatedUnit);
   }
 
+  const updatedRoom = currentItem.room || activeRoom;
   const updated = {
     name: updatedName,
     price: Number(document.getElementById('editPrice')?.value || 0),
@@ -2474,8 +3109,9 @@ function saveEditItem() {
       : normalizeSize(updatedUnit, document.getElementById('editSize')?.value || currentItem.size, document.getElementById('editCategory')?.value || currentItem.category),
     measureText: supportsSize(updatedUnit) && parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, updatedUnit) : '',
     weightText: isWeightUnit(updatedUnit) && parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, updatedUnit) : '',
-    category: ensureCategoryExists(document.getElementById('editCategory')?.value || currentItem.category || 'MAT'),
-    place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || 'kyl'),
+    room: updatedRoom,
+    category: ensureCategoryExists(document.getElementById('editCategory')?.value || currentItem.category || getRoomFallbackCategory(updatedRoom), updatedRoom),
+    place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || getPlacesForRoom(updatedRoom)[0]?.key || 'kyl', updatedRoom),
     img: currentItem?.img && String(currentItem.img).startsWith('data:')
       ? String(currentItem.img)
       : getAutoImagePath(updatedName)
@@ -2512,8 +3148,8 @@ function suggestUnit() {
 
   if (category === 'KRYDDOR') {
     unit.value = 'g';
-    if (findPlace('kryddor')) place.value = 'kryddor';
-  } else if (category === 'MAT' && !supportsSize(unit.value)) {
+    if (findPlace('kryddor', activeRoom)) place.value = 'kryddor';
+  } else if (category === getRoomFallbackCategory(activeRoom) && !supportsSize(unit.value)) {
     unit.value = 'st';
   }
 
@@ -2553,15 +3189,13 @@ function clearInputs(focusName = false) {
   if (itemPrice) itemPrice.value = '';
   if (itemQuantity) itemQuantity.value = '';
   if (itemImage) itemImage.value = '';
-  if (itemCategory) itemCategory.value = 'MAT';
+  const quickRoom = document.getElementById('quickRoom');
+  const selectedQuickRoom = quickRoom?.value || activeRoom;
+  if (itemCategory) itemCategory.value = getRoomFallbackCategory(selectedQuickRoom);
   if (itemUnit) itemUnit.value = 'st';
   if (itemSize) updateSizeSelect('itemSize', 'st');
   if (itemMeasureText) itemMeasureText.value = '';
-  if (itemPlace) {
-    itemPlace.dataset.currentValue = 'kyl';
-    renderPlaceOptions();
-    itemPlace.value = 'kyl';
-  }
+  renderQuickAddRoomOptions(selectedQuickRoom, false);
 
   selectedAddQuickIndex = null;
   hideMainItemSuggestions();
@@ -2603,6 +3237,8 @@ function buildItemFromForm() {
     if (itemMeasureTextInput) itemMeasureTextInput.value = formatSmartMeasureDisplay(parsedMeasure, resolvedUnit);
   }
 
+  const itemRoom = getQuickRoomSelection() || matchedQuick?.room || activeRoom;
+  const fallbackPlace = getPlacesForRoom(itemRoom)[0]?.key || 'kyl';
   const item = {
     name: matchedQuick ? matchedQuick.name : name,
     price: Number(priceInput?.value || (matchedQuick ? matchedQuick.price : 0) || 0),
@@ -2613,8 +3249,9 @@ function buildItemFromForm() {
       : normalizeSize(resolvedUnit, sizeInput?.value || (matchedQuick ? matchedQuick.size : null), categoryInput?.value || matchedQuick?.category),
     measureText: supportsSize(resolvedUnit) && parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, resolvedUnit) : '',
     weightText: isWeightUnit(resolvedUnit) && parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, resolvedUnit) : '',
-    category: ensureCategoryExists(categoryInput?.value || (matchedQuick ? matchedQuick.category : 'MAT')),
-    place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : 'kyl')),
+    room: itemRoom,
+    category: ensureCategoryExists(categoryInput?.value || (matchedQuick ? matchedQuick.category : getRoomFallbackCategory(itemRoom)), itemRoom),
+    place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : fallbackPlace), itemRoom),
     type: 'home',
     img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name)
   };
@@ -2633,8 +3270,9 @@ function saveQuickTemplate(item) {
     existingQuick.size = normalizeSize(existingQuick.unit, parseSmartMeasureInput(normalized.measureText || normalized.weightText || normalized.size, existingQuick.unit) || normalized.size || existingQuick.size, normalized.category || existingQuick.category);
     existingQuick.measureText = supportsSize(existingQuick.unit) ? getMeasureTextFromSize(existingQuick.size, existingQuick.unit) : '';
     existingQuick.weightText = isWeightUnit(existingQuick.unit) ? existingQuick.measureText : '';
-    existingQuick.category = normalized.category || existingQuick.category || 'MAT';
-    existingQuick.place = normalized.place || existingQuick.place || 'kyl';
+    existingQuick.room = normalized.room || existingQuick.room || activeRoom;
+    existingQuick.category = normalized.category || existingQuick.category || getRoomFallbackCategory(existingQuick.room || activeRoom);
+    existingQuick.place = normalized.place || existingQuick.place || getPlacesForRoom(existingQuick.room)[0]?.key || 'kyl';
     if (normalized.img) existingQuick.img = normalized.img;
   } else {
     quickItems.unshift(normalized);
@@ -2653,10 +3291,21 @@ function saveHomeItem(item) {
     existingHome.size = normalizedItem.size;
     existingHome.measureText = normalizedItem.measureText || '';
     existingHome.weightText = normalizedItem.weightText || '';
+    existingHome.openedAmount = Math.max(0, Number(existingHome.openedAmount || 0)) + Math.max(0, Number(normalizedItem.openedAmount || 0));
+    while (Number(existingHome.size || 0) > 0 && existingHome.openedAmount >= Number(existingHome.size || 0)) {
+      existingHome.quantity += 1;
+      existingHome.openedAmount -= Number(existingHome.size || 0);
+    }
+    existingHome.packMode = isWeightUnit(existingHome.unit) && (existingHome.quantity > 1 || existingHome.openedAmount > 0 || normalizedItem.packMode === 'bags' || existingHome.packMode === 'bags') ? 'bags' : '';
     if (normalizedItem.img) existingHome.img = normalizedItem.img;
     syncQuickItemFromItem(existingHome);
   } else {
-    items.push(normalizedItem);
+    items.push({
+      ...normalizedItem,
+      room: normalizedItem.room || activeRoom,
+      openedAmount: Math.max(0, Number(normalizedItem.openedAmount || 0)),
+      packMode: isWeightUnit(normalizedItem.unit) && (Number(normalizedItem.quantity || 0) > 1 || Number(normalizedItem.openedAmount || 0) > 0 || normalizedItem.packMode === 'bags') ? 'bags' : ''
+    });
     syncQuickItemFromItem(normalizedItem);
   }
 }
@@ -2696,6 +3345,9 @@ function updateQuantity(index, value) {
   const diff = oldQty - newQty;
 
   item.quantity = newQty;
+  if (newQty === 0 && isWeightUnit(item.unit) && Math.max(0, Number(item.openedAmount || 0)) > 0) {
+    item.packMode = 'bags';
+  }
 
   if (item.type === 'home' && diff > 0) {
     const existingBuy = items.find(i =>
@@ -2713,7 +3365,7 @@ function updateQuantity(index, value) {
         size: normalizeSize(item.unit || 'st', item.size),
         measureText: supportsSize(item.unit || 'st') ? getMeasureTextFromSize(item.size, item.unit || 'st') : '',
         weightText: isWeightUnit(item.unit || 'st') ? getMeasureTextFromSize(item.size, item.unit || 'st') : '',
-        category: ensureCategoryExists(item.category || 'MAT'),
+        category: ensureCategoryExists(item.category || getRoomFallbackCategory(item.room || activeRoom), item.room || activeRoom),
         place: item.place || 'kyl',
         type: 'buy',
         img: item.img || ''
@@ -3217,16 +3869,30 @@ function renderSelectedRecipeIngredients() {
 
 function parseRecipeIngredientText(text) {
   const raw = String(text || '').trim();
-  const match = raw.match(/^(\d+)\s*(st|g|kg|ml|dl|l|pkt)?\s+(.*)$/i);
+  const match = raw.match(/^(\d+(?:[\.,]\d+)?)\s*(st|g|kg|ml|dl|l|krm|tsk|msk|pkt)?\s+(.*)$/i);
 
   if (match) {
     const name = (match[3] || '').trim();
     const unit = (match[2] || 'st').toLowerCase();
     const context = getRecipeIngredientContext({ name, unit });
+    const rawAmount = parseFloat(String(match[1] || '').replace(',', '.')) || 1;
+
+    if (supportsSize(unit)) {
+      const size = parseSmartMeasureInput(`${rawAmount} ${unit}`, unit) || getDefaultSize(unit, context);
+      return {
+        quantity: 1,
+        unit,
+        size,
+        name,
+        category: context === 'RECIPE_KRYDDOR' ? 'KRYDDOR' : (context === 'RECIPE_RIVEN_OST' ? 'RECIPE_RIVEN_OST' : ''),
+        smartMode: 'manual'
+      };
+    }
+
     return {
-      quantity: Number(match[1]) || 1,
+      quantity: Math.max(1, Math.round(rawAmount)),
       unit,
-      size: supportsSize(unit) ? getDefaultSize(unit, context) : null,
+      size: null,
       name,
       category: context === 'RECIPE_KRYDDOR' ? 'KRYDDOR' : (context === 'RECIPE_RIVEN_OST' ? 'RECIPE_RIVEN_OST' : '')
     };
@@ -3247,11 +3913,17 @@ function normalizeRecipeIngredient(value) {
 
   const unit = String(value.unit || 'st').toLowerCase();
   const context = getRecipeIngredientContext({ ...value, name, unit });
+  const parsedSize = supportsSize(unit)
+    ? (parseSmartMeasureInput(value.measureText || value.weightText || '', unit) || Number(value.size || 0))
+    : null;
+
   return {
     name,
-    quantity: Math.max(1, Number(value.quantity || value.qty || 1)),
+    quantity: supportsSize(unit)
+      ? Math.max(1, Math.round(Number(value.quantity || value.qty || 1)))
+      : Math.max(1, Number(value.quantity || value.qty || 1)),
     unit,
-    size: supportsSize(unit) ? normalizeSize(unit, value.size, context) : null,
+    size: supportsSize(unit) ? normalizeSize(unit, parsedSize, context) : null,
     category: context === 'RECIPE_KRYDDOR' ? 'KRYDDOR' : (context === 'RECIPE_RIVEN_OST' ? 'RECIPE_RIVEN_OST' : ''),
     smartMode: String(value.smartMode || '').trim().toLowerCase()
   };
@@ -3291,7 +3963,8 @@ function syncRecipeIngredientFromQuickItem(ingredient, recipe = null) {
   const quickMatch = findQuickItemByName(normalized.name);
   if (!quickMatch) return normalized;
 
-  if (isBakverkRecipe(recipe)) {
+  const isManual = normalized.smartMode === 'manual';
+  if (isBakverkRecipe(recipe) || isManual) {
     return normalizeRecipeIngredient({
       ...normalized,
       category: quickMatch.category || normalized.category || ''
@@ -3312,12 +3985,13 @@ function syncRecipeIngredientFromQuickItem(ingredient, recipe = null) {
     size: supportsSize(quickUnit)
       ? normalizeSize(quickUnit, quickMatch.size ?? normalized.size, quickContext)
       : null,
-    category: quickMatch.category || normalized.category || ''
+    category: quickMatch.category || normalized.category || '',
+    smartMode: 'linked'
   });
 }
 
-function buildRecipeIngredient(name, quantity, unit, size = null, category = '', recipe = null) {
-  return syncRecipeIngredientFromQuickItem({ name, quantity, unit, size, category }, recipe);
+function buildRecipeIngredient(name, quantity, unit, size = null, category = '', recipe = null, smartMode = 'linked') {
+  return syncRecipeIngredientFromQuickItem({ name, quantity, unit, size, category, smartMode }, recipe);
 }
 
 function getRecipeUnitFamily(unit) {
@@ -3326,8 +4000,52 @@ function getRecipeUnitFamily(unit) {
   return String(unit || 'st').toLowerCase();
 }
 
-function recipeUnitsCompatible(a, b) {
-  return getRecipeUnitFamily(a) === getRecipeUnitFamily(b);
+function getIngredientDensityPerMl(name) {
+  const normalized = normalizeText(name || '');
+  if (!normalized) return null;
+
+  const rules = [
+    { match: ['strosocker', 'socker'], gramsPerMl: 0.85 },
+    { match: ['vetemjol', 'mjol'], gramsPerMl: 0.60 },
+    { match: ['kakao'], gramsPerMl: 0.40 },
+    { match: ['vanillinsocker', 'vaniljsocker'], gramsPerMl: 0.60 },
+    { match: ['salt'], gramsPerMl: 1.20 }
+  ];
+
+  const found = rules.find(rule => rule.match.some(keyword => normalized.includes(keyword)));
+  return found ? Number(found.gramsPerMl || 0) : null;
+}
+
+function convertCanonicalAmountForIngredient(amount, fromUnit, toUnit, ingredientName = '') {
+  const value = Number(amount || 0);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+
+  const fromFamily = getRecipeUnitFamily(fromUnit);
+  const toFamily = getRecipeUnitFamily(toUnit);
+
+  if (!fromFamily || !toFamily) return null;
+  if (fromFamily === toFamily) return value;
+
+  if (!['weight', 'liquid'].includes(fromFamily) || !['weight', 'liquid'].includes(toFamily)) {
+    return null;
+  }
+
+  const gramsPerMl = getIngredientDensityPerMl(ingredientName);
+  if (!Number.isFinite(gramsPerMl) || gramsPerMl <= 0) return null;
+
+  if (fromFamily === 'weight' && toFamily === 'liquid') {
+    return value / gramsPerMl;
+  }
+
+  if (fromFamily === 'liquid' && toFamily === 'weight') {
+    return value * gramsPerMl;
+  }
+
+  return null;
+}
+
+function recipeUnitsCompatible(a, b, ingredientName = '') {
+  return convertCanonicalAmountForIngredient(1, a, b, ingredientName) !== null;
 }
 
 function getItemCanonicalAmount(item, unitHint = null) {
@@ -3338,9 +4056,13 @@ function getItemCanonicalAmount(item, unitHint = null) {
   if (!Number.isFinite(quantity) || quantity <= 0) return 0;
 
   if (supportsSize(unit)) {
-    const parsedSize = parseSmartMeasureInput(item.measureText || item.weightText || item.size, unit);
-    const size = Math.max(0, Number(parsedSize || item.size || 0));
+    const numericSize = Math.max(0, Number(item.size || 0));
+    const parsedSize = numericSize > 0 ? numericSize : parseSmartMeasureInput(item.measureText || item.weightText || '', unit);
+    const size = Math.max(0, Number(parsedSize || 0));
     if (!Number.isFinite(size) || size <= 0) return 0;
+    if (isPackTrackedItem(item)) {
+      return (quantity * size) + getOpenedAmount(item);
+    }
     return quantity * size;
   }
 
@@ -3363,7 +4085,7 @@ function getMatchingHomeItemsForIngredient(ingredient) {
 
   return items
     .map((item, index) => ({ item, index }))
-    .filter(({ item }) => item.type === 'home' && ingredientMatchesName(ing, item.name) && recipeUnitsCompatible(ing.unit, item.unit));
+    .filter(({ item }) => item.type === 'home' && ingredientMatchesName(ing, item.name) && recipeUnitsCompatible(ing.unit, item.unit, ing.name));
 }
 
 function getHomeAmountForIngredient(ingredient) {
@@ -3371,7 +4093,39 @@ function getHomeAmountForIngredient(ingredient) {
   if (!ing) return 0;
 
   return getMatchingHomeItemsForIngredient(ing)
-    .reduce((sum, { item }) => sum + getItemCanonicalAmount(item, ing.unit), 0);
+    .reduce((sum, { item }) => {
+      const canonical = getItemCanonicalAmount(item, item.unit);
+      const converted = convertCanonicalAmountForIngredient(canonical, item.unit, ing.unit, ing.name);
+      return sum + Math.max(0, Number(converted || 0));
+    }, 0);
+}
+
+function formatHomeAmountForIngredientDisplay(ingredient) {
+  const ing = normalizeRecipeIngredient(ingredient);
+  if (!ing) return '';
+
+  const matches = getMatchingHomeItemsForIngredient(ing);
+  if (!matches.length) return formatRecipeAmount(ing.unit, 0);
+
+  const unique = [];
+  const seen = new Set();
+
+  matches.forEach(({ item }) => {
+    if (!item) return;
+    const key = [
+      normalizeText(item.name || ''),
+      String(item.unit || 'st').toLowerCase(),
+      Number(item.quantity || 0),
+      Number(item.size || 0),
+      Number(item.openedAmount || 0),
+      String(item.packMode || '')
+    ].join('|');
+    if (seen.has(key)) return;
+    seen.add(key);
+    unique.push(formatItemAmount(item));
+  });
+
+  return unique.join(' + ');
 }
 
 function cloneTemplateForIngredient(ingredient) {
@@ -3403,7 +4157,7 @@ function cloneTemplateForIngredient(ingredient) {
     size: normalizedSize,
     measureText: supportsSize(resolvedUnit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, resolvedUnit) : '',
     weightText: isWeightUnit(resolvedUnit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, resolvedUnit) : '',
-    category: ensureCategoryExists(base.category || ing.category || 'MAT'),
+    category: ensureCategoryExists(base.category || ing.category || getRoomFallbackCategory(activeRoom), activeRoom),
     place: ensurePlaceExists(base.place || 'kyl'),
     img: base.img ? String(base.img) : ''
   };
@@ -3426,7 +4180,7 @@ function createBuyItemFromMissingEntry(entry) {
     size: supportsSize(ingredient.unit) ? normalizeSize(ingredient.unit, ingredient.size, ingredient) : null,
     measureText: '',
     weightText: '',
-    category: ensureCategoryExists(ingredient.category || 'MAT'),
+    category: ensureCategoryExists(ingredient.category || getRoomFallbackCategory(activeRoom), activeRoom),
     place: ensurePlaceExists('kyl'),
     img: ''
   };
@@ -3467,7 +4221,7 @@ function mergeCanonicalItemIntoList(nextItem, type = 'buy') {
     unit: String(nextItem.unit || 'st').toLowerCase(),
     size: supportsSize(nextItem.unit) ? Math.max(1, Math.round(Number(nextItem.size || 0))) : null,
     price: Number(nextItem.price || 0),
-    category: ensureCategoryExists(nextItem.category || 'MAT'),
+    category: ensureCategoryExists(nextItem.category || getRoomFallbackCategory(nextItem.room || activeRoom), nextItem.room || activeRoom),
     place: ensurePlaceExists(nextItem.place || 'kyl'),
     img: nextItem.img ? String(nextItem.img) : ''
   };
@@ -3496,7 +4250,7 @@ function mergeCanonicalItemIntoList(nextItem, type = 'buy') {
     }
 
     if (Number(existing.price || 0) === 0 && Number(copy.price || 0) > 0) existing.price = Number(copy.price || 0);
-    existing.category = copy.category || existing.category || 'MAT';
+    existing.category = copy.category || existing.category || getRoomFallbackCategory(existing.room || copy.room || activeRoom);
     existing.place = copy.place || existing.place || 'kyl';
     if (!existing.img && copy.img) existing.img = copy.img;
     return;
@@ -3539,7 +4293,7 @@ function createRestockBuyItemFromQuick(ingredient) {
     size: normalizedSize,
     measureText: supportsSize(unit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, unit) : '',
     weightText: isWeightUnit(unit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, unit) : '',
-    category: ensureCategoryExists(quickMatch.category || ing.category || 'MAT'),
+    category: ensureCategoryExists(quickMatch.category || ing.category || getRoomFallbackCategory(quickMatch.room || activeRoom), quickMatch.room || activeRoom),
     place: ensurePlaceExists(quickMatch.place || 'kyl'),
     img: quickMatch.img ? String(quickMatch.img) : '',
     type: 'buy'
@@ -3572,7 +4326,7 @@ function queueConsumedCountToBuy(ingredient, consumedAmount = 0) {
     size: null,
     measureText: '',
     weightText: '',
-    category: ensureCategoryExists(ing.category || 'MAT'),
+    category: ensureCategoryExists(ing.category || getRoomFallbackCategory(activeRoom), activeRoom),
     place: ensurePlaceExists('kyl'),
     img: ''
   };
@@ -3604,40 +4358,79 @@ function consumeIngredientEntries(entries = []) {
     if (!remaining) return;
 
     const matches = getMatchingHomeItemsForIngredient(ingredient)
-      .sort((a, b) => getItemCanonicalAmount(b.item, ingredient.unit) - getItemCanonicalAmount(a.item, ingredient.unit));
+      .map(match => ({
+        ...match,
+        availableForRecipe: Math.max(0, Number(convertCanonicalAmountForIngredient(
+          getItemCanonicalAmount(match.item, match.item.unit),
+          match.item.unit,
+          ingredient.unit,
+          ingredient.name
+        ) || 0))
+      }))
+      .sort((a, b) => b.availableForRecipe - a.availableForRecipe);
 
-    matches.forEach(({ item, index }) => {
+    matches.forEach(({ item, index, availableForRecipe }) => {
       if (remaining <= 0 || !items[index]) return;
+      if (availableForRecipe <= 0) return;
 
-      const available = getItemCanonicalAmount(item, ingredient.unit);
-      if (available <= 0) return;
+      const stored = items[index];
+      if (!stored) return;
 
-      if (supportsSize(ingredient.unit)) {
-        const nextAmount = Math.max(0, Math.round(available - remaining));
-        remaining = Math.max(0, remaining - available);
+      const consumedForRecipe = Math.min(availableForRecipe, remaining);
+      const consumedForStored = Math.max(0, Number(convertCanonicalAmountForIngredient(
+        consumedForRecipe,
+        ingredient.unit,
+        stored.unit,
+        ingredient.name
+      ) || 0));
 
-        if (nextAmount <= 0) {
+      remaining = Math.max(0, remaining - consumedForRecipe);
+
+      if (supportsSize(stored.unit)) {
+        const currentStoredAmount = Math.max(0, Number(getItemCanonicalAmount(stored, stored.unit) || 0));
+        const nextStoredAmount = Math.max(0, Math.round(currentStoredAmount - consumedForStored));
+
+        if (isPackTrackedItem(stored)) {
+          const packSize = Math.max(0, Number(stored.size || 0));
+          if (packSize <= 0 || nextStoredAmount <= 0) {
+            items.splice(index, 1);
+            return;
+          }
+
+          const unopened = Math.floor(nextStoredAmount / packSize);
+          const opened = nextStoredAmount % packSize;
+
+          if (unopened <= 0 && opened <= 0) {
+            items.splice(index, 1);
+            return;
+          }
+
+          stored.quantity = unopened;
+          stored.openedAmount = opened;
+          stored.packMode = (unopened > 1 || opened > 0 || stored.packMode === 'bags') ? 'bags' : '';
+          stored.measureText = formatSmartMeasureDisplay(packSize, stored.unit);
+          stored.weightText = isWeightUnit(stored.unit) ? formatSmartMeasureDisplay(packSize, stored.unit) : '';
+          return;
+        }
+
+        if (nextStoredAmount <= 0) {
           items.splice(index, 1);
           return;
         }
 
-        const stored = items[index];
-        if (!stored) return;
         stored.quantity = 1;
-        stored.unit = ingredient.unit;
-        stored.size = nextAmount;
-        stored.measureText = formatSmartMeasureDisplay(nextAmount, ingredient.unit);
-        stored.weightText = isWeightUnit(ingredient.unit) ? formatSmartMeasureDisplay(nextAmount, ingredient.unit) : '';
-      } else {
-        const availableCount = Math.max(0, Number(item.quantity || 0));
-        const consumed = Math.min(availableCount, remaining);
-        remaining = Math.max(0, remaining - consumed);
-
-        const stored = items[index];
-        if (!stored) return;
-        stored.quantity = Math.max(0, availableCount - consumed);
-        if (stored.quantity <= 0) items.splice(index, 1);
+        stored.size = nextStoredAmount;
+        stored.openedAmount = 0;
+        stored.packMode = '';
+        stored.measureText = formatSmartMeasureDisplay(nextStoredAmount, stored.unit);
+        stored.weightText = isWeightUnit(stored.unit) ? formatSmartMeasureDisplay(nextStoredAmount, stored.unit) : '';
+        return;
       }
+
+      const availableCount = Math.max(0, Number(stored.quantity || 0));
+      const consumedCount = Math.min(availableCount, Math.ceil(consumedForRecipe));
+      stored.quantity = Math.max(0, availableCount - consumedCount);
+      if (stored.quantity <= 0) items.splice(index, 1);
     });
 
     const consumedTotal = Math.max(0, requestedAmount - remaining);
@@ -3699,10 +4492,7 @@ function getCombinedRecipeIngredientEntries(recipeEntries = []) {
 
 function formatRecipeAmount(unit, amount) {
   if (supportsSize(unit)) {
-    if (isWeightUnit(unit)) {
-      return amount >= 1000 ? `${String(Number((amount / 1000).toFixed(2))).replace('.', ',')} kg` : `${amount} g`;
-    }
-    return amount >= 1000 ? `${String(Number((amount / 1000).toFixed(2))).replace('.', ',')} l` : `${amount} ml`;
+    return formatSmartMeasureDisplay(Number(amount || 0), unit);
   }
   return `${amount} ${unit || 'st'}`.trim();
 }
@@ -3786,7 +4576,15 @@ function saveIngredientEdit() {
     ? normalizeRecipeIngredient(recipeDraftItems[editingIngredientIndex])
     : normalizeRecipeIngredient(recipes[editingIngredientRecipeIndex]?.items[editingIngredientIndex]);
 
-  const updated = buildRecipeIngredient(name, quantity, unit, size, previousIngredient?.category || '', editingIngredientRecipeIndex === -1 ? { category: document.getElementById('recipeCategory')?.value || 'matlagning' } : recipes[editingIngredientRecipeIndex]);
+  const updated = buildRecipeIngredient(
+    name,
+    quantity,
+    unit,
+    size,
+    previousIngredient?.category || '',
+    editingIngredientRecipeIndex === -1 ? { category: document.getElementById('recipeCategory')?.value || 'matlagning' } : recipes[editingIngredientRecipeIndex],
+    'manual'
+  );
   if (!updated) return;
 
   if (editingIngredientRecipeIndex === -1) {
@@ -3879,7 +4677,7 @@ function checkRecipe() {
     has.forEach(entry => {
       const div = document.createElement('div');
       div.className = 'result-pill ok';
-      div.textContent = `${recipeIngredientToText(entry.ingredient)} • har ${formatRecipeAmount(entry.ingredient.unit, entry.have)}`;
+      div.textContent = `${recipeIngredientToText(entry.ingredient)} • har ${formatHomeAmountForIngredientDisplay(entry.ingredient)}`;
       hasList.appendChild(div);
     });
   }
@@ -3936,7 +4734,9 @@ function showEditRecipeSuggestions() {
     return;
   }
 
-  const matches = quickItems.filter(item => normalizeText(item.name).includes(search));
+  const matches = quickItems
+    .filter(item => getQuickItemSearchHaystack(item).includes(search))
+    .sort(compareQuickItemsByName);
   if (!matches.length) {
     box.style.display = 'none';
     return;
@@ -3977,7 +4777,9 @@ function showNewRecipeQuickSuggestions() {
     return;
   }
 
-  const matches = quickItems.filter(item => normalizeText(item.name).includes(search));
+  const matches = quickItems
+    .filter(item => getQuickItemSearchHaystack(item).includes(search))
+    .sort(compareQuickItemsByName);
   if (!matches.length) {
     box.style.display = 'none';
     return;
@@ -4004,10 +4806,277 @@ function showNewRecipeQuickSuggestions() {
   box.style.display = 'block';
 }
 
+
+function renderRoomTabs() {
+  const homeWrap = document.getElementById('homeRoomTabs');
+  const manageWrap = document.getElementById('manageRoomTabs');
+
+  if (homeWrap) {
+    homeWrap.innerHTML = '';
+    getAllRoomDefs().forEach(room => {
+      const theme = getRoomTheme(room);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'room-tab';
+      btn.style.cssText = getRoomThemeStyle(room);
+      if (room.key === activeRoom) btn.classList.add('active');
+      btn.innerHTML = `<span class="room-tab-icon">${escapeHtml(theme.icon)}</span><span class="room-tab-label">${escapeHtml(room.label)}</span>`;
+      btn.onclick = () => setActiveRoom(room.key);
+      homeWrap.appendChild(btn);
+    });
+  }
+
+  if (manageWrap) {
+    manageWrap.innerHTML = '';
+    getAllRoomDefs().forEach(room => {
+      const theme = getRoomTheme(room);
+      const card = document.createElement('div');
+      card.className = 'manage-room-card' + (room.key === activeRoom ? ' active' : '');
+      card.style.cssText = getRoomThemeStyle(room);
+
+      const mainBtn = document.createElement('button');
+      mainBtn.type = 'button';
+      mainBtn.className = 'manage-room-tab';
+      mainBtn.style.cssText = getRoomThemeStyle(room);
+      if (room.key === activeRoom) mainBtn.classList.add('active');
+      mainBtn.innerHTML = `<span class="room-tab-icon">${escapeHtml(theme.icon)}</span><span class="room-tab-label">${escapeHtml(room.label)}</span>`;
+      mainBtn.onclick = () => setActiveRoom(room.key);
+
+      const actions = document.createElement('div');
+      actions.className = 'manage-room-actions';
+
+      const renameBtn = document.createElement('button');
+      renameBtn.type = 'button';
+      renameBtn.className = 'manage-room-action';
+      renameBtn.title = 'Ändra namn på rum';
+      renameBtn.textContent = '✏️';
+      renameBtn.onclick = () => renameRoomPrompt(room.key);
+      actions.appendChild(renameBtn);
+
+      if (!isRoomProtected(room.key)) {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'manage-room-action delete';
+        deleteBtn.title = 'Ta bort rum';
+        deleteBtn.textContent = '🗑️';
+        deleteBtn.onclick = () => removeRoom(room.key);
+        actions.appendChild(deleteBtn);
+      } else {
+        const lock = document.createElement('span');
+        lock.className = 'manage-room-lock';
+        lock.textContent = 'Fallback';
+        actions.appendChild(lock);
+      }
+
+      card.appendChild(mainBtn);
+      card.appendChild(actions);
+      manageWrap.appendChild(card);
+    });
+  }
+
+  const subtitle = document.getElementById('homeRoomSubtitle');
+  if (subtitle) {
+    const theme = getRoomTheme(activeRoom);
+    subtitle.innerHTML = `<span class="room-title-inline">${escapeHtml(theme.icon)} ${escapeHtml(getRoomLabel(activeRoom))}</span> med egna kategorier och platser`;
+  }
+
+  const manageLabel = document.getElementById('manageActiveRoomLabel');
+  if (manageLabel) {
+    const theme = getRoomTheme(activeRoom);
+    manageLabel.innerHTML = `${escapeHtml(theme.icon)} ${escapeHtml(getRoomLabel(activeRoom))}`;
+  }
+
+  const roomSelect = document.getElementById('homeRoomSelect');
+  if (roomSelect) {
+    roomSelect.innerHTML = getAllRoomDefs().map(room => {
+      const theme = getRoomTheme(room);
+      return `<option value="${room.key}">${escapeHtml(theme.icon)} ${escapeHtml(room.label)}</option>`;
+    }).join('');
+    roomSelect.value = activeRoom;
+  }
+}
+
+function renderHomePlaceTabs() {
+  const wrap = document.getElementById('homePlaceTabs');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  const allBtn = document.createElement('button');
+  allBtn.type = 'button';
+  allBtn.className = 'room-subtab' + (!activePlaceFilter ? ' active' : '');
+  allBtn.textContent = 'Alla platser';
+  allBtn.onclick = () => setActivePlaceFilter('');
+  wrap.appendChild(allBtn);
+
+  getPlacesForRoom(activeRoom).forEach(place => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'room-subtab' + (activePlaceFilter === place.key ? ' active' : '');
+    btn.textContent = place.label;
+    btn.onclick = () => setActivePlaceFilter(place.key);
+    wrap.appendChild(btn);
+  });
+}
+
+
+function addRoom() {
+  const input = document.getElementById('newRoomName');
+  if (!input) return;
+
+  const label = cleanRoomLabel(input.value);
+  const key = normalizeRoomKey(label);
+  if (!label || !key) return;
+
+  if (getAllRoomDefs().some(room => room.key === key || room.label === label)) {
+    alert('Rum finns redan.');
+    input.value = '';
+    return;
+  }
+
+  getAllRoomDefs().push({
+    key,
+    label,
+    defaultCategories: ['ÖVRIGT'],
+    defaultPlaces: [{ key: 'hylla', label: '📦 Hylla' }]
+  });
+
+  if (!roomConfigs || typeof roomConfigs !== 'object' || Array.isArray(roomConfigs)) roomConfigs = {};
+  roomConfigs[key] = {
+    categories: ['ÖVRIGT'],
+    places: [{ key: 'hylla', label: '📦 Hylla' }]
+  };
+
+  input.value = '';
+  activeRoom = key;
+  activePlaceFilter = '';
+  save();
+  render();
+}
+
+function renameRoomPrompt(roomKey) {
+  const room = getRoomDef(roomKey);
+  if (!room?.key) return;
+
+  const next = prompt('Ändra namn på rum', room.label);
+  if (next === null) return;
+
+  const label = cleanRoomLabel(next);
+  if (!label) {
+    alert('Rum kan inte vara tomt.');
+    return;
+  }
+
+  const exists = getAllRoomDefs().some(entry => entry.key !== room.key && entry.label === label);
+  if (exists) {
+    alert('Det finns redan ett rum med det namnet.');
+    return;
+  }
+
+  room.label = label;
+  save();
+  render();
+}
+
+function removeRoom(roomKey) {
+  const cleanKey = normalizeRoomKey(roomKey);
+  if (!cleanKey) return;
+
+  if (isRoomProtected(cleanKey)) {
+    alert('Det här rummet kan inte tas bort.');
+    return;
+  }
+
+  const defs = getAllRoomDefs();
+  if (defs.length <= 1) {
+    alert('Du måste ha minst ett rum kvar.');
+    return;
+  }
+
+  const room = defs.find(entry => entry.key === cleanKey);
+  if (!room) return;
+
+  if (!confirm(`Ta bort ${room.label}? Varor flyttas till KÖKET.`)) return;
+
+  const fallbackRoom = getAllRoomDefs().find(entry => entry.key === 'koket')?.key || getAllRoomDefs().find(entry => entry.key !== cleanKey)?.key || 'koket';
+
+  items.forEach(item => {
+    if ((item.room || 'koket') === cleanKey) {
+      item.room = fallbackRoom;
+      item.place = ensurePlaceExists(item.place || getPlacesForRoom(fallbackRoom)[0]?.key || 'hylla', fallbackRoom);
+      item.category = ensureCategoryExists(item.category || getRoomFallbackCategory(item.room || activeRoom), fallbackRoom);
+    }
+  });
+
+  quickItems.forEach(item => {
+    if ((item.room || 'koket') === cleanKey) {
+      item.room = fallbackRoom;
+      item.place = ensurePlaceExists(item.place || getPlacesForRoom(fallbackRoom)[0]?.key || 'hylla', fallbackRoom);
+      item.category = ensureCategoryExists(item.category || getRoomFallbackCategory(item.room || activeRoom), fallbackRoom);
+    }
+  });
+
+  roomDefs = defs.filter(entry => entry.key !== cleanKey);
+  delete roomConfigs[cleanKey];
+
+  if (activeRoom === cleanKey) {
+    activeRoom = fallbackRoom;
+    activePlaceFilter = '';
+  }
+
+  save();
+  render();
+}
+
+function setActiveRoom(roomKey) {
+  if (!getAllRoomDefs().some(room => room.key === roomKey)) return;
+  activeRoom = roomKey;
+  activePlaceFilter = '';
+  save();
+  render();
+}
+
+function setActivePlaceFilter(placeKey) {
+  activePlaceFilter = placeKey || '';
+  save();
+  renderHomePlaceTabs();
+  renderHomeList(document.getElementById('searchInput')?.value.trim() || '', document.getElementById('categoryFilter')?.value || '');
+}
+
+function scrollRoomTabs(direction = 1) {
+  const wrap = document.getElementById('homeRoomTabs');
+  if (wrap) wrap.scrollBy({ left: 220 * direction, behavior: 'smooth' });
+}
+
+function scrollPlaceTabs(direction = 1) {
+  const wrap = document.getElementById('homePlaceTabs');
+  if (wrap) wrap.scrollBy({ left: 180 * direction, behavior: 'smooth' });
+}
+
+function scrollManageRoomTabs(direction = 1) {
+  const wrap = document.getElementById('manageRoomTabs');
+  if (wrap) wrap.scrollBy({ left: 240 * direction, behavior: 'smooth' });
+}
+
+function updateManageCounts() {
+  const categoryCount = document.getElementById('manageCategoryCount');
+  const placeCount = document.getElementById('managePlaceCount');
+  const roomLabel = document.getElementById('manageActiveRoomLabel');
+  const roomCategories = getCategoriesForRoom(activeRoom);
+  const roomPlaces = getPlacesForRoom(activeRoom);
+
+  if (categoryCount) categoryCount.textContent = `${roomCategories.length} kategorier`;
+  if (placeCount) placeCount.textContent = `${roomPlaces.length} platser`;
+  if (roomLabel) roomLabel.textContent = getRoomLabel(activeRoom);
+}
+
+
 function render() {
+  populateQuickRoomSelect();
   updateToggleButtons();
+  renderRoomTabs();
   renderCategoryOptions();
   renderPlaceOptions();
+  renderQuickAddRoomOptions(getQuickRoomSelection());
   renderQuickList();
 
   const searchText = (document.getElementById('searchInput')?.value || '').toLowerCase().trim();
@@ -4016,6 +5085,7 @@ function render() {
   renderHomeList(searchText, categoryFilter);
   renderBuyList(searchText, categoryFilter);
   updateSummary();
+  updateManageCounts();
   renderRecipeSelect();
   renderDraftIngredients();
   if (typeof refreshWeekPlannerUI === 'function') refreshWeekPlannerUI();
