@@ -41,6 +41,11 @@
         return false;
       }
 
+      if (!firebase.firestore || !firebase.auth || !firebase.storage) {
+        setAuthUi(null, 'Firebase SDK saknar Firestore/Auth/Storage');
+        return false;
+      }
+
       if (!firebase.apps || !firebase.apps.length) {
         firebase.initializeApp(window.firebaseConfig);
       }
@@ -58,6 +63,93 @@
     const user = firebase.auth().currentUser;
     if (!user) return null;
     return firebase.firestore().collection('users').doc(user.uid).collection('appData').doc('main');
+  }
+
+  function getStorageRootRef() {
+    const user = firebase.auth().currentUser;
+    if (!user) return null;
+    return firebase.storage().ref().child(`users/${user.uid}/images`);
+  }
+
+  function sanitizeFileName(name) {
+    return String(name || 'bild')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48) || 'bild';
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error('Kunde inte läsa filen'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function resizeToDataUrl(file, maxSize = 1200, quality = 0.88) {
+    return readFileAsDataUrl(file).then(src => new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxSize) {
+          height = Math.round(height * (maxSize / width));
+          width = maxSize;
+        } else if (height > maxSize) {
+          width = Math.round(width * (maxSize / height));
+          height = maxSize;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, width);
+        canvas.height = Math.max(1, height);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Canvas kunde inte startas'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => reject(new Error('Kunde inte läsa bilden'));
+      img.src = src;
+    }));
+  }
+
+  function dataUrlToBlob(dataUrl) {
+    const parts = String(dataUrl || '').split(',');
+    const meta = parts[0] || '';
+    const body = parts[1] || '';
+    const mime = (meta.match(/data:(.*?);base64/) || [])[1] || 'image/jpeg';
+    const binary = atob(body);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+
+  function uploadItemImageToCloud(file, itemName = 'bild') {
+    if (!firebaseReady) return Promise.reject(new Error('Firebase ej redo'));
+    const rootRef = getStorageRootRef();
+    const user = firebase.auth().currentUser;
+    if (!rootRef || !user) return Promise.reject(new Error('Inte inloggad'));
+
+    return resizeToDataUrl(file).then(dataUrl => {
+      const blob = dataUrlToBlob(dataUrl);
+      const ext = 'jpg';
+      const fileName = `${Date.now()}-${sanitizeFileName(itemName)}.${ext}`;
+      const fileRef = rootRef.child(fileName);
+      return fileRef.put(blob, {
+        contentType: 'image/jpeg',
+        cacheControl: 'public,max-age=31536000,immutable',
+        customMetadata: {
+          ownerUid: user.uid,
+          itemName: String(itemName || 'bild')
+        }
+      }).then(() => fileRef.getDownloadURL());
+    });
   }
 
   function collectState() {
@@ -213,6 +305,7 @@
 
   window.saveToCloud = saveToCloud;
   window.saveToCloudNow = saveToCloudNow;
+  window.uploadItemImageToCloud = uploadItemImageToCloud;
 
   function startAuthListener() {
     if (authReady || !initFirebase()) return;

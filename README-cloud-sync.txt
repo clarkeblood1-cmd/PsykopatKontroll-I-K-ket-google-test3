@@ -16,3 +16,8 @@ Gör så här:
    - Firestore Rules -> klistra in firestore.rules
 3. Lägg till domänen clarkeblood1-cmd.github.io under Authorized domains.
 4. Commit + vänta på GitHub Pages.
+
+5. I Firebase Storage:
+   - skapa bucket
+   - Storage Rules -> klistra in storage.rules
+6. Bilder som laddas upp i appen sparas nu i Firebase Storage under users/{uid}/images/.
