@@ -1169,21 +1169,50 @@ function getAutoCloudImageCacheKey(name = '') {
 
 function makeAutoCloudImageCandidates(itemName = 'vara') {
   const uid = getCloudUserUid();
-  const names = [...new Set([...buildImageNameVariants(itemName), ...getSmartImageMatches(itemName)])].filter(Boolean);
+  const variantNames = [...new Set([
+    String(itemName || '').trim(),
+    ...buildImageNameVariants(itemName),
+    ...getSmartImageMatches(itemName)
+  ])].map(value => String(value || '').trim()).filter(Boolean);
   const extensions = ['jpg', 'jpeg', 'png', 'webp'];
   const paths = [];
 
-  names.forEach(name => {
-    const safeName = slugifyImageName(name, '-').slice(0, 96) || 'vara';
+  const addPathVariants = (basePath, rawName) => {
+    const cleanRaw = String(rawName || '').trim();
+    if (!cleanRaw) return;
 
-    extensions.forEach(ext => {
-      if (uid) {
-        paths.push(`users/${uid}/auto-images/${safeName}.${ext}`);
-        paths.push(`users/${uid}/item-images/${safeName}.${ext}`);
-      }
-      paths.push(`shared-images/${safeName}.${ext}`);
-      paths.push(`auto-images/${safeName}.${ext}`);
+    const nameVariants = [
+      cleanRaw,
+      normalizeImageFileName(cleanRaw),
+      slugifyImageName(cleanRaw, '-'),
+      slugifyImageName(cleanRaw, '_'),
+      compactImageName(cleanRaw),
+      stripSwedishChars(cleanRaw),
+      stripSwedishChars(normalizeImageFileName(cleanRaw)),
+      stripSwedishChars(slugifyImageName(cleanRaw, '-')),
+      stripSwedishChars(slugifyImageName(cleanRaw, '_')),
+      stripSwedishChars(compactImageName(cleanRaw))
+    ].map(value => String(value || '').trim()).filter(Boolean);
+
+    [...new Set(nameVariants)].forEach(nameValue => {
+      const fileBase = nameValue.slice(0, 120);
+      extensions.forEach(ext => {
+        paths.push(`${basePath}/${fileBase}.${ext}`);
+      });
     });
+  };
+
+  variantNames.forEach(name => {
+    const bases = [];
+    if (uid) {
+      bases.push(`users/${uid}/auto-images`);
+      bases.push(`users/${uid}/item-images`);
+      bases.push(`users/${uid}/images`);
+    }
+    bases.push('shared-images');
+    bases.push('auto-images');
+
+    bases.forEach(basePath => addPathVariants(basePath, name));
   });
 
   return [...new Set(paths)];
@@ -1438,7 +1467,7 @@ function getItemImageSourceMeta(item) {
   if (autoImage) return { type: 'images', label: '🖼️ Images', title: 'Bilden matchades automatiskt från images-mappen' };
 
   const cloudAutoImage = autoCloudImageUrlCache.get(getAutoCloudImageCacheKey(item?.name || '')) || '';
-  if (cloudAutoImage) return { type: 'cloud', label: '☁️ Auto Cloud', title: 'Bilden matchades automatiskt från Firebase Storage' };
+  if (cloudAutoImage) return { type: 'cloud', label: '☁️ Auto Cloud', title: 'Bilden matchades automatiskt från Firebase Storage (även manuellt uppladdade filer stöds)' };
 
   return { type: 'default', label: '📄 Standard', title: 'Ingen egen bild hittades. Appen kollade både images-mappen och Firebase Storage.' };
 }

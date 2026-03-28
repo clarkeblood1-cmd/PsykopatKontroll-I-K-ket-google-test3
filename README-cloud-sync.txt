@@ -21,3 +21,5 @@ Gör så här:
 4. Commit + vänta på GitHub Pages.
 
 5. Bilder laddas nu upp till Firebase Storage när du är inloggad. Äldre base64-bilder flyttas automatiskt till molnet första gången appen öppnas.
+
+6. Manuellt uppladdade bilder kan nu hittas automatiskt i Firebase Storage. Appen testar bl.a. users/<uid>/item-images, users/<uid>/images, users/<uid>/auto-images, shared-images och auto-images med flera namnvarianter.
