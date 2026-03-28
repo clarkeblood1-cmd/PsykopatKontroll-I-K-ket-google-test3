@@ -1,22 +1,8 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isHouseholdMember(householdId) {
-      return isSignedIn() &&
-        firestore.exists(/databases/(default)/documents/households/$(householdId)/members/$(request.auth.uid));
-    }
-
-    match /households/{householdId}/images/{allPaths=**} {
-      allow read, write: if isHouseholdMember(householdId);
-    }
-
     match /users/{userId}/images/{allPaths=**} {
-      allow read, write: if isSignedIn() && request.auth.uid == userId;
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
   }
 }
