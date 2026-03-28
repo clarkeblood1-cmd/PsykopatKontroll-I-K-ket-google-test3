@@ -83,7 +83,7 @@
       theme: localStorage.getItem('theme') || 'scifi',
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAtMs: Date.now(),
-      appVersion: 'cloud-sync-complete-v2'
+      appVersion: 'cloud-sync-storage-migration-v3'
     };
   }
 
@@ -253,9 +253,11 @@
 
       if (user) {
         setAuthUi(user, 'Inloggad – ansluter...');
+        try { window.dispatchEvent(new CustomEvent('cloud-auth-changed', { detail: { loggedIn: true, uid: user.uid || '' } })); } catch (e) {}
         startCloudSync();
       } else {
         stopCloudSync();
+        try { window.dispatchEvent(new CustomEvent('cloud-auth-changed', { detail: { loggedIn: false, uid: '' } })); } catch (e) {}
         setAuthUi(null, 'Inte inloggad');
       }
     });

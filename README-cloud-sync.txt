@@ -19,3 +19,5 @@ Gör så här:
    - Storage Rules -> klistra in storage.rules
 3. Lägg till domänen clarkeblood1-cmd.github.io under Authorized domains.
 4. Commit + vänta på GitHub Pages.
+
+5. Bilder laddas nu upp till Firebase Storage när du är inloggad. Äldre base64-bilder flyttas automatiskt till molnet första gången appen öppnas.

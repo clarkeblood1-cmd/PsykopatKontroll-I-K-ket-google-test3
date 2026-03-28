@@ -1058,71 +1058,6 @@ function getKnownImageNames() {
   return [...new Set([...items, ...quickItems].map(item => String(item?.name || '').trim()).filter(Boolean))];
 }
 
-const IMAGE_STOP_WORDS = new Set([
-  'file', 'filee', 'filet', 'filé', 'farsk', 'färsk', 'fryst', 'eko', 'ekologisk',
-  'skivad', 'hackad', 'riven', 'strimlad', 'hela', 'hel', 'stor', 'stora', 'små', 'sma',
-  'naturell', 'naturella', 'utan', 'med', 'kokt', 'grillad', 'benfri', 'benfritt',
-  'frozen', 'fresh', 'organic'
-]);
-
-const IMAGE_TOKEN_SYNONYMS = {
-  'file': '',
-  'filee': '',
-  'filet': '',
-  'filé': '',
-  'not': 'notkott',
-  'nöt': 'notkott',
-  'fars': 'fars',
-  'färs': 'fars'
-};
-
-function splitImageTokens(name) {
-  return normalizeImageFileName(name)
-    .toLowerCase()
-    .replace(/[_-]+/g, ' ')
-    .split(/\s+/)
-    .map(token => token.trim())
-    .filter(Boolean);
-}
-
-function getSmartImageKeywordVariants(name) {
-  const tokens = splitImageTokens(name);
-  if (!tokens.length) return [];
-
-  const normalizedTokens = tokens
-    .map(token => (IMAGE_TOKEN_SYNONYMS.hasOwnProperty(token) ? IMAGE_TOKEN_SYNONYMS[token] : token))
-    .filter(Boolean);
-
-  const meaningful = normalizedTokens.filter(token => !IMAGE_STOP_WORDS.has(token));
-  const source = meaningful.length ? meaningful : normalizedTokens;
-  const variants = new Set();
-  const add = value => {
-    const clean = normalizeImageFileName(value);
-    if (clean) variants.add(clean);
-  };
-
-  add(source.join(' '));
-  add(source.join('-'));
-  add(source.join('_'));
-  add(source.join(''));
-
-  source.forEach(token => {
-    if (token.length >= 3) {
-      add(token);
-      add(stripSwedishChars(token));
-    }
-  });
-
-  if (source.length >= 2) {
-    add(source.slice(0, 2).join(' '));
-    add(source.slice(-2).join(' '));
-    add(source.slice(0, 2).join('-'));
-    add(source.slice(-2).join('-'));
-  }
-
-  return [...variants];
-}
-
 function buildImageNameVariants(name) {
   const original = normalizeImageFileName(name);
   if (!original) return [];
@@ -1151,9 +1086,7 @@ function buildImageNameVariants(name) {
     asciiSpaces,
     asciiHyphen,
     asciiUnderscore,
-    asciiCompact,
-    ...getSmartImageKeywordVariants(original),
-    ...getSmartImageKeywordVariants(stripSwedishChars(original))
+    asciiCompact
   ].forEach(add);
 
   const target = normalizeForDistance(original);
@@ -1178,7 +1111,10 @@ function buildImageNameVariants(name) {
 }
 
 function getAutoImageCandidates(name) {
-  const fileNames = buildImageNameVariants(name);
+  const fileNames = [
+    ...buildImageNameVariants(name),
+    ...getSmartImageMatches(name)
+  ];
   const extensions = ['png', 'jpg', 'jpeg', 'webp'];
   const candidates = [];
 
@@ -1203,8 +1139,100 @@ function getNextAutoImagePath(name, currentSrc = '') {
   return currentIndex === -1 ? candidates[0] : (candidates[currentIndex + 1] || '');
 }
 
-function getNoImagePlaceholder() {
+function getDefaultItemIcon() {
   return 'icons/icon-192.png';
+}
+
+function getNoImagePlaceholder() {
+  return getDefaultItemIcon();
+}
+
+function isCloudImageUrl(value) {
+  const src = String(value || '');
+  return /^https?:\/\//i.test(src) && src.includes('firebasestorage');
+}
+
+function isInlineImage(value) {
+  return String(value || '').startsWith('data:image/');
+}
+
+function isLocalImagePath(value) {
+  return /^images\//i.test(String(value || ''));
+}
+
+function getFirebaseStorageInstance() {
+  try {
+    if (!window.firebase || typeof firebase.storage !== 'function') return null;
+    return firebase.storage();
+  } catch (error) {
+    return null;
+  }
+}
+
+function getCloudUserUid() {
+  try {
+    return firebase?.auth?.().currentUser?.uid || '';
+  } catch (error) {
+    return '';
+  }
+}
+
+function canUploadImagesToCloud() {
+  return !!(getFirebaseStorageInstance() && getCloudUserUid());
+}
+
+function makeCloudImagePath(itemName = 'vara') {
+  const uid = getCloudUserUid();
+  const safeName = slugifyImageName(itemName || 'vara', '-').slice(0, 64) || 'vara';
+  return `users/${uid}/item-images/${safeName}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+}
+
+function uploadItemImageToCloud(dataUrl, itemName = 'vara') {
+  if (!isInlineImage(dataUrl) || !canUploadImagesToCloud()) {
+    return Promise.resolve(String(dataUrl || ''));
+  }
+
+  const storage = getFirebaseStorageInstance();
+  if (!storage) return Promise.resolve(String(dataUrl || ''));
+
+  const ref = storage.ref().child(makeCloudImagePath(itemName));
+  return ref.putString(String(dataUrl), 'data_url', { contentType: 'image/jpeg' })
+    .then(snapshot => snapshot.ref.getDownloadURL())
+    .catch(error => {
+      console.error('Image upload error:', error);
+      return String(dataUrl || '');
+    });
+}
+
+function resolveExplicitImageSource(item) {
+  if (!item || !item.img) return '';
+  const src = String(item.img || '').trim();
+  if (!src) return '';
+  if (isInlineImage(src) || isCloudImageUrl(src) || isLocalImagePath(src)) return src;
+  if (/^https?:\/\//i.test(src)) return src;
+  return '';
+}
+
+function getSmartImageMatches(name) {
+  const normalizedTarget = normalizeForDistance(name || '');
+  if (!normalizedTarget) return [];
+
+  const stopWords = new Set(['file', 'fil', 'bit', 'bitar', 'skivor', 'skivade', 'riven', 'hackad', 'hela', 'hel', 'farsk', 'fryst']);
+  const rawTokens = normalizedTarget.split(' ').map(token => token.trim()).filter(Boolean);
+  const tokens = rawTokens.filter(token => !stopWords.has(token));
+  const source = tokens.length ? tokens : rawTokens;
+  if (!source.length) return [];
+
+  const variants = new Set();
+  for (let size = source.length; size >= 1; size -= 1) {
+    for (let start = 0; start + size <= source.length; start += 1) {
+      const phrase = source.slice(start, start + size).join(' ').trim();
+      if (!phrase || phrase === normalizedTarget) continue;
+      buildImageNameVariants(phrase).forEach(value => variants.add(value));
+    }
+  }
+
+  return [...variants];
 }
 
 function handleItemImageError(imgEl) {
@@ -1225,18 +1253,22 @@ function handleItemImageError(imgEl) {
 }
 
 function getItemImage(item) {
-  if (!item) return '';
-  return item.img ? String(item.img) : getAutoImagePath(item.name || '');
+  if (!item) return getNoImagePlaceholder();
+  const explicit = resolveExplicitImageSource(item);
+  if (explicit) return explicit;
+  return getAutoImagePath(item.name || '') || getNoImagePlaceholder();
 }
 
 function getRecipeIngredientImage(ingredient) {
   if (!ingredient) return getNoImagePlaceholder();
 
-  if (ingredient.img) return String(ingredient.img);
+  const explicit = resolveExplicitImageSource(ingredient);
+  if (explicit) return explicit;
 
   const normalizedName = normalizeText(ingredient.name || '');
   const matchedItem = [...quickItems, ...items].find(entry => normalizeText(entry?.name || '') === normalizedName && entry?.img);
-  if (matchedItem?.img) return String(matchedItem.img);
+  const matchedExplicit = resolveExplicitImageSource(matchedItem);
+  if (matchedExplicit) return matchedExplicit;
 
   return getAutoImagePath(ingredient.name || '') || getNoImagePlaceholder();
 }
@@ -2280,75 +2312,123 @@ function pickCamera() {
 }
 
 function resizeImage(file, callback) {
-  const reader = new FileReader();
-  reader.onload = event => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const maxSize = 220;
-      let { width, height } = img;
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Kunde inte läsa bildfilen.'));
+    reader.onload = event => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Kunde inte öppna bilden.'));
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxSize = 220;
+        let { width, height } = img;
 
-      if (width > height && width > maxSize) {
-        height *= maxSize / width;
-        width = maxSize;
-      } else if (height > maxSize) {
-        width *= maxSize / height;
-        height = maxSize;
-      }
+        if (width > height && width > maxSize) {
+          height *= maxSize / width;
+          width = maxSize;
+        } else if (height > maxSize) {
+          width *= maxSize / height;
+          height = maxSize;
+        }
 
-      canvas.width = width;
-      canvas.height = height;
-      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-      callback(canvas.toDataURL('image/jpeg', 0.85));
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        if (typeof callback === 'function') callback(dataUrl);
+        resolve(dataUrl);
+      };
+      img.src = event.target.result;
     };
-    img.src = event.target.result;
-  };
-  reader.readAsDataURL(file);
+    reader.readAsDataURL(file);
+  });
 }
 
-function canUseFirebaseStorage() {
-  try {
-    return !!(window.firebase && typeof firebase.storage === 'function' && firebase.auth().currentUser);
-  } catch (error) {
-    return false;
-  }
+function processPickedImageFile(file, itemName = 'vara') {
+  if (!file) return Promise.resolve('');
+  return resizeImage(file).then(dataUrl => uploadItemImageToCloud(dataUrl, itemName));
 }
 
-function buildCloudImagePath(itemName = 'vara') {
-  const user = firebase.auth().currentUser;
-  const safeName = slugifyImageName(itemName || 'vara', '-') || 'vara';
-  return `users/${user.uid}/images/${safeName}-${Date.now()}.jpg`;
-}
+let imageMigrationRunning = false;
+let imageMigrationQueued = false;
 
-function uploadImageDataToCloud(dataUrl, itemName = 'vara') {
-  if (!dataUrl || !canUseFirebaseStorage()) return Promise.resolve('');
-
-  try {
-    const storageRef = firebase.storage().ref().child(buildCloudImagePath(itemName));
-    return storageRef
-      .putString(dataUrl, 'data_url', { contentType: 'image/jpeg', cacheControl: 'public,max-age=31536000' })
-      .then(() => storageRef.getDownloadURL())
-      .catch(error => {
-        console.error('Storage upload error:', error);
-        return '';
-      });
-  } catch (error) {
-    console.error('Storage init error:', error);
-    return Promise.resolve('');
-  }
-}
-
-function prepareItemImage(file, itemName = 'vara') {
-  return new Promise(resolve => {
-    if (!file) {
-      resolve('');
-      return;
-    }
-
-    resizeImage(file, async dataUrl => {
-      const cloudUrl = await uploadImageDataToCloud(dataUrl, itemName);
-      resolve(cloudUrl || dataUrl);
+function normalizeMigratedImageLists() {
+  let changed = false;
+  quickItems.forEach(sourceItem => {
+    if (!sourceItem?.img) return;
+    const src = String(sourceItem.img || '');
+    items.forEach(item => {
+      if (normalizeText(item?.name || '') === normalizeText(sourceItem.name || '') && item.img !== src) {
+        item.img = src;
+        changed = true;
+      }
     });
+  });
+  return changed;
+}
+
+function migrateInlineImagesToCloud(force = false) {
+  if (!canUploadImagesToCloud()) return Promise.resolve(false);
+  if (imageMigrationRunning) {
+    imageMigrationQueued = imageMigrationQueued || force;
+    return Promise.resolve(false);
+  }
+
+  const migrationKey = `matlista_img_migrated_${getCloudUserUid()}`;
+  if (!force && localStorage.getItem(migrationKey) === 'done') return Promise.resolve(false);
+
+  const groups = new Map();
+  [quickItems, items].forEach(list => {
+    list.forEach(item => {
+      if (!item || !isInlineImage(item.img)) return;
+      const key = String(item.img || '');
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    });
+  });
+
+  const targets = [...groups.entries()].map(([dataUrl, entries]) => ({
+    dataUrl,
+    entries,
+    name: entries[0]?.name || 'vara'
+  }));
+
+  if (!targets.length) {
+    localStorage.setItem(migrationKey, 'done');
+    return Promise.resolve(false);
+  }
+
+  imageMigrationRunning = true;
+  return targets.reduce((promise, entry) => {
+    return promise.then(changed => {
+      return uploadItemImageToCloud(entry.dataUrl, entry.name).then(url => {
+        const finalUrl = String(url || entry.dataUrl || '');
+        entry.entries.forEach(item => {
+          if (item && item.img !== finalUrl) {
+            item.img = finalUrl;
+            changed = true;
+          }
+        });
+        return changed;
+      });
+    });
+  }, Promise.resolve(false)).then(changed => {
+    if (normalizeMigratedImageLists()) changed = true;
+    if (changed) {
+      save();
+      try { if (typeof window.saveToCloudNow === 'function') window.saveToCloudNow(); } catch (error) {}
+      try { render(); } catch (error) {}
+    }
+    localStorage.setItem(migrationKey, 'done');
+    return changed;
+  }).catch(error => {
+    console.error('Image migration error:', error);
+    return false;
+  }).finally(() => {
+    imageMigrationRunning = false;
+    const rerun = imageMigrationQueued;
+    imageMigrationQueued = false;
+    if (rerun) setTimeout(() => migrateInlineImagesToCloud(true), 400);
   });
 }
 
@@ -3134,13 +3214,16 @@ function changeQuickImage(index) {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    resizeImage(file, dataUrl => {
-      quickItems[index].img = dataUrl;
+    processPickedImageFile(file, quickItems[index]?.name || 'vara').then(imgSrc => {
+      quickItems[index].img = imgSrc || getAutoImagePath(quickItems[index]?.name || '') || getNoImagePlaceholder();
       items.forEach(item => {
-        if (normalizeText(item.name) === normalizeText(quickItems[index].name)) item.img = dataUrl;
+        if (normalizeText(item.name) === normalizeText(quickItems[index].name)) item.img = quickItems[index].img;
       });
       save();
       render();
+    }).catch(error => {
+      console.error('Quick image change error:', error);
+      alert('Kunde inte spara bilden.');
     });
   };
   input.click();
@@ -3457,30 +3540,14 @@ function saveHomeItem(item) {
   }
 }
 
-async function addItem(saveToHome = false) {
+function addItem(saveToHome = false) {
   const formData = buildItemFromForm();
   if (!formData) return;
 
   const { item, file } = formData;
-  const addButton = document.querySelector('.quick-home-btn');
-  const saveButton = document.querySelector('.quick-save-btn');
-  const previousAddText = addButton ? addButton.textContent : '';
-  const previousSaveText = saveButton ? saveButton.textContent : '';
 
-  try {
-    if (file) {
-      if (addButton) {
-        addButton.disabled = true;
-        addButton.textContent = 'Laddar bild...';
-      }
-      if (saveButton) {
-        saveButton.disabled = true;
-        saveButton.textContent = 'Laddar bild...';
-      }
-
-      const preparedImage = await prepareItemImage(file, item.name || 'vara');
-      if (preparedImage) item.img = preparedImage;
-    }
+  const finalizeSave = imgData => {
+    if (imgData) item.img = imgData;
 
     saveQuickTemplate(item);
     if (saveToHome) saveHomeItem(item);
@@ -3489,15 +3556,16 @@ async function addItem(saveToHome = false) {
     render();
     clearInputs(true);
     setActiveKitchenPage('quick');
-  } finally {
-    if (addButton) {
-      addButton.disabled = false;
-      addButton.textContent = previousAddText || 'Lägg till';
-    }
-    if (saveButton) {
-      saveButton.disabled = false;
-      saveButton.textContent = previousSaveText || '💾 Spara i snabblista';
-    }
+  };
+
+  if (file) {
+    processPickedImageFile(file, item.name).then(finalizeSave).catch(error => {
+      console.error('Add item image error:', error);
+      alert('Kunde inte spara bilden.');
+      finalizeSave('');
+    });
+  } else {
+    finalizeSave('');
   }
 }
 
@@ -6139,3 +6207,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 document.addEventListener('DOMContentLoaded', updateManageCounts);
+
+
+window.addEventListener('cloud-auth-changed', event => {
+  if (event?.detail?.loggedIn) {
+    setTimeout(() => migrateInlineImagesToCloud(true), 700);
+  }
+});
+
+window.addEventListener('load', () => {
+  setTimeout(() => migrateInlineImagesToCloud(false), 1400);
+});
