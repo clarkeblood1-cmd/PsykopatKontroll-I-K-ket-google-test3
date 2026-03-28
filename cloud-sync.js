@@ -243,6 +243,14 @@
 
   window.saveToCloud = saveToCloud;
   window.saveToCloudNow = saveToCloudNow;
+  window.setCloudStatusMessage = function setCloudStatusMessage(message) {
+    try {
+      const user = firebaseReady && firebase?.auth ? firebase.auth().currentUser : null;
+      setAuthUi(user || null, message || (user ? 'Inloggad – molnsynk aktiv' : 'Inte inloggad'));
+    } catch (error) {
+      console.error('Cloud status UI error:', error);
+    }
+  };
 
   function startAuthListener() {
     if (authReady || !initFirebase()) return;

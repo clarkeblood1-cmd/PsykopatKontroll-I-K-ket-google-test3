@@ -1187,6 +1187,28 @@ function makeCloudImagePath(itemName = 'vara') {
   return `users/${uid}/item-images/${safeName}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
 }
 
+function dataUrlToBlob(dataUrl) {
+  try {
+    const parts = String(dataUrl || '').split(',');
+    if (parts.length < 2) return null;
+    const meta = parts[0] || '';
+    const mimeMatch = meta.match(/data:([^;]+);base64/i);
+    const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+    const binary = atob(parts[1]);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  } catch (error) {
+    return null;
+  }
+}
+
+function updateCloudImageStatus(message) {
+  try {
+    if (typeof window.setCloudStatusMessage === 'function') window.setCloudStatusMessage(message);
+  } catch (error) {}
+}
+
 function uploadItemImageToCloud(dataUrl, itemName = 'vara') {
   if (!isInlineImage(dataUrl) || !canUploadImagesToCloud()) {
     return Promise.resolve(String(dataUrl || ''));
@@ -1196,10 +1218,28 @@ function uploadItemImageToCloud(dataUrl, itemName = 'vara') {
   if (!storage) return Promise.resolve(String(dataUrl || ''));
 
   const ref = storage.ref().child(makeCloudImagePath(itemName));
-  return ref.putString(String(dataUrl), 'data_url', { contentType: 'image/jpeg' })
+  const metadata = {
+    contentType: 'image/jpeg',
+    cacheControl: 'public,max-age=31536000,immutable'
+  };
+
+  updateCloudImageStatus('☁️ Laddar upp bild till cloud...');
+
+  return ref.putString(String(dataUrl), 'data_url', metadata)
     .then(snapshot => snapshot.ref.getDownloadURL())
     .catch(error => {
+      console.warn('Image upload putString retry:', error);
+      const blob = dataUrlToBlob(dataUrl);
+      if (!blob) throw error;
+      return ref.put(blob, metadata).then(snapshot => snapshot.ref.getDownloadURL());
+    })
+    .then(url => {
+      updateCloudImageStatus('☁️ Bild uppladdad till cloud');
+      return String(url || dataUrl || '');
+    })
+    .catch(error => {
       console.error('Image upload error:', error);
+      updateCloudImageStatus('⚠️ Cloud-bild misslyckades – lokal bild används');
       return String(dataUrl || '');
     });
 }
