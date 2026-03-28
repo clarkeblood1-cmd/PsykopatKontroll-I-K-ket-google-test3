@@ -40,6 +40,57 @@
       </div>
     </section>
 
+
+
+    <section class="household-panel" id="householdPanel">
+      <div class="household-panel-top">
+        <div>
+          <div class="household-title">👨‍👩‍👧 Hushåll</div>
+          <div id="householdStatus" class="household-status">Inte ansluten</div>
+          <div id="householdMeta" class="household-meta">Logga in för att skapa eller gå med i ett hushåll.</div>
+        </div>
+        <div class="household-top-actions">
+          <button type="button" id="createHouseholdBtn" onclick="createHouseholdNow()">Skapa hushåll</button>
+          <button type="button" id="leaveHouseholdBtn" class="ghost-btn" onclick="leaveCurrentHousehold()" style="display:none;">Lämna hushåll</button>
+        </div>
+      </div>
+
+      <div class="household-grid">
+        <div class="household-card">
+          <div class="household-card-title">Medlemmar</div>
+          <div id="householdOwnerLine" class="household-owner-line">Ägare: -</div>
+          <div id="householdMembersList" class="household-members-list">
+            <div class="household-empty">Inga medlemmar ännu.</div>
+          </div>
+        </div>
+
+        <div class="household-card">
+          <div class="household-card-title">Dela hushåll</div>
+          <div class="household-share-row">
+            <input id="householdInviteCode" type="text" placeholder="Kod kommer här" readonly>
+            <button type="button" onclick="copyHouseholdCode()">Kopiera kod</button>
+          </div>
+          <div class="household-share-row">
+            <input id="householdInviteLink" type="text" placeholder="Länk kommer här" readonly>
+            <button type="button" onclick="copyHouseholdLink()">Kopiera länk</button>
+          </div>
+          <div class="household-inline-actions">
+            <button type="button" class="ghost-btn" onclick="generateNewInviteCode()">Ny kod</button>
+          </div>
+        </div>
+
+        <div class="household-card">
+          <div class="household-card-title">Gå med i hushåll</div>
+          <div class="household-share-row household-join-row">
+            <input id="householdJoinInput" type="text" placeholder="Klistra in kod eller länk">
+            <button type="button" onclick="joinHouseholdFromInput()">Gå med</button>
+          </div>
+          <div class="household-hint">Klistra in delningskod eller hel länk.</div>
+          <div id="householdJoinMessage" class="household-join-message"></div>
+        </div>
+      </div>
+    </section>
+
     <div class="summary-bar">
       <div class="summary-box"><div>Varor hemma</div><strong id="homeCount">0</strong></div>
       <div class="summary-box"><div>Varor att köpa</div><strong id="buyCount">0</strong></div>

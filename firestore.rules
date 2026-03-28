@@ -2,20 +2,20 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isSignedIn() {
+    function signedIn() {
       return request.auth != null;
     }
 
     function isMe(uid) {
-      return isSignedIn() && request.auth.uid == uid;
+      return signedIn() && request.auth.uid == uid;
     }
 
     function isHouseholdMember(householdId) {
-      return isSignedIn() &&
+      return signedIn() &&
         exists(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid));
     }
 
-    function isOwner(householdId) {
+    function isHouseholdOwner(householdId) {
       return isHouseholdMember(householdId) &&
         get(/databases/$(database)/documents/households/$(householdId)).data.ownerUid == request.auth.uid;
     }
@@ -27,17 +27,18 @@ service cloud.firestore {
 
     match /households/{householdId} {
       allow read: if isHouseholdMember(householdId);
-      allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
       allow update: if isHouseholdMember(householdId);
       allow delete: if false;
 
       match /members/{memberId} {
         allow read: if isHouseholdMember(householdId);
-        allow create: if isSignedIn()
-          && memberId == request.auth.uid
-          && request.resource.data.uid == request.auth.uid;
-        allow update: if isOwner(householdId) || isMe(memberId);
-        allow delete: if isOwner(householdId) || isMe(memberId);
+        allow create: if signedIn() && (
+          (memberId == request.auth.uid && request.resource.data.uid == request.auth.uid) ||
+          isHouseholdOwner(householdId)
+        );
+        allow update: if isHouseholdOwner(householdId) || isMe(memberId);
+        allow delete: if isHouseholdOwner(householdId) || isMe(memberId);
       }
 
       match /state/{docId} {
@@ -46,8 +47,8 @@ service cloud.firestore {
     }
 
     match /inviteCodes/{code} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      allow read: if signedIn();
+      allow create, update, delete: if signedIn();
     }
   }
 }
