@@ -31,75 +31,12 @@
         <div id="authStatus" class="auth-status">Inte inloggad</div>
         <div id="firebaseHelp" class="auth-help">
           Lägg till <strong>firebase-config.js</strong>, aktivera <strong>Google</strong> i Firebase Authentication
-          och skapa <strong>Firestore Database</strong> + <strong>Storage</strong> för att slå på molnsynk.
+          och skapa <strong>Firestore Database</strong> för att slå på molnsynk.
         </div>
       </div>
       <div class="auth-actions">
         <button type="button" id="googleLoginBtn" onclick="loginWithGoogle()">Logga in med Google</button>
         <button type="button" id="googleLogoutBtn" class="ghost-btn" onclick="logoutGoogle()" style="display:none;">Logga ut</button>
-      </div>
-    </section>
-
-
-
-    <section class="household-panel" id="householdPanel">
-      <div class="household-panel-top">
-        <div>
-          <div class="household-title">👨‍👩‍👧 Hushåll</div>
-          <div id="householdStatus" class="household-status">Inte ansluten</div>
-          <div id="householdMeta" class="household-meta">Logga in för att skapa eller gå med i ett hushåll.</div>
-        </div>
-        <div class="household-top-actions">
-          <button type="button" id="createHouseholdBtn" onclick="createHouseholdNow()">Skapa hushåll</button>
-          <button type="button" id="leaveHouseholdBtn" class="ghost-btn" onclick="leaveCurrentHousehold()" style="display:none;">Lämna hushåll</button>
-        </div>
-      </div>
-
-      <div class="household-grid">
-        <div class="household-card">
-          <div class="household-card-title">Medlemmar</div>
-          <div id="householdOwnerLine" class="household-owner-line">Ägare: -</div>
-          <div id="householdMembersList" class="household-members-list">
-            <div class="household-empty">Inga medlemmar ännu.</div>
-          </div>
-        </div>
-        <div class="household-card">
-          <div class="household-card-title">Mina hushåll</div>
-          <div class="household-owner-line">Aktivt hushåll</div>
-          <div class="household-share-row">
-            <select id="myHouseholdsSelect"></select>
-          </div>
-          <div class="household-inline-actions household-inline-actions-stack">
-            <button type="button" class="ghost-btn" onclick="switchSelectedHousehold()">Byt hushåll</button>
-            <button type="button" class="ghost-btn" onclick="refreshMyHouseholds()">Uppdatera lista</button>
-          </div>
-          <div id="myHouseholdsMeta" class="household-hint">Du kan ha flera hushåll och byta mellan dem här.</div>
-        </div>
-
-        <div class="household-card">
-          <div class="household-card-title">Dela hushåll</div>
-          <div class="household-share-row">
-            <input id="householdInviteCode" type="text" placeholder="Kod kommer här" readonly>
-            <button type="button" onclick="copyHouseholdCode()">Kopiera kod</button>
-          </div>
-          <div class="household-share-row">
-            <input id="householdInviteLink" type="text" placeholder="Länk kommer här" readonly>
-            <button type="button" onclick="copyHouseholdLink()">Kopiera länk</button>
-          </div>
-          <div class="household-inline-actions">
-            <button type="button" class="ghost-btn" onclick="generateNewInviteCode()">Ny kod</button>
-          </div>
-        </div>
-
-        <div class="household-card">
-          <div class="household-card-title">Gå med i hushåll</div>
-          <div class="household-share-row household-join-row">
-            <input id="householdJoinInput" type="text" placeholder="Klistra in kod eller länk">
-            <button type="button" onclick="joinHouseholdFromInput()">Gå med</button>
-          </div>
-          <div class="household-hint">Klistra in delningskod eller hel länk.</div>
-          <div id="householdJoinMessage" class="household-join-message"></div>
-        </div>
       </div>
     </section>
 
@@ -550,11 +487,9 @@
          <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
          <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
         <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
-        <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
 <script src="firebase-config.js"></script>
 <script src="cloud-sync.js"></script>
 <script src="script.js"></script>
-<script src="cloud-hooks.js"></script>
   
 </body>
 </html>
