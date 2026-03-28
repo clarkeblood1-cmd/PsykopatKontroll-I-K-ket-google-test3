@@ -1058,6 +1058,71 @@ function getKnownImageNames() {
   return [...new Set([...items, ...quickItems].map(item => String(item?.name || '').trim()).filter(Boolean))];
 }
 
+const IMAGE_STOP_WORDS = new Set([
+  'file', 'filee', 'filet', 'filé', 'farsk', 'färsk', 'fryst', 'eko', 'ekologisk',
+  'skivad', 'hackad', 'riven', 'strimlad', 'hela', 'hel', 'stor', 'stora', 'små', 'sma',
+  'naturell', 'naturella', 'utan', 'med', 'kokt', 'grillad', 'benfri', 'benfritt',
+  'frozen', 'fresh', 'organic'
+]);
+
+const IMAGE_TOKEN_SYNONYMS = {
+  'file': '',
+  'filee': '',
+  'filet': '',
+  'filé': '',
+  'not': 'notkott',
+  'nöt': 'notkott',
+  'fars': 'fars',
+  'färs': 'fars'
+};
+
+function splitImageTokens(name) {
+  return normalizeImageFileName(name)
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .split(/\s+/)
+    .map(token => token.trim())
+    .filter(Boolean);
+}
+
+function getSmartImageKeywordVariants(name) {
+  const tokens = splitImageTokens(name);
+  if (!tokens.length) return [];
+
+  const normalizedTokens = tokens
+    .map(token => (IMAGE_TOKEN_SYNONYMS.hasOwnProperty(token) ? IMAGE_TOKEN_SYNONYMS[token] : token))
+    .filter(Boolean);
+
+  const meaningful = normalizedTokens.filter(token => !IMAGE_STOP_WORDS.has(token));
+  const source = meaningful.length ? meaningful : normalizedTokens;
+  const variants = new Set();
+  const add = value => {
+    const clean = normalizeImageFileName(value);
+    if (clean) variants.add(clean);
+  };
+
+  add(source.join(' '));
+  add(source.join('-'));
+  add(source.join('_'));
+  add(source.join(''));
+
+  source.forEach(token => {
+    if (token.length >= 3) {
+      add(token);
+      add(stripSwedishChars(token));
+    }
+  });
+
+  if (source.length >= 2) {
+    add(source.slice(0, 2).join(' '));
+    add(source.slice(-2).join(' '));
+    add(source.slice(0, 2).join('-'));
+    add(source.slice(-2).join('-'));
+  }
+
+  return [...variants];
+}
+
 function buildImageNameVariants(name) {
   const original = normalizeImageFileName(name);
   if (!original) return [];
@@ -1086,7 +1151,9 @@ function buildImageNameVariants(name) {
     asciiSpaces,
     asciiHyphen,
     asciiUnderscore,
-    asciiCompact
+    asciiCompact,
+    ...getSmartImageKeywordVariants(original),
+    ...getSmartImageKeywordVariants(stripSwedishChars(original))
   ].forEach(add);
 
   const target = normalizeForDistance(original);
@@ -1137,13 +1204,7 @@ function getNextAutoImagePath(name, currentSrc = '') {
 }
 
 function getNoImagePlaceholder() {
-  return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" viewBox="0 0 220 220">' +
-    '<rect width="220" height="220" rx="18" fill="#ffffff"/>' +
-    '<text x="110" y="92" text-anchor="middle" font-size="72">🛒</text>' +
-    '<text x="110" y="148" text-anchor="middle" font-size="18" font-family="Arial" fill="#334155">Ingen bild</text>' +
-    '</svg>'
-  );
+  return 'icons/icon-192.png';
 }
 
 function handleItemImageError(imgEl) {
@@ -2243,6 +2304,52 @@ function resizeImage(file, callback) {
     img.src = event.target.result;
   };
   reader.readAsDataURL(file);
+}
+
+function canUseFirebaseStorage() {
+  try {
+    return !!(window.firebase && typeof firebase.storage === 'function' && firebase.auth().currentUser);
+  } catch (error) {
+    return false;
+  }
+}
+
+function buildCloudImagePath(itemName = 'vara') {
+  const user = firebase.auth().currentUser;
+  const safeName = slugifyImageName(itemName || 'vara', '-') || 'vara';
+  return `users/${user.uid}/images/${safeName}-${Date.now()}.jpg`;
+}
+
+function uploadImageDataToCloud(dataUrl, itemName = 'vara') {
+  if (!dataUrl || !canUseFirebaseStorage()) return Promise.resolve('');
+
+  try {
+    const storageRef = firebase.storage().ref().child(buildCloudImagePath(itemName));
+    return storageRef
+      .putString(dataUrl, 'data_url', { contentType: 'image/jpeg', cacheControl: 'public,max-age=31536000' })
+      .then(() => storageRef.getDownloadURL())
+      .catch(error => {
+        console.error('Storage upload error:', error);
+        return '';
+      });
+  } catch (error) {
+    console.error('Storage init error:', error);
+    return Promise.resolve('');
+  }
+}
+
+function prepareItemImage(file, itemName = 'vara') {
+  return new Promise(resolve => {
+    if (!file) {
+      resolve('');
+      return;
+    }
+
+    resizeImage(file, async dataUrl => {
+      const cloudUrl = await uploadImageDataToCloud(dataUrl, itemName);
+      resolve(cloudUrl || dataUrl);
+    });
+  });
 }
 
 function getDinnerWeightFromItem(item) {
@@ -3350,14 +3457,30 @@ function saveHomeItem(item) {
   }
 }
 
-function addItem(saveToHome = false) {
+async function addItem(saveToHome = false) {
   const formData = buildItemFromForm();
   if (!formData) return;
 
   const { item, file } = formData;
+  const addButton = document.querySelector('.quick-home-btn');
+  const saveButton = document.querySelector('.quick-save-btn');
+  const previousAddText = addButton ? addButton.textContent : '';
+  const previousSaveText = saveButton ? saveButton.textContent : '';
 
-  const saveItem = imgData => {
-    if (imgData) item.img = imgData;
+  try {
+    if (file) {
+      if (addButton) {
+        addButton.disabled = true;
+        addButton.textContent = 'Laddar bild...';
+      }
+      if (saveButton) {
+        saveButton.disabled = true;
+        saveButton.textContent = 'Laddar bild...';
+      }
+
+      const preparedImage = await prepareItemImage(file, item.name || 'vara');
+      if (preparedImage) item.img = preparedImage;
+    }
 
     saveQuickTemplate(item);
     if (saveToHome) saveHomeItem(item);
@@ -3366,10 +3489,16 @@ function addItem(saveToHome = false) {
     render();
     clearInputs(true);
     setActiveKitchenPage('quick');
-  };
-
-  if (file) resizeImage(file, saveItem);
-  else saveItem('');
+  } finally {
+    if (addButton) {
+      addButton.disabled = false;
+      addButton.textContent = previousAddText || 'Lägg till';
+    }
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.textContent = previousSaveText || '💾 Spara i snabblista';
+    }
+  }
 }
 
 function addItemAndUse() {
