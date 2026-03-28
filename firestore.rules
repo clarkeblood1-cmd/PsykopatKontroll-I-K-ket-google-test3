@@ -1,44 +1,53 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
+
+    function isSignedIn() {
       return request.auth != null;
     }
 
-    function isSelf(uid) {
-      return signedIn() && request.auth.uid == uid;
+    function isMe(uid) {
+      return isSignedIn() && request.auth.uid == uid;
     }
 
-    function isMember(householdId) {
-      return signedIn() && exists(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid));
+    function isHouseholdMember(householdId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid));
     }
 
     function isOwner(householdId) {
-      return isMember(householdId)
-        && get(/databases/$(database)/documents/households/$(householdId)).data.ownerUid == request.auth.uid;
+      return isHouseholdMember(householdId) &&
+        get(/databases/$(database)/documents/households/$(householdId)).data.ownerUid == request.auth.uid;
     }
 
     match /users/{userId} {
-      allow read, create, update: if isSelf(userId);
+      allow read, create, update: if isMe(userId);
       allow delete: if false;
     }
 
     match /households/{householdId} {
-      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
-      allow read: if isMember(householdId);
-      allow update: if isMember(householdId);
+      allow read: if isHouseholdMember(householdId);
+      allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if isHouseholdMember(householdId);
       allow delete: if false;
 
       match /members/{memberId} {
-        allow read: if isMember(householdId);
-        allow create: if signedIn() && memberId == request.auth.uid;
-        allow update: if isOwner(householdId) || isSelf(memberId);
-        allow delete: if isOwner(householdId) || isSelf(memberId);
+        allow read: if isHouseholdMember(householdId);
+        allow create: if isSignedIn()
+          && memberId == request.auth.uid
+          && request.resource.data.uid == request.auth.uid;
+        allow update: if isOwner(householdId) || isMe(memberId);
+        allow delete: if isOwner(householdId) || isMe(memberId);
       }
 
       match /state/{docId} {
-        allow read, write: if isMember(householdId);
+        allow read, write: if isHouseholdMember(householdId);
       }
+    }
+
+    match /inviteCodes/{code} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
     }
   }
 }

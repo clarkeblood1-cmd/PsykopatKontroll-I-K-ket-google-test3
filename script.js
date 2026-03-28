@@ -3023,44 +3023,18 @@ function changeQuickImage(index) {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/png, image/jpeg, image/webp';
-  input.onchange = async event => {
+  input.onchange = event => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    try {
-      let imgValue = '';
-      if (typeof window.uploadItemImageToCloud === 'function') {
-        imgValue = await window.uploadItemImageToCloud(file, quickItems[index]?.name || 'bild');
-      }
-      if (!imgValue) {
-        resizeImage(file, dataUrl => {
-          quickItems[index].img = dataUrl;
-          items.forEach(item => {
-            if (normalizeText(item.name) === normalizeText(quickItems[index].name)) item.img = dataUrl;
-          });
-          save();
-          render();
-        });
-        return;
-      }
-      quickItems[index].img = imgValue;
+    resizeImage(file, dataUrl => {
+      quickItems[index].img = dataUrl;
       items.forEach(item => {
-        if (normalizeText(item.name) === normalizeText(quickItems[index].name)) item.img = imgValue;
+        if (normalizeText(item.name) === normalizeText(quickItems[index].name)) item.img = dataUrl;
       });
       save();
       render();
-    } catch (error) {
-      console.error('Image upload error:', error);
-      alert('Kunde inte ladda upp bild till molnet. Sparar lokalt i stället.');
-      resizeImage(file, dataUrl => {
-        quickItems[index].img = dataUrl;
-        items.forEach(item => {
-          if (normalizeText(item.name) === normalizeText(quickItems[index].name)) item.img = dataUrl;
-        });
-        save();
-        render();
-      });
-    }
+    });
   };
   input.click();
 }
@@ -3394,26 +3368,8 @@ function addItem(saveToHome = false) {
     setActiveKitchenPage('quick');
   };
 
-  if (!file) {
-    saveItem('');
-    return;
-  }
-
-  if (typeof window.uploadItemImageToCloud === 'function') {
-    window.uploadItemImageToCloud(file, item?.name || 'bild')
-      .then(url => {
-        if (url) saveItem(url);
-        else resizeImage(file, saveItem);
-      })
-      .catch(error => {
-        console.error('Image upload error:', error);
-        alert('Kunde inte ladda upp bild till molnet. Sparar lokalt i stället.');
-        resizeImage(file, saveItem);
-      });
-    return;
-  }
-
-  resizeImage(file, saveItem);
+  if (file) resizeImage(file, saveItem);
+  else saveItem('');
 }
 
 function addItemAndUse() {
