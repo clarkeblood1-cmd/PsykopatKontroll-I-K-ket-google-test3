@@ -3027,32 +3027,40 @@ function changeQuickImage(index) {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const applyImage = imageValue => {
-      if (!imageValue) return;
-      quickItems[index].img = imageValue;
+    try {
+      let imgValue = '';
+      if (typeof window.uploadItemImageToCloud === 'function') {
+        imgValue = await window.uploadItemImageToCloud(file, quickItems[index]?.name || 'bild');
+      }
+      if (!imgValue) {
+        resizeImage(file, dataUrl => {
+          quickItems[index].img = dataUrl;
+          items.forEach(item => {
+            if (normalizeText(item.name) === normalizeText(quickItems[index].name)) item.img = dataUrl;
+          });
+          save();
+          render();
+        });
+        return;
+      }
+      quickItems[index].img = imgValue;
       items.forEach(item => {
-        if (normalizeText(item.name) === normalizeText(quickItems[index].name)) item.img = imageValue;
+        if (normalizeText(item.name) === normalizeText(quickItems[index].name)) item.img = imgValue;
       });
       save();
       render();
-    };
-
-    try {
-      if (typeof window.uploadHouseholdImage === 'function') {
-        const cloudUrl = await window.uploadHouseholdImage(file, quickItems[index].name || 'bild');
-        if (cloudUrl) {
-          applyImage(cloudUrl);
-          return;
-        }
-      }
     } catch (error) {
       console.error('Image upload error:', error);
       alert('Kunde inte ladda upp bild till molnet. Sparar lokalt i stället.');
+      resizeImage(file, dataUrl => {
+        quickItems[index].img = dataUrl;
+        items.forEach(item => {
+          if (normalizeText(item.name) === normalizeText(quickItems[index].name)) item.img = dataUrl;
+        });
+        save();
+        render();
+      });
     }
-
-    resizeImage(file, dataUrl => {
-      applyImage(dataUrl);
-    });
   };
   input.click();
 }
@@ -3368,7 +3376,7 @@ function saveHomeItem(item) {
   }
 }
 
-async function addItem(saveToHome = false) {
+function addItem(saveToHome = false) {
   const formData = buildItemFromForm();
   if (!formData) return;
 
@@ -3386,25 +3394,26 @@ async function addItem(saveToHome = false) {
     setActiveKitchenPage('quick');
   };
 
-  if (file) {
-    try {
-      if (typeof window.uploadHouseholdImage === 'function') {
-        const cloudUrl = await window.uploadHouseholdImage(file, item.name || 'bild');
-        if (cloudUrl) {
-          saveItem(cloudUrl);
-          return;
-        }
-      }
-    } catch (error) {
-      console.error('Image upload error:', error);
-      alert('Kunde inte ladda upp bild till molnet. Sparar lokalt i stället.');
-    }
-
-    resizeImage(file, saveItem);
+  if (!file) {
+    saveItem('');
     return;
   }
 
-  saveItem('');
+  if (typeof window.uploadItemImageToCloud === 'function') {
+    window.uploadItemImageToCloud(file, item?.name || 'bild')
+      .then(url => {
+        if (url) saveItem(url);
+        else resizeImage(file, saveItem);
+      })
+      .catch(error => {
+        console.error('Image upload error:', error);
+        alert('Kunde inte ladda upp bild till molnet. Sparar lokalt i stället.');
+        resizeImage(file, saveItem);
+      });
+    return;
+  }
+
+  resizeImage(file, saveItem);
 }
 
 function addItemAndUse() {

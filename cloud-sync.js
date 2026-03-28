@@ -5,20 +5,14 @@
   let authReady = false;
   let syncReady = false;
   let cloudUnsubscribe = null;
-  let userUnsubscribe = null;
-  let membershipUnsubscribe = null;
   let saveWrapped = false;
   let remoteApplying = false;
   let saveTimer = null;
   let pendingInitialUpload = false;
-  let householdReady = false;
-  let currentHouseholdId = null;
-  let currentInviteCode = '';
-  let currentInviteLink = '';
-  let lastStateSignature = '';
-  let householdMembers = [];
-  let bootstrapPromise = null;
-  let storageReady = false;
+  let currentHouseholdId = '';
+  let currentHouseholdData = null;
+  let currentRole = 'member';
+  let householdUiReady = false;
 
   function byId(id) {
     return document.getElementById(id);
@@ -28,53 +22,42 @@
     return typeof window[fnName] === 'function';
   }
 
-  function randomString(length) {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  function randomCode(length = 6) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let out = '';
-    for (let i = 0; i < length; i += 1) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+    for (let i = 0; i < length; i += 1) out += chars[Math.floor(Math.random() * chars.length)];
     return out;
   }
 
   function normalizeCode(value) {
-    return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
   }
 
-  function parseInviteValue(value) {
-    const text = String(value || '').trim();
-    if (!text) return '';
+  function getJoinCodeFromUrl() {
     try {
-      const url = new URL(text);
-      return normalizeCode(url.searchParams.get('join') || url.searchParams.get('code') || '');
+      const url = new URL(window.location.href);
+      return normalizeCode(url.searchParams.get('household') || url.searchParams.get('invite') || '');
     } catch (error) {
-      return normalizeCode(text);
+      return '';
     }
   }
 
-  function stateSignature(data) {
+  function clearJoinCodeFromUrl() {
     try {
-      return JSON.stringify({
-        items: Array.isArray(data?.items) ? data.items : [],
-        quickItems: Array.isArray(data?.quickItems) ? data.quickItems : [],
-        recipes: Array.isArray(data?.recipes) ? data.recipes : [],
-        categories: Array.isArray(data?.categories) ? data.categories : [],
-        recipeCategories: Array.isArray(data?.recipeCategories) ? data.recipeCategories : [],
-        places: Array.isArray(data?.places) ? data.places : [],
-        roomConfigs: data?.roomConfigs || {},
-        roomDefs: Array.isArray(data?.roomDefs) ? data.roomDefs : [],
-        activeRoom: String(data?.activeRoom || ''),
-        activePlaceFilter: String(data?.activePlaceFilter || ''),
-        homeOpenState: data?.homeOpenState || {},
-        recipeIngredientChoices: data?.recipeIngredientChoices || {},
-        householdSize: Number(data?.householdSize || 1),
-        portionGrams: Number(data?.portionGrams || 100),
-        weekPlanner: data?.weekPlanner || {},
-        selectedWeekDay: String(data?.selectedWeekDay || ''),
-        weekMealOrder: Array.isArray(data?.weekMealOrder) ? data.weekMealOrder : [],
-        activeKitchenPage: String(data?.activeKitchenPage || ''),
-        theme: String(data?.theme || '')
-      });
+      const url = new URL(window.location.href);
+      url.searchParams.delete('household');
+      url.searchParams.delete('invite');
+      window.history.replaceState({}, '', url.toString());
+    } catch (error) {}
+  }
+
+  function householdLink(code) {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('household', code);
+      return url.toString();
     } catch (error) {
-      return '';
+      return String(window.location.href || '').split('?')[0] + '?household=' + encodeURIComponent(code);
     }
   }
 
@@ -85,7 +68,8 @@
     const help = byId('firebaseHelp');
 
     if (status) {
-      status.textContent = message || (user ? `Inloggad: ${user.displayName || user.email || 'Google-konto'}` : 'Inte inloggad');
+      if (message) status.textContent = message;
+      else status.textContent = user ? `Inloggad: ${user.displayName || user.email || 'Google-konto'}` : 'Inte inloggad';
     }
 
     if (loginBtn) loginBtn.style.display = user ? 'none' : '';
@@ -93,100 +77,103 @@
     if (help) help.style.display = firebaseReady ? 'none' : '';
   }
 
-  function setHouseholdUi(message, meta) {
-    const status = byId('householdStatus');
-    const metaEl = byId('householdMeta');
-    const codeEl = byId('householdInviteCode');
-    const linkEl = byId('householdInviteLink');
+  function ensureHouseholdUi() {
+    if (householdUiReady) return;
+    const authPanel = document.querySelector('.auth-panel');
+    if (!authPanel || !authPanel.parentNode) return;
 
-    if (status) status.textContent = message || 'Inte redo';
-    if (metaEl) metaEl.textContent = meta || '';
-    if (codeEl) codeEl.value = currentInviteCode || '';
-    if (linkEl) linkEl.value = currentInviteLink || '';
+    const wrap = document.createElement('section');
+    wrap.className = 'auth-panel household-panel';
+    wrap.innerHTML = `
+      <div class="auth-panel-left">
+        <div class="auth-title">👨‍👩‍👧 Hushåll</div>
+        <div id="householdStatus" class="auth-status">Inte ansluten</div>
+        <div id="householdMeta" class="auth-help">Skapa eget hushåll eller gå med via kod/länk.</div>
+      </div>
+      <div class="auth-actions">
+        <button type="button" id="createHouseholdBtn">Skapa hushåll</button>
+        <button type="button" id="joinHouseholdBtn" class="ghost-btn">Gå med via kod</button>
+        <button type="button" id="copyHouseholdCodeBtn" class="ghost-btn" style="display:none;">Kopiera kod</button>
+        <button type="button" id="copyHouseholdLinkBtn" class="ghost-btn" style="display:none;">Kopiera länk</button>
+      </div>
+    `;
+    authPanel.insertAdjacentElement('afterend', wrap);
+    byId('createHouseholdBtn')?.addEventListener('click', () => window.createOwnHousehold && window.createOwnHousehold());
+    byId('joinHouseholdBtn')?.addEventListener('click', () => window.joinHouseholdPrompt && window.joinHouseholdPrompt());
+    byId('copyHouseholdCodeBtn')?.addEventListener('click', () => window.copyHouseholdCode && window.copyHouseholdCode());
+    byId('copyHouseholdLinkBtn')?.addEventListener('click', () => window.copyHouseholdLink && window.copyHouseholdLink());
+    householdUiReady = true;
+  }
+
+  function updateHouseholdUi() {
+    ensureHouseholdUi();
+    const status = byId('householdStatus');
+    const meta = byId('householdMeta');
+    const copyCodeBtn = byId('copyHouseholdCodeBtn');
+    const copyLinkBtn = byId('copyHouseholdLinkBtn');
+
+    if (!firebaseReady || !firebase.auth().currentUser) {
+      if (status) status.textContent = 'Inte ansluten';
+      if (meta) meta.textContent = 'Logga in för att skapa eller gå med i ett hushåll.';
+      if (copyCodeBtn) copyCodeBtn.style.display = 'none';
+      if (copyLinkBtn) copyLinkBtn.style.display = 'none';
+      return;
+    }
+
+    if (!currentHouseholdId) {
+      if (status) status.textContent = 'Inget hushåll valt';
+      if (meta) meta.textContent = 'Skapa eget hushåll eller gå med via kod/länk.';
+      if (copyCodeBtn) copyCodeBtn.style.display = 'none';
+      if (copyLinkBtn) copyLinkBtn.style.display = 'none';
+      return;
+    }
+
+    const memberCount = Array.isArray(currentHouseholdData?.memberUids) ? currentHouseholdData.memberUids.length : null;
+    const roleLabel = currentRole === 'owner' ? 'ägare' : 'medlem';
+    if (status) status.textContent = `Hushåll aktivt • kod ${currentHouseholdId}`;
+    if (meta) meta.textContent = `${roleLabel}${memberCount ? ` • ${memberCount} medlem${memberCount === 1 ? '' : 'mar'}` : ''} • länk: ${householdLink(currentHouseholdId)}`;
+    if (copyCodeBtn) copyCodeBtn.style.display = '';
+    if (copyLinkBtn) copyLinkBtn.style.display = '';
   }
 
   function initFirebase() {
     try {
       if (!window.firebase || !window.firebaseConfig) {
         setAuthUi(null, 'Firebase ej redo');
-        setHouseholdUi('Firebase ej redo', 'Kontrollera firebase-config.js.');
         return false;
       }
-
       if (!firebase.apps || !firebase.apps.length) {
         firebase.initializeApp(window.firebaseConfig);
       }
-
       firebaseReady = true;
-      storageReady = !!(firebase.storage && typeof firebase.storage === 'function');
+      ensureHouseholdUi();
+      updateHouseholdUi();
       return true;
     } catch (error) {
       console.error('Firebase init error:', error);
-      const msg = error && error.message ? error.message : 'okänt fel';
-      setAuthUi(null, 'Firebase-fel: ' + msg);
-      setHouseholdUi('Firebase-fel', msg);
+      setAuthUi(null, 'Firebase-fel: ' + (error && error.message ? error.message : 'okänt fel'));
       return false;
     }
   }
 
-  function getUserRef() {
-    const user = firebase.auth().currentUser;
-    if (!user) return null;
-    return firebase.firestore().collection('users').doc(user.uid);
+  function userRef(uid) {
+    return firebase.firestore().collection('users').doc(uid);
   }
 
-  function getHouseholdRef(householdId = currentHouseholdId) {
-    if (!householdId) return null;
+  function householdRef(householdId) {
     return firebase.firestore().collection('households').doc(householdId);
   }
 
-  function getStateRef(householdId = currentHouseholdId) {
-    const ref = getHouseholdRef(householdId);
-    return ref ? ref.collection('state').doc('main') : null;
+  function memberRef(householdId, uid) {
+    return householdRef(householdId).collection('members').doc(uid);
   }
 
-  function sanitizeFileName(value) {
-    return String(value || 'bild')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 40) || 'bild';
+  function stateRef(householdId) {
+    return householdRef(householdId).collection('state').doc('main');
   }
 
-  async function uploadHouseholdImage(file, itemName) {
-    if (!firebaseReady || !storageReady || !currentHouseholdId) return '';
-    const user = firebase.auth().currentUser;
-    if (!user || !file) return '';
-
-    const safeName = sanitizeFileName(itemName || file.name || 'bild');
-    const extension = String(file.type || 'image/jpeg').split('/').pop().replace(/[^a-z0-9]+/gi, '') || 'jpg';
-    const path = `households/${currentHouseholdId}/images/${Date.now()}-${safeName}.${extension}`;
-    const ref = firebase.storage().ref().child(path);
-
-    await ref.put(file, {
-      contentType: file.type || 'image/jpeg',
-      customMetadata: {
-        householdId: currentHouseholdId,
-        uploadedBy: user.uid,
-        itemName: String(itemName || '')
-      }
-    });
-
-    return ref.getDownloadURL();
-  }
-
-  function getInviteRef(code) {
-    const normalized = normalizeCode(code);
-    if (!normalized) return null;
-    return firebase.firestore().collection('householdInvites').doc(normalized);
-  }
-
-  function buildInviteLink(code) {
-    const url = new URL(window.location.href);
-    url.searchParams.set('join', code);
-    return url.toString();
+  function legacyDocRef(uid) {
+    return firebase.firestore().collection('users').doc(uid).collection('appData').doc('main');
   }
 
   function collectState() {
@@ -212,7 +199,7 @@
       theme: localStorage.getItem('theme') || 'scifi',
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAtMs: Date.now(),
-      appVersion: 'household-sync-v3'
+      appVersion: 'household-sync-v1'
     };
   }
 
@@ -256,45 +243,167 @@
           localStorage.setItem('theme', data.theme);
           if (safeCall('applyTheme')) window.applyTheme(data.theme);
         }
-
         if (safeCall('hydrateData')) window.hydrateData();
         if (safeCall('save')) window.save();
       }
-
       if (typeof data.theme === 'string' && data.theme && safeCall('applyTheme')) window.applyTheme(data.theme);
       if (safeCall('render')) window.render();
       if (safeCall('refreshWeekPlannerUI')) window.refreshWeekPlannerUI();
-      lastStateSignature = stateSignature(data);
     } finally {
       remoteApplying = false;
     }
   }
 
-  async function saveToCloudNow(force) {
-    if (!firebaseReady || !householdReady) return false;
-    const ref = getStateRef();
-    if (!ref || remoteApplying) return false;
-    const state = collectState();
-    const signature = stateSignature(state);
-    if (!force && signature && signature === lastStateSignature) return true;
+  async function copyText(text, okMessage) {
     try {
-      await ref.set(state, { merge: true });
-      lastStateSignature = signature;
-      return true;
+      await navigator.clipboard.writeText(text);
+      alert(okMessage);
     } catch (error) {
-      console.error('Cloud save error:', error);
-      const msg = error && error.message ? error.message : 'okänt fel';
-      setAuthUi(firebase.auth().currentUser, 'Molnsynk-fel: ' + msg);
-      setHouseholdUi('Molnsynk-fel', msg);
-      return false;
+      window.prompt('Kopiera manuellt:', text);
     }
   }
 
+  async function createHouseholdForUser(user, seedState) {
+    const db = firebase.firestore();
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const householdId = randomCode(6);
+      const rootRef = householdRef(householdId);
+      const snap = await rootRef.get();
+      if (snap.exists) continue;
+      await rootRef.set({
+        ownerUid: user.uid,
+        code: householdId,
+        memberUids: [user.uid],
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdByName: user.displayName || user.email || 'Google-konto'
+      });
+      await memberRef(householdId, user.uid).set({
+        uid: user.uid,
+        role: 'owner',
+        displayName: user.displayName || '',
+        email: user.email || '',
+        joinedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      await userRef(user.uid).set({
+        uid: user.uid,
+        email: user.email || '',
+        displayName: user.displayName || '',
+        activeHouseholdId: householdId,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+      if (seedState) {
+        await stateRef(householdId).set(seedState, { merge: true });
+      }
+      return householdId;
+    }
+    throw new Error('Kunde inte skapa hushållskod. Försök igen.');
+  }
+
+  async function getLegacySeedState(uid) {
+    try {
+      const snap = await legacyDocRef(uid).get();
+      if (snap.exists) return snap.data() || null;
+    } catch (error) {
+      console.warn('Legacy state read failed:', error);
+    }
+    return null;
+  }
+
+  async function ensureMembership(householdId, user, role = 'member') {
+    const memberSnap = await memberRef(householdId, user.uid).get();
+    if (!memberSnap.exists) {
+      await memberRef(householdId, user.uid).set({
+        uid: user.uid,
+        role,
+        displayName: user.displayName || '',
+        email: user.email || '',
+        joinedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+    await householdRef(householdId).set({
+      memberUids: firebase.firestore.FieldValue.arrayUnion(user.uid),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    await userRef(user.uid).set({
+      uid: user.uid,
+      email: user.email || '',
+      displayName: user.displayName || '',
+      activeHouseholdId: householdId,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
+
+  async function ensureUserAndHousehold(user) {
+    await userRef(user.uid).set({
+      uid: user.uid,
+      email: user.email || '',
+      displayName: user.displayName || '',
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    const requestedJoinCode = getJoinCodeFromUrl();
+    const userSnap = await userRef(user.uid).get();
+    const userData = userSnap.exists ? (userSnap.data() || {}) : {};
+    let householdId = normalizeCode(userData.activeHouseholdId || '');
+
+    if (requestedJoinCode) {
+      const joinSnap = await householdRef(requestedJoinCode).get();
+      if (joinSnap.exists && householdId !== requestedJoinCode) {
+        await ensureMembership(requestedJoinCode, user, 'member');
+        householdId = requestedJoinCode;
+      }
+      clearJoinCodeFromUrl();
+    }
+
+    if (!householdId) {
+      const seedState = await getLegacySeedState(user.uid) || collectState();
+      householdId = await createHouseholdForUser(user, seedState);
+    } else {
+      const rootSnap = await householdRef(householdId).get();
+      if (!rootSnap.exists) {
+        const seedState = await getLegacySeedState(user.uid) || collectState();
+        householdId = await createHouseholdForUser(user, seedState);
+      } else {
+        const role = rootSnap.data()?.ownerUid === user.uid ? 'owner' : 'member';
+        await ensureMembership(householdId, user, role);
+        const stateSnap = await stateRef(householdId).get();
+        if (!stateSnap.exists) {
+          const seedState = await getLegacySeedState(user.uid) || collectState();
+          await stateRef(householdId).set(seedState, { merge: true });
+        }
+      }
+    }
+
+    currentHouseholdId = householdId;
+    const householdSnap = await householdRef(householdId).get();
+    currentHouseholdData = householdSnap.exists ? (householdSnap.data() || {}) : null;
+    currentRole = currentHouseholdData?.ownerUid === user.uid ? 'owner' : 'member';
+    updateHouseholdUi();
+    return householdId;
+  }
+
+  function getStateDocRef() {
+    if (!currentHouseholdId) return null;
+    return stateRef(currentHouseholdId);
+  }
+
+  function saveToCloudNow() {
+    if (!firebaseReady) return Promise.resolve(false);
+    const ref = getStateDocRef();
+    if (!ref || remoteApplying) return Promise.resolve(false);
+    return ref.set(collectState(), { merge: true }).then(() => true).catch(error => {
+      console.error('Cloud save error:', error);
+      setAuthUi(firebase.auth().currentUser, 'Molnsynk-fel: ' + (error && error.message ? error.message : 'okänt fel'));
+      return false;
+    });
+  }
+
   function saveToCloud() {
-    if (!firebaseReady || !householdReady || remoteApplying) return;
+    if (!firebaseReady || remoteApplying) return;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      saveToCloudNow(false);
+      saveToCloudNow();
     }, 350);
   }
 
@@ -309,340 +418,56 @@
     saveWrapped = true;
   }
 
-  async function writeInviteCode(householdId, inviteCode) {
-    const householdRef = getHouseholdRef(householdId);
-    const inviteRef = getInviteRef(inviteCode);
-    if (!householdRef || !inviteRef) return '';
-
-    await firebase.firestore().runTransaction(async tx => {
-      tx.set(householdRef, {
-        inviteCode,
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
-      tx.set(inviteRef, {
-        householdId,
-        inviteCode,
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
-    });
-
-    currentInviteCode = inviteCode;
-    currentInviteLink = buildInviteLink(inviteCode);
-    return inviteCode;
-  }
-
-  async function ensureInviteCode(householdId) {
-    const householdRef = getHouseholdRef(householdId);
-    if (!householdRef) return '';
-    const snap = await householdRef.get();
-    const data = snap.data() || {};
-    let code = normalizeCode(data.inviteCode || '');
-    if (!code) {
-      code = randomString(6);
-      await writeInviteCode(householdId, code);
-    } else {
-      currentInviteCode = code;
-      currentInviteLink = buildInviteLink(code);
-    }
-
-    setHouseholdUi(
-      `Hushåll aktivt${householdMembers.length ? ` • ${householdMembers.length} medlem${householdMembers.length === 1 ? '' : 'mar'}` : ''}`,
-      currentInviteCode ? `Delningskod: ${currentInviteCode}` : 'Delat hushåll aktivt'
-    );
-    return code;
-  }
-
-  async function createHouseholdForUser(user, nameHint) {
-    const db = firebase.firestore();
-    const householdRef = db.collection('households').doc();
-    const householdId = householdRef.id;
-    const inviteCode = randomString(6);
-    const inviteRef = db.collection('householdInvites').doc(inviteCode);
-    const batch = db.batch();
-    const userRef = db.collection('users').doc(user.uid);
-
-    batch.set(householdRef, {
-      ownerUid: user.uid,
-      name: nameHint || `${user.displayName || 'Mitt'} hushåll`,
-      inviteCode,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-
-    batch.set(householdRef.collection('members').doc(user.uid), {
-      uid: user.uid,
-      role: 'owner',
-      displayName: user.displayName || '',
-      email: user.email || '',
-      joinedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-
-    batch.set(userRef, {
-      uid: user.uid,
-      displayName: user.displayName || '',
-      email: user.email || '',
-      activeHouseholdId: householdId,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-
-    batch.set(inviteRef, {
-      householdId,
-      inviteCode,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-
-    batch.set(householdRef.collection('state').doc('main'), collectState(), { merge: true });
-    await batch.commit();
-    return householdId;
-  }
-
-  async function ensureActiveHousehold(user) {
-    const userRef = getUserRef();
-    if (!userRef) return null;
-
-    const inviteFromUrl = parseInviteValue(new URL(window.location.href).searchParams.get('join') || '');
-    if (inviteFromUrl) {
-      await userRef.set({
-        uid: user.uid,
-        displayName: user.displayName || '',
-        email: user.email || '',
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
-      await joinHouseholdByCode(inviteFromUrl, true);
-      return currentHouseholdId;
-    }
-
-    const userSnap = await userRef.get().catch(() => null);
-    const userData = userSnap && userSnap.exists ? (userSnap.data() || {}) : {};
-    let householdId = userData.activeHouseholdId || '';
-
-    await userRef.set({
-      uid: user.uid,
-      displayName: user.displayName || '',
-      email: user.email || '',
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-
-    if (householdId) {
-      try {
-        const memberSnap = await firebase.firestore().collection('households').doc(householdId).collection('members').doc(user.uid).get();
-        if (!memberSnap.exists) householdId = '';
-      } catch (error) {
-        householdId = '';
-      }
-    }
-
-    if (!householdId) {
-      householdId = await createHouseholdForUser(user);
-    }
-
-    currentHouseholdId = householdId;
-    householdReady = true;
-    return householdId;
-  }
-
-  function stopCloudSync() {
-    if (cloudUnsubscribe) { cloudUnsubscribe(); cloudUnsubscribe = null; }
-    if (membershipUnsubscribe) { membershipUnsubscribe(); membershipUnsubscribe = null; }
-    if (userUnsubscribe) { userUnsubscribe(); userUnsubscribe = null; }
-    householdMembers = [];
-    householdReady = false;
-    syncReady = false;
-    currentHouseholdId = null;
-    currentInviteCode = '';
-    currentInviteLink = '';
-    lastStateSignature = '';
-    setHouseholdUi('Logga in för att skapa eller gå med i ett hushåll.', 'Eget hushåll + säker molnsynk mellan mobil och dator.');
-  }
-
-  function startMemberListener(householdId) {
-    if (membershipUnsubscribe) membershipUnsubscribe();
-    membershipUnsubscribe = firebase.firestore()
-      .collection('households').doc(householdId)
-      .collection('members')
-      .onSnapshot(snapshot => {
-        householdMembers = snapshot.docs.map(doc => doc.data() || {});
-        const names = householdMembers
-          .map(member => member.displayName || member.email || member.uid)
-          .filter(Boolean)
-          .slice(0, 4)
-          .join(', ');
-        setHouseholdUi(
-          `Hushåll aktivt • ${householdMembers.length} medlem${householdMembers.length === 1 ? '' : 'mar'}`,
-          names || 'Delat hushåll aktivt'
-        );
-        ensureInviteCode(householdId).catch(() => {});
-      }, error => {
-        console.error('Member sync error:', error);
-      });
-  }
-
-  function startUserListener() {
-    const ref = getUserRef();
-    if (!ref) return;
-    if (userUnsubscribe) userUnsubscribe();
-    userUnsubscribe = ref.onSnapshot(snapshot => {
-      const data = snapshot.data() || {};
-      const nextHouseholdId = data.activeHouseholdId || '';
-      if (nextHouseholdId && nextHouseholdId !== currentHouseholdId) {
-        currentHouseholdId = nextHouseholdId;
-        startCloudSync(true).catch(error => console.error('Restart sync failed:', error));
-      }
-    }, error => console.error('User sync error:', error));
-  }
-
-  async function startCloudSync(forceRestart) {
+  async function startCloudSync() {
     if (!firebaseReady || !safeCall('render')) return;
     const user = firebase.auth().currentUser;
     if (!user) return;
+    const householdId = await ensureUserAndHousehold(user);
+    const ref = stateRef(householdId);
 
-    if (bootstrapPromise && !forceRestart) {
-      await bootstrapPromise;
-      return;
+    if (cloudUnsubscribe) {
+      cloudUnsubscribe();
+      cloudUnsubscribe = null;
     }
 
-    bootstrapPromise = (async () => {
-      const householdId = await ensureActiveHousehold(user);
-      if (!householdId) return;
+    syncReady = true;
+    setAuthUi(user, 'Inloggad – ansluter hushåll...');
+    updateHouseholdUi();
 
-      const ref = getStateRef(householdId);
-      if (!ref) return;
-
-      if (cloudUnsubscribe) {
-        cloudUnsubscribe();
-        cloudUnsubscribe = null;
+    cloudUnsubscribe = ref.onSnapshot(async snapshot => {
+      if (!snapshot.exists) {
+        if (!pendingInitialUpload) {
+          pendingInitialUpload = true;
+          await saveToCloudNow();
+          pendingInitialUpload = false;
+          setAuthUi(firebase.auth().currentUser, 'Hushåll aktivt – molnsynk aktiv');
+        }
+        return;
       }
 
-      startUserListener();
-      startMemberListener(householdId);
-
-      syncReady = true;
-      setAuthUi(user, 'Inloggad – startar molnsynk...');
-      await ensureInviteCode(householdId);
-
-      cloudUnsubscribe = ref.onSnapshot(snapshot => {
-        if (!snapshot.exists) {
-          if (!pendingInitialUpload) {
-            pendingInitialUpload = true;
-            saveToCloudNow(true).finally(() => {
-              pendingInitialUpload = false;
-              setAuthUi(firebase.auth().currentUser, 'Inloggad – molnsynk aktiv');
-            });
-          }
-          return;
-        }
-
-        const data = snapshot.data() || {};
-        const incomingSignature = stateSignature(data);
-        if (incomingSignature && incomingSignature === lastStateSignature) {
-          setAuthUi(firebase.auth().currentUser, 'Inloggad – molnsynk aktiv');
-          return;
-        }
-
-        applyRemoteState(data);
-        setAuthUi(firebase.auth().currentUser, 'Inloggad – molnsynk aktiv');
-      }, error => {
-        console.error('Cloud sync snapshot error:', error);
-        const msg = error && error.message ? error.message : 'okänt fel';
-        setAuthUi(firebase.auth().currentUser, 'Molnsynk-fel: ' + msg);
-        setHouseholdUi('Molnsynk-fel', msg);
-      });
-    })();
-
-    try {
-      await bootstrapPromise;
-    } finally {
-      bootstrapPromise = null;
-    }
-  }
-
-  async function joinHouseholdByCode(rawValue, silent) {
-    if (!initFirebase()) {
-      if (!silent) alert('Firebase är inte korrekt laddat ännu. Kontrollera firebase-config.js.');
-      return false;
-    }
-
-    const user = firebase.auth().currentUser;
-    if (!user) {
-      if (!silent) alert('Logga in med Google först.');
-      return false;
-    }
-
-    const code = parseInviteValue(rawValue || byId('joinHouseholdInput')?.value || '');
-    if (!code) {
-      if (!silent) alert('Skriv in en giltig kod eller länk.');
-      return false;
-    }
-
-    const inviteSnap = await getInviteRef(code).get();
-    if (!inviteSnap.exists) {
-      if (!silent) alert('Hushållet hittades inte. Kontrollera koden.');
-      return false;
-    }
-
-    const inviteData = inviteSnap.data() || {};
-    const householdId = String(inviteData.householdId || '');
-    if (!householdId) {
-      if (!silent) alert('Koden är ogiltig.');
-      return false;
-    }
-
-    const batch = firebase.firestore().batch();
-    const userRef = firebase.firestore().collection('users').doc(user.uid);
-    const memberRef = firebase.firestore().collection('households').doc(householdId).collection('members').doc(user.uid);
-
-    batch.set(memberRef, {
-      uid: user.uid,
-      role: 'member',
-      displayName: user.displayName || '',
-      email: user.email || '',
-      joinedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-
-    batch.set(userRef, {
-      uid: user.uid,
-      displayName: user.displayName || '',
-      email: user.email || '',
-      activeHouseholdId: householdId,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-
-    await batch.commit();
-    currentHouseholdId = householdId;
-    householdReady = true;
-
-    const input = byId('joinHouseholdInput');
-    if (input) input.value = '';
-    if (!silent) alert('Nu är du med i hushållet.');
-    return true;
-  }
-
-  async function refreshHouseholdInvite() {
-    if (!firebaseReady || !currentHouseholdId) {
-      alert('Logga in först.');
-      return;
-    }
-    const code = randomString(6);
-    await writeInviteCode(currentHouseholdId, code);
-    setHouseholdUi(
-      `Hushåll aktivt • ${householdMembers.length} medlem${householdMembers.length === 1 ? '' : 'mar'}`,
-      `Ny kod skapad: ${code}`
-    );
-  }
-
-  function copyText(value, okMessage) {
-    const text = String(value || '');
-    if (!text) {
-      alert('Det finns inget att kopiera ännu.');
-      return;
-    }
-    navigator.clipboard.writeText(text).then(() => {
-      alert(okMessage);
-    }).catch(() => {
-      alert('Kunde inte kopiera automatiskt. Markera texten och kopiera manuellt.');
+      const data = snapshot.data() || {};
+      applyRemoteState(data);
+      const householdSnap = await householdRef(householdId).get().catch(() => null);
+      currentHouseholdData = householdSnap?.exists ? (householdSnap.data() || {}) : currentHouseholdData;
+      currentRole = currentHouseholdData?.ownerUid === user.uid ? 'owner' : 'member';
+      updateHouseholdUi();
+      setAuthUi(firebase.auth().currentUser, 'Hushåll aktivt – molnsynk aktiv');
+    }, error => {
+      console.error('Cloud sync snapshot error:', error);
+      setAuthUi(firebase.auth().currentUser, 'Molnsynk-fel: ' + (error && error.message ? error.message : 'okänt fel'));
     });
+  }
+
+  function stopCloudSync() {
+    if (cloudUnsubscribe) {
+      cloudUnsubscribe();
+      cloudUnsubscribe = null;
+    }
+    syncReady = false;
+    currentHouseholdId = '';
+    currentHouseholdData = null;
+    currentRole = 'member';
+    updateHouseholdUi();
   }
 
   window.loginWithGoogle = function loginWithGoogle() {
@@ -650,10 +475,8 @@
       alert('Firebase är inte korrekt laddat ännu. Kontrollera firebase-config.js.');
       return;
     }
-
     const provider = new firebase.auth.GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
-
     firebase.auth().signInWithPopup(provider).catch(error => {
       console.error('Google login error:', error);
       const msg = error && error.message ? error.message : 'okänt fel';
@@ -670,47 +493,120 @@
     });
   };
 
+  window.createOwnHousehold = async function createOwnHousehold() {
+    if (!initFirebase()) return;
+    const user = firebase.auth().currentUser;
+    if (!user) {
+      alert('Logga in först.');
+      return;
+    }
+    try {
+      const seedState = collectState();
+      const householdId = await createHouseholdForUser(user, seedState);
+      currentHouseholdId = householdId;
+      currentHouseholdData = (await householdRef(householdId).get()).data() || null;
+      currentRole = 'owner';
+      updateHouseholdUi();
+      await startCloudSync();
+      alert('Nytt hushåll skapat: ' + householdId);
+    } catch (error) {
+      console.error('Create household error:', error);
+      alert('Kunde inte skapa hushåll: ' + (error && error.message ? error.message : 'okänt fel'));
+    }
+  };
+
+  window.joinHouseholdByCode = async function joinHouseholdByCode(rawCode) {
+    if (!initFirebase()) return;
+    const user = firebase.auth().currentUser;
+    if (!user) {
+      alert('Logga in först.');
+      return;
+    }
+    const code = normalizeCode(rawCode);
+    if (!code) {
+      alert('Skriv en giltig hushållskod.');
+      return;
+    }
+    try {
+      const snap = await householdRef(code).get();
+      if (!snap.exists) {
+        alert('Hushållskoden hittades inte.');
+        return;
+      }
+      await ensureMembership(code, user, snap.data()?.ownerUid === user.uid ? 'owner' : 'member');
+      currentHouseholdId = code;
+      currentHouseholdData = (await householdRef(code).get()).data() || null;
+      currentRole = currentHouseholdData?.ownerUid === user.uid ? 'owner' : 'member';
+      updateHouseholdUi();
+      await startCloudSync();
+      alert('Du gick med i hushåll ' + code);
+    } catch (error) {
+      console.error('Join household error:', error);
+      alert('Kunde inte gå med i hushåll: ' + (error && error.message ? error.message : 'okänt fel'));
+    }
+  };
+
+  window.joinHouseholdPrompt = function joinHouseholdPrompt() {
+    const code = window.prompt('Skriv hushållskod:');
+    if (!code) return;
+    window.joinHouseholdByCode(code);
+  };
+
+  window.copyHouseholdCode = function copyHouseholdCode() {
+    if (!currentHouseholdId) return;
+    copyText(currentHouseholdId, 'Hushållskod kopierad.');
+  };
+
+  window.copyHouseholdLink = function copyHouseholdLink() {
+    if (!currentHouseholdId) return;
+    copyText(householdLink(currentHouseholdId), 'Hushållslänk kopierad.');
+  };
+
+  window.getActiveHouseholdInfo = function getActiveHouseholdInfo() {
+    return {
+      householdId: currentHouseholdId,
+      household: currentHouseholdData,
+      role: currentRole,
+      syncReady
+    };
+  };
+
+  window.uploadItemImageToCloud = async function uploadItemImageToCloud(file, itemName) {
+    if (!initFirebase()) throw new Error('Firebase ej redo');
+    const user = firebase.auth().currentUser;
+    if (!user) throw new Error('Logga in först');
+    if (!currentHouseholdId) await ensureUserAndHousehold(user);
+    const storage = firebase.storage();
+    const safeName = String(itemName || 'bild')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'bild';
+    const ext = (String(file?.type || '').includes('png') ? 'png' : 'jpg');
+    const path = `households/${currentHouseholdId}/images/${Date.now()}-${safeName}.${ext}`;
+    const ref = storage.ref().child(path);
+    await ref.put(file, { contentType: file.type || (ext === 'png' ? 'image/png' : 'image/jpeg') });
+    return ref.getDownloadURL();
+  };
+
   window.saveToCloud = saveToCloud;
   window.saveToCloudNow = saveToCloudNow;
-  window.uploadHouseholdImage = uploadHouseholdImage;
-  window.joinHouseholdFromInput = function joinHouseholdFromInput() {
-    return joinHouseholdByCode(byId('joinHouseholdInput')?.value || '', false)
-      .then(joined => joined ? startCloudSync(true) : false)
-      .catch(error => {
-        console.error('Join household error:', error);
-        alert('Kunde inte gå med i hushållet.');
-        return false;
-      });
-  };
-  window.copyHouseholdCode = function copyHouseholdCode() {
-    copyText(currentInviteCode, 'Hushållskoden är kopierad.');
-  };
-  window.copyHouseholdLink = function copyHouseholdLink() {
-    copyText(currentInviteLink, 'Hushållslänken är kopierad.');
-  };
-  window.refreshHouseholdInvite = function refreshInviteWrapper() {
-    return refreshHouseholdInvite().catch(error => {
-      console.error('Refresh invite error:', error);
-      alert('Kunde inte skapa ny kod.');
-    });
-  };
 
   function startAuthListener() {
     if (authReady || !initFirebase()) return;
     authReady = true;
-
-    firebase.auth().onAuthStateChanged(user => {
+    firebase.auth().onAuthStateChanged(async user => {
       wrapSaveFunction();
-
       if (user) {
         setAuthUi(user, 'Inloggad – ansluter...');
-        setHouseholdUi('Ansluter hushåll...', 'Hämtar delad data...');
-        startCloudSync(true).catch(error => {
-          console.error('Start sync failed:', error);
-          const msg = error && error.message ? error.message : 'okänt fel';
-          setAuthUi(user, 'Molnsynk-fel: ' + msg);
-          setHouseholdUi('Molnsynk-fel', msg);
-        });
+        try {
+          await startCloudSync();
+        } catch (error) {
+          console.error('Auth sync error:', error);
+          setAuthUi(user, 'Molnsynk-fel: ' + (error && error.message ? error.message : 'okänt fel'));
+        }
       } else {
         stopCloudSync();
         setAuthUi(null, 'Inte inloggad');
@@ -720,6 +616,7 @@
 
   window.addEventListener('load', () => {
     initFirebase();
+    ensureHouseholdUi();
     wrapSaveFunction();
     startAuthListener();
     setTimeout(wrapSaveFunction, 0);
