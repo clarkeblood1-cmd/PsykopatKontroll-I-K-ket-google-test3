@@ -1295,7 +1295,7 @@ function lookupRemoteAutoImage(itemName = 'vara') {
       return storage.ref().child(candidatePath).getDownloadURL().catch(() => '');
     });
   }, Promise.resolve('')).then(url => {
-    const finalUrl = String(url || '');
+    const finalUrl = normalizeCloudImageDisplayUrl(String(url || ''));
     remoteImageUrlCache.set(cacheKey, finalUrl);
     return finalUrl;
   }).finally(() => {
@@ -1319,10 +1319,30 @@ function queueRemoteAutoImageLookup(itemName = 'vara', onResolved = null) {
 }
 
 
-function makeCloudImagePath(itemName = 'vara') {
+function getPreferredCloudImageFolder() {
+  const householdIds = [];
+  const addHousehold = value => {
+    const normalized = String(value || '').trim();
+    if (normalized && !householdIds.includes(normalized)) householdIds.push(normalized);
+  };
+
+  addHousehold(window.activeHouseholdId);
+  addHousehold(window.householdId);
+  addHousehold(window.currentHouseholdId);
+  addHousehold(localStorage.getItem('activeHouseholdId'));
+  addHousehold(localStorage.getItem('householdId'));
+  addHousehold(localStorage.getItem('matlista_household_id'));
+  addHousehold(localStorage.getItem('cloudHouseholdId'));
+
+  if (householdIds.length) return `households/${householdIds[0]}/item-images`;
+
   const uid = getCloudUserUid();
-  const safeName = slugifyImageName(itemName || 'vara', '-').slice(0, 64) || 'vara';
-  return `users/${uid}/item-images/${safeName}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+  return uid ? `users/${uid}/item-images` : 'shared-images';
+}
+
+function makeCloudImagePath(itemName = 'vara') {
+  const safeName = stripSwedishChars(slugifyImageName(itemName || 'vara', '-')).slice(0, 64) || 'vara';
+  return `${getPreferredCloudImageFolder()}/${safeName}.jpg`;
 }
 
 function dataUrlToBlob(dataUrl) {
@@ -1358,7 +1378,12 @@ function uploadItemImageToCloud(dataUrl, itemName = 'vara') {
   const ref = storage.ref().child(makeCloudImagePath(itemName));
   const metadata = {
     contentType: 'image/jpeg',
-    cacheControl: 'public,max-age=31536000,immutable'
+    cacheControl: 'public,max-age=300',
+    customMetadata: {
+      itemName: String(itemName || 'vara'),
+      normalizedItemName: stripSwedishChars(slugifyImageName(itemName || 'vara', '-')).slice(0, 64) || 'vara',
+      updatedAtMs: String(Date.now())
+    }
   };
 
   updateCloudImageStatus('☁️ Laddar upp bild till cloud...');
@@ -1372,7 +1397,10 @@ function uploadItemImageToCloud(dataUrl, itemName = 'vara') {
       return ref.put(blob, metadata).then(snapshot => snapshot.ref.getDownloadURL());
     })
     .then(url => {
-      const finalUrl = String(url || dataUrl || '');
+      const rawUrl = String(url || dataUrl || '');
+      const finalUrl = normalizeCloudImageDisplayUrl(rawUrl && /^https?:\/\//i.test(rawUrl)
+        ? `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}v=${Date.now()}`
+        : rawUrl);
       remoteImageUrlCache.set(getRemoteImageCacheKey(itemName), finalUrl);
       updateCloudImageStatus('☁️ Bild uppladdad till cloud');
       scheduleRemoteImageRerender();
@@ -1385,11 +1413,19 @@ function uploadItemImageToCloud(dataUrl, itemName = 'vara') {
     });
 }
 
+function normalizeCloudImageDisplayUrl(src = '') {
+  const value = String(src || '').trim();
+  if (!value) return '';
+  if (!isCloudImageUrl(value)) return value;
+  if (/([?&])v=\d+/i.test(value)) return value;
+  return `${value}${value.includes('?') ? '&' : '?'}v=1`;
+}
+
 function resolveExplicitImageSource(item) {
   if (!item || !item.img) return '';
   const src = String(item.img || '').trim();
   if (!src) return '';
-  if (isInlineImage(src) || isCloudImageUrl(src) || isLocalImagePath(src)) return src;
+  if (isInlineImage(src) || isCloudImageUrl(src) || isLocalImagePath(src)) return normalizeCloudImageDisplayUrl(src);
   if (/^https?:\/\//i.test(src)) return src;
   return '';
 }
