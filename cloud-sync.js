@@ -9,6 +9,7 @@
   let remoteApplying = false;
   let saveTimer = null;
   let pendingInitialUpload = false;
+  let lastRemoteUpdatedAtMs = 0;
 
   function byId(id) {
     return document.getElementById(id);
@@ -83,7 +84,7 @@
       theme: localStorage.getItem('theme') || 'scifi',
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAtMs: Date.now(),
-      appVersion: 'cloud-sync-storage-migration-v3'
+      appVersion: 'cloud-sync-complete-v2'
     };
   }
 
@@ -131,7 +132,6 @@
         }
 
         if (safeCall('hydrateData')) window.hydrateData();
-        if (safeCall('save')) window.save();
       }
 
       if (typeof data.theme === 'string' && data.theme && safeCall('applyTheme')) {
@@ -200,6 +200,12 @@
       }
 
       const data = snapshot.data() || {};
+      const incomingUpdatedAtMs = Number(data.updatedAtMs || 0);
+      if (incomingUpdatedAtMs && incomingUpdatedAtMs === lastRemoteUpdatedAtMs) {
+        setAuthUi(firebase.auth().currentUser, 'Inloggad – molnsynk aktiv');
+        return;
+      }
+      lastRemoteUpdatedAtMs = incomingUpdatedAtMs;
       applyRemoteState(data);
       setAuthUi(firebase.auth().currentUser, 'Inloggad – molnsynk aktiv');
     }, error => {
@@ -243,14 +249,6 @@
 
   window.saveToCloud = saveToCloud;
   window.saveToCloudNow = saveToCloudNow;
-  window.setCloudStatusMessage = function setCloudStatusMessage(message) {
-    try {
-      const user = firebaseReady && firebase?.auth ? firebase.auth().currentUser : null;
-      setAuthUi(user || null, message || (user ? 'Inloggad – molnsynk aktiv' : 'Inte inloggad'));
-    } catch (error) {
-      console.error('Cloud status UI error:', error);
-    }
-  };
 
   function startAuthListener() {
     if (authReady || !initFirebase()) return;
@@ -261,11 +259,9 @@
 
       if (user) {
         setAuthUi(user, 'Inloggad – ansluter...');
-        try { window.dispatchEvent(new CustomEvent('cloud-auth-changed', { detail: { loggedIn: true, uid: user.uid || '' } })); } catch (e) {}
         startCloudSync();
       } else {
         stopCloudSync();
-        try { window.dispatchEvent(new CustomEvent('cloud-auth-changed', { detail: { loggedIn: false, uid: '' } })); } catch (e) {}
         setAuthUi(null, 'Inte inloggad');
       }
     });

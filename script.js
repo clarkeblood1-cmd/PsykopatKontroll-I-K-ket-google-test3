@@ -1111,10 +1111,7 @@ function buildImageNameVariants(name) {
 }
 
 function getAutoImageCandidates(name) {
-  const fileNames = [
-    ...buildImageNameVariants(name),
-    ...getSmartImageMatches(name)
-  ];
+  const fileNames = buildImageNameVariants(name);
   const extensions = ['png', 'jpg', 'jpeg', 'webp'];
   const candidates = [];
 
@@ -1139,140 +1136,14 @@ function getNextAutoImagePath(name, currentSrc = '') {
   return currentIndex === -1 ? candidates[0] : (candidates[currentIndex + 1] || '');
 }
 
-function getDefaultItemIcon() {
-  return 'icons/icon-192.png';
-}
-
 function getNoImagePlaceholder() {
-  return getDefaultItemIcon();
-}
-
-function isCloudImageUrl(value) {
-  const src = String(value || '');
-  return /^https?:\/\//i.test(src) && src.includes('firebasestorage');
-}
-
-function isInlineImage(value) {
-  return String(value || '').startsWith('data:image/');
-}
-
-function isLocalImagePath(value) {
-  return /^images\//i.test(String(value || ''));
-}
-
-function getFirebaseStorageInstance() {
-  try {
-    if (!window.firebase || typeof firebase.storage !== 'function') return null;
-    return firebase.storage();
-  } catch (error) {
-    return null;
-  }
-}
-
-function getCloudUserUid() {
-  try {
-    return firebase?.auth?.().currentUser?.uid || '';
-  } catch (error) {
-    return '';
-  }
-}
-
-function canUploadImagesToCloud() {
-  return !!(getFirebaseStorageInstance() && getCloudUserUid());
-}
-
-function makeCloudImagePath(itemName = 'vara') {
-  const uid = getCloudUserUid();
-  const safeName = slugifyImageName(itemName || 'vara', '-').slice(0, 64) || 'vara';
-  return `users/${uid}/item-images/${safeName}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
-}
-
-function dataUrlToBlob(dataUrl) {
-  try {
-    const parts = String(dataUrl || '').split(',');
-    if (parts.length < 2) return null;
-    const meta = parts[0] || '';
-    const mimeMatch = meta.match(/data:([^;]+);base64/i);
-    const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-    const binary = atob(parts[1]);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-    return new Blob([bytes], { type: mime });
-  } catch (error) {
-    return null;
-  }
-}
-
-function updateCloudImageStatus(message) {
-  try {
-    if (typeof window.setCloudStatusMessage === 'function') window.setCloudStatusMessage(message);
-  } catch (error) {}
-}
-
-function uploadItemImageToCloud(dataUrl, itemName = 'vara') {
-  if (!isInlineImage(dataUrl) || !canUploadImagesToCloud()) {
-    return Promise.resolve(String(dataUrl || ''));
-  }
-
-  const storage = getFirebaseStorageInstance();
-  if (!storage) return Promise.resolve(String(dataUrl || ''));
-
-  const ref = storage.ref().child(makeCloudImagePath(itemName));
-  const metadata = {
-    contentType: 'image/jpeg',
-    cacheControl: 'public,max-age=31536000,immutable'
-  };
-
-  updateCloudImageStatus('☁️ Laddar upp bild till cloud...');
-
-  return ref.putString(String(dataUrl), 'data_url', metadata)
-    .then(snapshot => snapshot.ref.getDownloadURL())
-    .catch(error => {
-      console.warn('Image upload putString retry:', error);
-      const blob = dataUrlToBlob(dataUrl);
-      if (!blob) throw error;
-      return ref.put(blob, metadata).then(snapshot => snapshot.ref.getDownloadURL());
-    })
-    .then(url => {
-      updateCloudImageStatus('☁️ Bild uppladdad till cloud');
-      return String(url || dataUrl || '');
-    })
-    .catch(error => {
-      console.error('Image upload error:', error);
-      updateCloudImageStatus('⚠️ Cloud-bild misslyckades – lokal bild används');
-      return String(dataUrl || '');
-    });
-}
-
-function resolveExplicitImageSource(item) {
-  if (!item || !item.img) return '';
-  const src = String(item.img || '').trim();
-  if (!src) return '';
-  if (isInlineImage(src) || isCloudImageUrl(src) || isLocalImagePath(src)) return src;
-  if (/^https?:\/\//i.test(src)) return src;
-  return '';
-}
-
-function getSmartImageMatches(name) {
-  const normalizedTarget = normalizeForDistance(name || '');
-  if (!normalizedTarget) return [];
-
-  const stopWords = new Set(['file', 'fil', 'bit', 'bitar', 'skivor', 'skivade', 'riven', 'hackad', 'hela', 'hel', 'farsk', 'fryst']);
-  const rawTokens = normalizedTarget.split(' ').map(token => token.trim()).filter(Boolean);
-  const tokens = rawTokens.filter(token => !stopWords.has(token));
-  const source = tokens.length ? tokens : rawTokens;
-  if (!source.length) return [];
-
-  const variants = new Set();
-  for (let size = source.length; size >= 1; size -= 1) {
-    for (let start = 0; start + size <= source.length; start += 1) {
-      const phrase = source.slice(start, start + size).join(' ').trim();
-      if (!phrase || phrase === normalizedTarget) continue;
-      buildImageNameVariants(phrase).forEach(value => variants.add(value));
-    }
-  }
-
-  return [...variants];
+  return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" viewBox="0 0 220 220">' +
+    '<rect width="220" height="220" rx="18" fill="#ffffff"/>' +
+    '<text x="110" y="92" text-anchor="middle" font-size="72">🛒</text>' +
+    '<text x="110" y="148" text-anchor="middle" font-size="18" font-family="Arial" fill="#334155">Ingen bild</text>' +
+    '</svg>'
+  );
 }
 
 function handleItemImageError(imgEl) {
@@ -1293,48 +1164,18 @@ function handleItemImageError(imgEl) {
 }
 
 function getItemImage(item) {
-  if (!item) return getNoImagePlaceholder();
-  const explicit = resolveExplicitImageSource(item);
-  if (explicit) return explicit;
-  return getAutoImagePath(item.name || '') || getNoImagePlaceholder();
-}
-
-function getItemImageSourceMeta(item) {
-  const explicit = resolveExplicitImageSource(item);
-  if (explicit) {
-    if (isCloudImageUrl(explicit)) return { type: 'cloud', label: '☁️ Cloud', title: 'Bilden kommer från Firebase Storage' };
-    if (isLocalImagePath(explicit)) return { type: 'images', label: '🖼️ Images', title: 'Bilden kommer från images-mappen' };
-    if (isInlineImage(explicit)) return { type: 'inline', label: '📦 Lokal', title: 'Bilden är sparad lokalt i appdata' };
-    return { type: 'external', label: '🔗 Länk', title: 'Bilden kommer från en extern länk' };
-  }
-
-  const autoImage = getAutoImagePath(item?.name || '');
-  if (autoImage) return { type: 'images', label: '🖼️ Images', title: 'Bilden matchades automatiskt från images-mappen' };
-
-  return { type: 'default', label: '📄 Standard', title: 'Ingen egen bild hittades, standardikon används' };
-}
-
-function showImageSourceInfo(sourceType = 'default') {
-  const messages = {
-    cloud: 'Bilden kommer från Firebase Storage.',
-    images: 'Bilden kommer från images-mappen.',
-    inline: 'Bilden är sparad lokalt i appens data.',
-    external: 'Bilden kommer från en extern bildlänk.',
-    default: 'Ingen egen bild hittades. Standardikonen visas.'
-  };
-  alert(messages[sourceType] || messages.default);
+  if (!item) return '';
+  return item.img ? String(item.img) : getAutoImagePath(item.name || '');
 }
 
 function getRecipeIngredientImage(ingredient) {
   if (!ingredient) return getNoImagePlaceholder();
 
-  const explicit = resolveExplicitImageSource(ingredient);
-  if (explicit) return explicit;
+  if (ingredient.img) return String(ingredient.img);
 
   const normalizedName = normalizeText(ingredient.name || '');
   const matchedItem = [...quickItems, ...items].find(entry => normalizeText(entry?.name || '') === normalizedName && entry?.img);
-  const matchedExplicit = resolveExplicitImageSource(matchedItem);
-  if (matchedExplicit) return matchedExplicit;
+  if (matchedItem?.img) return String(matchedItem.img);
 
   return getAutoImagePath(ingredient.name || '') || getNoImagePlaceholder();
 }
@@ -2378,124 +2219,30 @@ function pickCamera() {
 }
 
 function resizeImage(file, callback) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Kunde inte läsa bildfilen.'));
-    reader.onload = event => {
-      const img = new Image();
-      img.onerror = () => reject(new Error('Kunde inte öppna bilden.'));
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const maxSize = 220;
-        let { width, height } = img;
+  const reader = new FileReader();
+  reader.onload = event => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const maxSize = 220;
+      let { width, height } = img;
 
-        if (width > height && width > maxSize) {
-          height *= maxSize / width;
-          width = maxSize;
-        } else if (height > maxSize) {
-          width *= maxSize / height;
-          height = maxSize;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-        if (typeof callback === 'function') callback(dataUrl);
-        resolve(dataUrl);
-      };
-      img.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-function processPickedImageFile(file, itemName = 'vara') {
-  if (!file) return Promise.resolve('');
-  return resizeImage(file).then(dataUrl => uploadItemImageToCloud(dataUrl, itemName));
-}
-
-let imageMigrationRunning = false;
-let imageMigrationQueued = false;
-
-function normalizeMigratedImageLists() {
-  let changed = false;
-  quickItems.forEach(sourceItem => {
-    if (!sourceItem?.img) return;
-    const src = String(sourceItem.img || '');
-    items.forEach(item => {
-      if (normalizeText(item?.name || '') === normalizeText(sourceItem.name || '') && item.img !== src) {
-        item.img = src;
-        changed = true;
+      if (width > height && width > maxSize) {
+        height *= maxSize / width;
+        width = maxSize;
+      } else if (height > maxSize) {
+        width *= maxSize / height;
+        height = maxSize;
       }
-    });
-  });
-  return changed;
-}
 
-function migrateInlineImagesToCloud(force = false) {
-  if (!canUploadImagesToCloud()) return Promise.resolve(false);
-  if (imageMigrationRunning) {
-    imageMigrationQueued = imageMigrationQueued || force;
-    return Promise.resolve(false);
-  }
-
-  const migrationKey = `matlista_img_migrated_${getCloudUserUid()}`;
-  if (!force && localStorage.getItem(migrationKey) === 'done') return Promise.resolve(false);
-
-  const groups = new Map();
-  [quickItems, items].forEach(list => {
-    list.forEach(item => {
-      if (!item || !isInlineImage(item.img)) return;
-      const key = String(item.img || '');
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(item);
-    });
-  });
-
-  const targets = [...groups.entries()].map(([dataUrl, entries]) => ({
-    dataUrl,
-    entries,
-    name: entries[0]?.name || 'vara'
-  }));
-
-  if (!targets.length) {
-    localStorage.setItem(migrationKey, 'done');
-    return Promise.resolve(false);
-  }
-
-  imageMigrationRunning = true;
-  return targets.reduce((promise, entry) => {
-    return promise.then(changed => {
-      return uploadItemImageToCloud(entry.dataUrl, entry.name).then(url => {
-        const finalUrl = String(url || entry.dataUrl || '');
-        entry.entries.forEach(item => {
-          if (item && item.img !== finalUrl) {
-            item.img = finalUrl;
-            changed = true;
-          }
-        });
-        return changed;
-      });
-    });
-  }, Promise.resolve(false)).then(changed => {
-    if (normalizeMigratedImageLists()) changed = true;
-    if (changed) {
-      save();
-      try { if (typeof window.saveToCloudNow === 'function') window.saveToCloudNow(); } catch (error) {}
-      try { render(); } catch (error) {}
-    }
-    localStorage.setItem(migrationKey, 'done');
-    return changed;
-  }).catch(error => {
-    console.error('Image migration error:', error);
-    return false;
-  }).finally(() => {
-    imageMigrationRunning = false;
-    const rerun = imageMigrationQueued;
-    imageMigrationQueued = false;
-    if (rerun) setTimeout(() => migrateInlineImagesToCloud(true), 400);
-  });
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      callback(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.src = event.target.result;
+  };
+  reader.readAsDataURL(file);
 }
 
 function getDinnerWeightFromItem(item) {
@@ -2927,9 +2674,8 @@ function createCard(item, source = 'items') {
 
   if (source === 'quick') {
     const quickRoom = item.room || activeRoom;
-    const imageSource = getItemImageSourceMeta(item);
     div.innerHTML = `
-      <img src="${img}" alt="${item.name}" data-item-name="${item.name}" data-image-source="${imageSource.type}" onerror="handleItemImageError(this)" onclick="showQuickImage(${realIndex})">
+      <img src="${img}" alt="${item.name}" data-item-name="${item.name}" onerror="handleItemImageError(this)" onclick="showQuickImage(${realIndex})">
       <div class="info">
         <div class="top-tags quick-top-tags">
           ${createRoomBadge(quickRoom)}
@@ -2945,7 +2691,6 @@ function createCard(item, source = 'items') {
         <div class="quick-path">${getRoomLabel(quickRoom)} • ${item.category || getRoomFallbackCategory(quickRoom)} • ${getPlaceMeta(item.place, quickRoom).label}</div>
       </div>
       <div class="actions">
-        <button type="button" class="ghost-btn image-source-badge image-source-${imageSource.type}" title="${imageSource.title}" onclick="showImageSourceInfo('${imageSource.type}')">${imageSource.label}</button>
         <button type="button" class="ghost-btn" onclick="changeQuickImage(${realIndex})">🖼️ Byt bild</button>
         <button type="button" class="ghost-btn" onclick="editQuickItem(${realIndex})">✏️ Ändra</button>
         <button type="button" class="ghost-btn" onmousedown="startQuickAdd(${realIndex})" onmouseup="finishQuickAdd(${realIndex})" onmouseleave="stopQuickAdd()" ontouchstart="startQuickAdd(${realIndex})" ontouchend="finishQuickAdd(${realIndex})" ontouchcancel="stopQuickAdd()">Lägg till 1</button>
@@ -2955,9 +2700,8 @@ function createCard(item, source = 'items') {
     return div;
   }
 
-  const imageSource = getItemImageSourceMeta(item);
   div.innerHTML = `
-    <img src="${img}" alt="${item.name}" data-item-name="${item.name}" data-image-source="${imageSource.type}" onerror="handleItemImageError(this)" onclick="showImage(${realIndex})">
+    <img src="${img}" alt="${item.name}" data-item-name="${item.name}" onerror="handleItemImageError(this)" onclick="showImage(${realIndex})">
     <div class="info">
       <div class="top-tags">
         <div class="category">${item.category || getRoomFallbackCategory(item.room || activeRoom)}</div>
@@ -2979,7 +2723,6 @@ function createCard(item, source = 'items') {
       </div>
     </div>
     <div class="actions">
-      <button type="button" class="ghost-btn image-source-badge image-source-${imageSource.type}" title="${imageSource.title}" onclick="showImageSourceInfo('${imageSource.type}')">${imageSource.label}</button>
       <button type="button" class="ghost-btn" onclick="editMainItem(${realIndex})">✏️ Ändra</button>
       <button type="button" class="delete" onclick="removeItem(${realIndex})">🗑️</button>
       <button type="button" onclick="moveItem(${realIndex})">${moveText}</button>
@@ -3284,16 +3027,13 @@ function changeQuickImage(index) {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    processPickedImageFile(file, quickItems[index]?.name || 'vara').then(imgSrc => {
-      quickItems[index].img = imgSrc || getAutoImagePath(quickItems[index]?.name || '') || getNoImagePlaceholder();
+    resizeImage(file, dataUrl => {
+      quickItems[index].img = dataUrl;
       items.forEach(item => {
-        if (normalizeText(item.name) === normalizeText(quickItems[index].name)) item.img = quickItems[index].img;
+        if (normalizeText(item.name) === normalizeText(quickItems[index].name)) item.img = dataUrl;
       });
       save();
       render();
-    }).catch(error => {
-      console.error('Quick image change error:', error);
-      alert('Kunde inte spara bilden.');
     });
   };
   input.click();
@@ -3616,7 +3356,7 @@ function addItem(saveToHome = false) {
 
   const { item, file } = formData;
 
-  const finalizeSave = imgData => {
+  const saveItem = imgData => {
     if (imgData) item.img = imgData;
 
     saveQuickTemplate(item);
@@ -3628,15 +3368,8 @@ function addItem(saveToHome = false) {
     setActiveKitchenPage('quick');
   };
 
-  if (file) {
-    processPickedImageFile(file, item.name).then(finalizeSave).catch(error => {
-      console.error('Add item image error:', error);
-      alert('Kunde inte spara bilden.');
-      finalizeSave('');
-    });
-  } else {
-    finalizeSave('');
-  }
+  if (file) resizeImage(file, saveItem);
+  else saveItem('');
 }
 
 function addItemAndUse() {
@@ -5821,7 +5554,6 @@ function refreshWeekPlannerUI() {
 
   renderWeekDayButtons();
   renderWeekOverview();
-  saveWeekPlannerState();
 }
 
 function selectWeekDay(dayKey) {
@@ -6277,14 +6009,3 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 document.addEventListener('DOMContentLoaded', updateManageCounts);
-
-
-window.addEventListener('cloud-auth-changed', event => {
-  if (event?.detail?.loggedIn) {
-    setTimeout(() => migrateInlineImagesToCloud(true), 700);
-  }
-});
-
-window.addEventListener('load', () => {
-  setTimeout(() => migrateInlineImagesToCloud(false), 1400);
-});
