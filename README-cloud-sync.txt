@@ -18,3 +18,9 @@ Vad som är fixat:
 Obs:
 - Delad hushållsbild i Storage är avstängd i rules just nu
 - Vanlig data syncar via Firestore
+
+
+Bilder:
+- Produktbilder laddas upp till Firebase Storage under households/{householdId}/images/...
+- Bildlänken sparas i hushållets delade Firestore-state så alla enheter ser samma bild.
+- Spara inte rå bilddata i Firestore-dokument, eftersom Firestore har liten dokumentgräns.

@@ -18,6 +18,7 @@
   let lastStateSignature = '';
   let householdMembers = [];
   let bootstrapPromise = null;
+  let storageReady = false;
 
   function byId(id) {
     return document.getElementById(id);
@@ -117,6 +118,7 @@
       }
 
       firebaseReady = true;
+      storageReady = !!(firebase.storage && typeof firebase.storage === 'function');
       return true;
     } catch (error) {
       console.error('Firebase init error:', error);
@@ -141,6 +143,38 @@
   function getStateRef(householdId = currentHouseholdId) {
     const ref = getHouseholdRef(householdId);
     return ref ? ref.collection('state').doc('main') : null;
+  }
+
+  function sanitizeFileName(value) {
+    return String(value || 'bild')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'bild';
+  }
+
+  async function uploadHouseholdImage(file, itemName) {
+    if (!firebaseReady || !storageReady || !currentHouseholdId) return '';
+    const user = firebase.auth().currentUser;
+    if (!user || !file) return '';
+
+    const safeName = sanitizeFileName(itemName || file.name || 'bild');
+    const extension = String(file.type || 'image/jpeg').split('/').pop().replace(/[^a-z0-9]+/gi, '') || 'jpg';
+    const path = `households/${currentHouseholdId}/images/${Date.now()}-${safeName}.${extension}`;
+    const ref = firebase.storage().ref().child(path);
+
+    await ref.put(file, {
+      contentType: file.type || 'image/jpeg',
+      customMetadata: {
+        householdId: currentHouseholdId,
+        uploadedBy: user.uid,
+        itemName: String(itemName || '')
+      }
+    });
+
+    return ref.getDownloadURL();
   }
 
   function getInviteRef(code) {
@@ -638,6 +672,7 @@
 
   window.saveToCloud = saveToCloud;
   window.saveToCloudNow = saveToCloudNow;
+  window.uploadHouseholdImage = uploadHouseholdImage;
   window.joinHouseholdFromInput = function joinHouseholdFromInput() {
     return joinHouseholdByCode(byId('joinHouseholdInput')?.value || '', false)
       .then(joined => joined ? startCloudSync(true) : false)

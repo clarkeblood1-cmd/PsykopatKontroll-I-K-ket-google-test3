@@ -9,12 +9,17 @@ service firebase.storage {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    function isHouseholdMember(householdId) {
+      return isSignedIn()
+        && firestore.exists(/databases/(default)/documents/households/$(householdId)/members/$(request.auth.uid));
+    }
+
     match /users/{userId}/images/{allPaths=**} {
       allow read, write: if isMe(userId);
     }
 
     match /households/{householdId}/images/{allPaths=**} {
-      allow read, write: if false;
+      allow read, write: if isHouseholdMember(householdId);
     }
   }
 }

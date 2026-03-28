@@ -3023,17 +3023,35 @@ function changeQuickImage(index) {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/png, image/jpeg, image/webp';
-  input.onchange = event => {
+  input.onchange = async event => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    resizeImage(file, dataUrl => {
-      quickItems[index].img = dataUrl;
+    const applyImage = imageValue => {
+      if (!imageValue) return;
+      quickItems[index].img = imageValue;
       items.forEach(item => {
-        if (normalizeText(item.name) === normalizeText(quickItems[index].name)) item.img = dataUrl;
+        if (normalizeText(item.name) === normalizeText(quickItems[index].name)) item.img = imageValue;
       });
       save();
       render();
+    };
+
+    try {
+      if (typeof window.uploadHouseholdImage === 'function') {
+        const cloudUrl = await window.uploadHouseholdImage(file, quickItems[index].name || 'bild');
+        if (cloudUrl) {
+          applyImage(cloudUrl);
+          return;
+        }
+      }
+    } catch (error) {
+      console.error('Image upload error:', error);
+      alert('Kunde inte ladda upp bild till molnet. Sparar lokalt i stället.');
+    }
+
+    resizeImage(file, dataUrl => {
+      applyImage(dataUrl);
     });
   };
   input.click();
@@ -3350,7 +3368,7 @@ function saveHomeItem(item) {
   }
 }
 
-function addItem(saveToHome = false) {
+async function addItem(saveToHome = false) {
   const formData = buildItemFromForm();
   if (!formData) return;
 
@@ -3368,8 +3386,25 @@ function addItem(saveToHome = false) {
     setActiveKitchenPage('quick');
   };
 
-  if (file) resizeImage(file, saveItem);
-  else saveItem('');
+  if (file) {
+    try {
+      if (typeof window.uploadHouseholdImage === 'function') {
+        const cloudUrl = await window.uploadHouseholdImage(file, item.name || 'bild');
+        if (cloudUrl) {
+          saveItem(cloudUrl);
+          return;
+        }
+      }
+    } catch (error) {
+      console.error('Image upload error:', error);
+      alert('Kunde inte ladda upp bild till molnet. Sparar lokalt i stället.');
+    }
+
+    resizeImage(file, saveItem);
+    return;
+  }
+
+  saveItem('');
 }
 
 function addItemAndUse() {
