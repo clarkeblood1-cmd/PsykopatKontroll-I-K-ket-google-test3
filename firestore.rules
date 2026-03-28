@@ -9,20 +9,6 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-    function householdDoc(householdId) {
-      return get(/databases/$(database)/documents/households/$(householdId));
-    }
-
-    function userDoc(uid) {
-      return get(/databases/$(database)/documents/users/$(uid));
-    }
-
-    function activeHouseholdId() {
-      return isSignedIn() && userDoc(request.auth.uid).data.activeHouseholdId is string
-        ? userDoc(request.auth.uid).data.activeHouseholdId
-        : '';
-    }
-
     function isHouseholdMember(householdId) {
       return isSignedIn()
         && exists(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid));
@@ -30,16 +16,20 @@ service cloud.firestore {
 
     function isHouseholdOwner(householdId) {
       return isHouseholdMember(householdId)
-        && householdDoc(householdId).data.ownerUid == request.auth.uid;
+        && get(/databases/$(database)/documents/households/$(householdId)).data.ownerUid == request.auth.uid;
     }
 
     match /users/{userId} {
-      allow read: if isMe(userId);
-      allow create: if isMe(userId);
-      allow update: if isMe(userId)
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.activeHouseholdId is string;
+      allow read, create, update: if isMe(userId)
+        && request.resource.data.uid == request.auth.uid;
       allow delete: if false;
+    }
+
+    match /householdInvites/{inviteCode} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn()
+        && request.resource.data.householdId is string
+        && isHouseholdOwner(request.resource.data.householdId);
     }
 
     match /households/{householdId} {
@@ -49,11 +39,13 @@ service cloud.firestore {
       allow delete: if false;
 
       match /members/{memberId} {
-        allow read: if isHouseholdMember(householdId);
+        allow read: if isHouseholdMember(householdId) || isMe(memberId);
         allow create: if isSignedIn()
-          && memberId == request.resource.data.uid
-          && (isHouseholdOwner(householdId) || memberId == request.auth.uid)
-          && activeHouseholdId() == householdId;
+          && request.resource.data.uid == memberId
+          && (
+            (isMe(memberId) && request.resource.data.role in ['owner', 'member'])
+            || isHouseholdOwner(householdId)
+          );
         allow update: if isHouseholdOwner(householdId)
           || (isMe(memberId)
             && request.resource.data.uid == request.auth.uid
