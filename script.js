@@ -1160,6 +1160,88 @@ function isLocalImagePath(value) {
   return /^images\//i.test(String(value || ''));
 }
 
+const autoCloudImageUrlCache = new Map();
+const autoCloudImageLookupPromises = new Map();
+
+function getAutoCloudImageCacheKey(name = '') {
+  return normalizeText(name || '') || slugifyImageName(name || '', '-') || String(name || '').trim().toLowerCase();
+}
+
+function makeAutoCloudImageCandidates(itemName = 'vara') {
+  const uid = getCloudUserUid();
+  const names = [...new Set([...buildImageNameVariants(itemName), ...getSmartImageMatches(itemName)])].filter(Boolean);
+  const extensions = ['jpg', 'jpeg', 'png', 'webp'];
+  const paths = [];
+
+  names.forEach(name => {
+    const safeName = slugifyImageName(name, '-').slice(0, 96) || 'vara';
+
+    extensions.forEach(ext => {
+      if (uid) {
+        paths.push(`users/${uid}/auto-images/${safeName}.${ext}`);
+        paths.push(`users/${uid}/item-images/${safeName}.${ext}`);
+      }
+      paths.push(`shared-images/${safeName}.${ext}`);
+      paths.push(`auto-images/${safeName}.${ext}`);
+    });
+  });
+
+  return [...new Set(paths)];
+}
+
+function resolveAutoCloudImage(itemName = '') {
+  const key = getAutoCloudImageCacheKey(itemName);
+  if (!key) return Promise.resolve('');
+  if (autoCloudImageUrlCache.has(key)) return Promise.resolve(autoCloudImageUrlCache.get(key) || '');
+  if (autoCloudImageLookupPromises.has(key)) return autoCloudImageLookupPromises.get(key);
+
+  const storage = getFirebaseStorageInstance();
+  if (!storage) {
+    autoCloudImageUrlCache.set(key, '');
+    return Promise.resolve('');
+  }
+
+  const candidates = makeAutoCloudImageCandidates(itemName);
+  if (!candidates.length) {
+    autoCloudImageUrlCache.set(key, '');
+    return Promise.resolve('');
+  }
+
+  const lookup = candidates.reduce((chain, candidatePath) => {
+    return chain.then(found => {
+      if (found) return found;
+      return storage.ref().child(candidatePath).getDownloadURL().catch(() => '');
+    });
+  }, Promise.resolve(''))
+    .then(url => {
+      autoCloudImageUrlCache.set(key, String(url || ''));
+      autoCloudImageLookupPromises.delete(key);
+      return String(url || '');
+    })
+    .catch(() => {
+      autoCloudImageUrlCache.set(key, '');
+      autoCloudImageLookupPromises.delete(key);
+      return '';
+    });
+
+  autoCloudImageLookupPromises.set(key, lookup);
+  return lookup;
+}
+
+function primeAutoCloudImageForItem(item) {
+  if (!item || resolveExplicitImageSource(item)) return;
+
+  const itemName = String(item.name || '').trim();
+  const key = getAutoCloudImageCacheKey(itemName);
+  if (!key || autoCloudImageUrlCache.has(key) || autoCloudImageLookupPromises.has(key)) return;
+
+  resolveAutoCloudImage(itemName).then(url => {
+    if (url) {
+      try { render(); } catch (error) {}
+    }
+  });
+}
+
 function getFirebaseStorageInstance() {
   try {
     if (!window.firebase || typeof firebase.storage !== 'function') return null;
@@ -1331,7 +1413,16 @@ function getItemImage(item) {
   if (!item) return getNoImagePlaceholder();
   const explicit = resolveExplicitImageSource(item);
   if (explicit) return explicit;
-  return getAutoImagePath(item.name || '') || getNoImagePlaceholder();
+
+  const localAutoImage = getAutoImagePath(item.name || '');
+  if (localAutoImage) return localAutoImage;
+
+  const cacheKey = getAutoCloudImageCacheKey(item.name || '');
+  const cloudAutoImage = autoCloudImageUrlCache.get(cacheKey) || '';
+  if (cloudAutoImage) return cloudAutoImage;
+
+  primeAutoCloudImageForItem(item);
+  return getNoImagePlaceholder();
 }
 
 function getItemImageSourceMeta(item) {
@@ -1346,7 +1437,10 @@ function getItemImageSourceMeta(item) {
   const autoImage = getAutoImagePath(item?.name || '');
   if (autoImage) return { type: 'images', label: '🖼️ Images', title: 'Bilden matchades automatiskt från images-mappen' };
 
-  return { type: 'default', label: '📄 Standard', title: 'Ingen egen bild hittades, standardikon används' };
+  const cloudAutoImage = autoCloudImageUrlCache.get(getAutoCloudImageCacheKey(item?.name || '')) || '';
+  if (cloudAutoImage) return { type: 'cloud', label: '☁️ Auto Cloud', title: 'Bilden matchades automatiskt från Firebase Storage' };
+
+  return { type: 'default', label: '📄 Standard', title: 'Ingen egen bild hittades. Appen kollade både images-mappen och Firebase Storage.' };
 }
 
 function showImageSourceInfo(sourceType = 'default') {
@@ -1355,7 +1449,8 @@ function showImageSourceInfo(sourceType = 'default') {
     images: 'Bilden kommer från images-mappen.',
     inline: 'Bilden är sparad lokalt i appens data.',
     external: 'Bilden kommer från en extern bildlänk.',
-    default: 'Ingen egen bild hittades. Standardikonen visas.'
+    default: 'Ingen egen bild hittades. Standardikonen visas.',
+    'auto-cloud': 'Bilden hittades automatiskt i Firebase Storage.'
   };
   alert(messages[sourceType] || messages.default);
 }
