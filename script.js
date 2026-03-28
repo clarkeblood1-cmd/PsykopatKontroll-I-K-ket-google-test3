@@ -1184,7 +1184,24 @@ function canUploadImagesToCloud() {
 function makeCloudImagePath(itemName = 'vara') {
   const uid = getCloudUserUid();
   const safeName = slugifyImageName(itemName || 'vara', '-').slice(0, 64) || 'vara';
-  return `users/${uid}/item-images/${safeName}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+  return `users/${uid}/item-images/${safeName}.jpg`;
+}
+
+async function sha1HexFromText(value = '') {
+  try {
+    if (window.crypto?.subtle && typeof TextEncoder !== 'undefined') {
+      const bytes = new TextEncoder().encode(String(value || ''));
+      const digest = await crypto.subtle.digest('SHA-1', bytes);
+      return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+  } catch (error) {}
+
+  let hash = 0;
+  const str = String(value || '');
+  for (let i = 0; i < str.length; i += 1) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  }
+  return `fallback-${Math.abs(hash)}`;
 }
 
 function dataUrlToBlob(dataUrl) {
@@ -1217,31 +1234,49 @@ function uploadItemImageToCloud(dataUrl, itemName = 'vara') {
   const storage = getFirebaseStorageInstance();
   if (!storage) return Promise.resolve(String(dataUrl || ''));
 
-  const ref = storage.ref().child(makeCloudImagePath(itemName));
-  const metadata = {
-    contentType: 'image/jpeg',
-    cacheControl: 'public,max-age=31536000,immutable'
-  };
+  return sha1HexFromText(String(dataUrl || '')).then(imageHash => {
+    const ref = storage.ref().child(makeCloudImagePath(itemName));
+    const metadata = {
+      contentType: 'image/jpeg',
+      cacheControl: 'public,max-age=31536000,immutable',
+      customMetadata: {
+        imageHash: String(imageHash || ''),
+        sourceName: slugifyImageName(itemName || 'vara', '-') || 'vara'
+      }
+    };
 
-  updateCloudImageStatus('☁️ Laddar upp bild till cloud...');
+    updateCloudImageStatus('☁️ Laddar upp bild till cloud...');
 
-  return ref.putString(String(dataUrl), 'data_url', metadata)
-    .then(snapshot => snapshot.ref.getDownloadURL())
-    .catch(error => {
-      console.warn('Image upload putString retry:', error);
-      const blob = dataUrlToBlob(dataUrl);
-      if (!blob) throw error;
-      return ref.put(blob, metadata).then(snapshot => snapshot.ref.getDownloadURL());
-    })
-    .then(url => {
-      updateCloudImageStatus('☁️ Bild uppladdad till cloud');
-      return String(url || dataUrl || '');
-    })
-    .catch(error => {
-      console.error('Image upload error:', error);
-      updateCloudImageStatus('⚠️ Cloud-bild misslyckades – lokal bild används');
-      return String(dataUrl || '');
-    });
+    return ref.getMetadata()
+      .then(existingMeta => {
+        const existingHash = String(existingMeta?.customMetadata?.imageHash || '');
+        if (existingHash && existingHash === String(imageHash || '')) {
+          updateCloudImageStatus('☁️ Samma bild finns redan i cloud');
+          return ref.getDownloadURL();
+        }
+        return null;
+      })
+      .catch(() => null)
+      .then(existingUrl => {
+        if (existingUrl) return existingUrl;
+        return ref.putString(String(dataUrl), 'data_url', metadata)
+          .then(snapshot => snapshot.ref.getDownloadURL())
+          .catch(error => {
+            console.warn('Image upload putString retry:', error);
+            const blob = dataUrlToBlob(dataUrl);
+            if (!blob) throw error;
+            return ref.put(blob, metadata).then(snapshot => snapshot.ref.getDownloadURL());
+          });
+      })
+      .then(url => {
+        updateCloudImageStatus('☁️ Bild uppladdad till cloud');
+        return String(url || dataUrl || '');
+      });
+  }).catch(error => {
+    console.error('Image upload error:', error);
+    updateCloudImageStatus('⚠️ Cloud-bild misslyckades – lokal bild används');
+    return String(dataUrl || '');
+  });
 }
 
 function resolveExplicitImageSource(item) {
@@ -1847,9 +1882,6 @@ window.applyCloudState = function applyCloudState(data) {
   if (typeof data.activeKitchenPage === 'string' && data.activeKitchenPage && typeof window.setActiveKitchenPage === 'function') {
     window.setActiveKitchenPage(data.activeKitchenPage, false);
   }
-
-  if (typeof window.render === 'function') window.render();
-  if (typeof window.refreshWeekPlannerUI === 'function') window.refreshWeekPlannerUI();
 };
 
 function syncQuickItemFromItem(changedItem) {
@@ -3415,9 +3447,7 @@ function saveEditItem() {
     room: updatedRoom,
     category: ensureCategoryExists(document.getElementById('editCategory')?.value || currentItem.category || getRoomFallbackCategory(updatedRoom), updatedRoom),
     place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || getPlacesForRoom(updatedRoom)[0]?.key || 'kyl', updatedRoom),
-    img: currentItem?.img && String(currentItem.img).startsWith('data:')
-      ? String(currentItem.img)
-      : getAutoImagePath(updatedName)
+    img: resolveExplicitImageSource(currentItem) || getAutoImagePath(updatedName)
   };
 
   if (!updated.name) return;
@@ -6132,11 +6162,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').then(registration => {
-      if (registration && typeof registration.update === 'function') {
-        setTimeout(() => registration.update().catch(() => {}), 1200);
-      }
-    }).catch(err => {
+    navigator.serviceWorker.register('./sw.js').catch(err => {
       console.warn('Service worker kunde inte registreras:', err);
     });
   }

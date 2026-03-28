@@ -9,9 +9,6 @@
   let remoteApplying = false;
   let saveTimer = null;
   let pendingInitialUpload = false;
-  let lastSavedFingerprint = '';
-  let lastAppliedFingerprint = '';
-  let lastRemoteUpdatedAtMs = 0;
 
   function byId(id) {
     return document.getElementById(id);
@@ -63,53 +60,8 @@
     return firebase.firestore().collection('users').doc(user.uid).collection('appData').doc('main');
   }
 
-  function normalizeStateForFingerprint(input) {
-    const state = input && typeof input === 'object' ? input : {};
-    return {
-      items: Array.isArray(state.items) ? state.items : [],
-      quickItems: Array.isArray(state.quickItems) ? state.quickItems : [],
-      recipes: Array.isArray(state.recipes) ? state.recipes : [],
-      categories: Array.isArray(state.categories) ? state.categories : ['MAT'],
-      recipeCategories: Array.isArray(state.recipeCategories) ? state.recipeCategories : ['matlagning', 'bakverk'],
-      places: Array.isArray(state.places) ? state.places : [],
-      roomConfigs: state.roomConfigs && typeof state.roomConfigs === 'object' ? state.roomConfigs : {},
-      roomDefs: Array.isArray(state.roomDefs) ? state.roomDefs : [],
-      activeRoom: String(state.activeRoom || 'koket'),
-      activePlaceFilter: typeof state.activePlaceFilter === 'string' ? state.activePlaceFilter : '',
-      homeOpenState: state.homeOpenState && typeof state.homeOpenState === 'object' ? state.homeOpenState : {},
-      recipeIngredientChoices: state.recipeIngredientChoices && typeof state.recipeIngredientChoices === 'object' ? state.recipeIngredientChoices : {},
-      householdSize: Number(state.householdSize || 1),
-      portionGrams: Math.max(1, Math.min(250, Number(state.portionGrams || 100))),
-      weekPlanner: state.weekPlanner && typeof state.weekPlanner === 'object' ? state.weekPlanner : {},
-      selectedWeekDay: String(state.selectedWeekDay || 'mon'),
-      weekMealOrder: Array.isArray(state.weekMealOrder) ? state.weekMealOrder : [],
-      activeKitchenPage: String(state.activeKitchenPage || 'home'),
-      theme: String(state.theme || 'scifi')
-    };
-  }
-
-  function stableSerialize(value) {
-    if (Array.isArray(value)) {
-      return '[' + value.map(stableSerialize).join(',') + ']';
-    }
-    if (value && typeof value === 'object') {
-      return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + stableSerialize(value[key])).join(',') + '}';
-    }
-    return JSON.stringify(value);
-  }
-
-  function getStateFingerprint(state) {
-    return stableSerialize(normalizeStateForFingerprint(state));
-  }
-
-  function getSnapshotUpdatedAtMs(snapshotData) {
-    const raw = snapshotData && snapshotData.updatedAtMs;
-    const numeric = Number(raw || 0);
-    return Number.isFinite(numeric) ? numeric : 0;
-  }
-
   function collectState() {
-    const state = {
+    return {
       items: Array.isArray(window.items) ? window.items : [],
       quickItems: Array.isArray(window.quickItems) ? window.quickItems : [],
       recipes: Array.isArray(window.recipes) ? window.recipes : [],
@@ -128,109 +80,75 @@
       selectedWeekDay: window.selectedWeekDay || 'mon',
       weekMealOrder: Array.isArray(window.weekMealOrder) ? window.weekMealOrder : JSON.parse(localStorage.getItem('matlista_week_meal_order') || '[]'),
       activeKitchenPage: String(window.activeKitchenPage || localStorage.getItem('activeKitchenPage') || 'home'),
-      theme: localStorage.getItem('theme') || 'scifi'
-    };
-
-    const fingerprint = getStateFingerprint(state);
-    return {
-      ...state,
+      theme: localStorage.getItem('theme') || 'scifi',
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAtMs: Date.now(),
-      appVersion: 'cloud-sync-stable-v4',
-      stateFingerprint: fingerprint
+      appVersion: 'cloud-sync-storage-migration-v3'
     };
   }
 
   function applyRemoteState(data) {
-    const remoteData = data && typeof data === 'object' ? data : {};
-    const incomingFingerprint = String(remoteData.stateFingerprint || getStateFingerprint(remoteData));
-    const incomingUpdatedAtMs = getSnapshotUpdatedAtMs(remoteData);
-    const currentFingerprint = getStateFingerprint(collectState());
-
-    if (incomingFingerprint && incomingFingerprint === currentFingerprint) {
-      lastAppliedFingerprint = incomingFingerprint;
-      lastSavedFingerprint = incomingFingerprint;
-      if (incomingUpdatedAtMs > lastRemoteUpdatedAtMs) lastRemoteUpdatedAtMs = incomingUpdatedAtMs;
-      return false;
-    }
-
     remoteApplying = true;
     try {
       if (safeCall('applyCloudState')) {
-        window.applyCloudState(remoteData);
+        window.applyCloudState(data || {});
       } else {
-        if (Array.isArray(remoteData.items)) window.items = remoteData.items;
-        if (Array.isArray(remoteData.quickItems)) window.quickItems = remoteData.quickItems;
-        if (Array.isArray(remoteData.recipes)) window.recipes = remoteData.recipes;
-        if (Array.isArray(remoteData.categories) && remoteData.categories.length) window.categories = remoteData.categories;
-        if (Array.isArray(remoteData.recipeCategories) && remoteData.recipeCategories.length) window.recipeCategories = remoteData.recipeCategories;
-        if (Array.isArray(remoteData.places) && remoteData.places.length) window.places = remoteData.places;
-        if (remoteData.roomConfigs && typeof remoteData.roomConfigs === 'object') window.roomConfigs = remoteData.roomConfigs;
-        if (Array.isArray(remoteData.roomDefs) && remoteData.roomDefs.length) window.roomDefs = remoteData.roomDefs;
-        if (typeof remoteData.activeRoom === 'string' && remoteData.activeRoom) window.activeRoom = remoteData.activeRoom;
-        if (typeof remoteData.activePlaceFilter === 'string') window.activePlaceFilter = remoteData.activePlaceFilter;
-        if (remoteData.homeOpenState && typeof remoteData.homeOpenState === 'object') window.homeOpenState = remoteData.homeOpenState;
-        if (remoteData.recipeIngredientChoices && typeof remoteData.recipeIngredientChoices === 'object') window.recipeIngredientChoices = remoteData.recipeIngredientChoices;
-        if (typeof remoteData.householdSize !== 'undefined') window.householdSize = Math.max(1, Math.min(8, Number(remoteData.householdSize || 1)));
-        if (typeof remoteData.portionGrams !== 'undefined') window.portionGrams = Math.max(1, Math.min(250, Number(remoteData.portionGrams || 100)));
-        if (remoteData.weekPlanner && typeof remoteData.weekPlanner === 'object') {
-          window.weekPlanner = remoteData.weekPlanner;
-          localStorage.setItem('matlista_weekplanner', JSON.stringify(remoteData.weekPlanner));
+        if (Array.isArray(data.items)) window.items = data.items;
+        if (Array.isArray(data.quickItems)) window.quickItems = data.quickItems;
+        if (Array.isArray(data.recipes)) window.recipes = data.recipes;
+        if (Array.isArray(data.categories) && data.categories.length) window.categories = data.categories;
+        if (Array.isArray(data.recipeCategories) && data.recipeCategories.length) window.recipeCategories = data.recipeCategories;
+        if (Array.isArray(data.places) && data.places.length) window.places = data.places;
+        if (data.roomConfigs && typeof data.roomConfigs === 'object') window.roomConfigs = data.roomConfigs;
+        if (Array.isArray(data.roomDefs) && data.roomDefs.length) window.roomDefs = data.roomDefs;
+        if (typeof data.activeRoom === 'string' && data.activeRoom) window.activeRoom = data.activeRoom;
+        if (typeof data.activePlaceFilter === 'string') window.activePlaceFilter = data.activePlaceFilter;
+        if (data.homeOpenState && typeof data.homeOpenState === 'object') window.homeOpenState = data.homeOpenState;
+        if (data.recipeIngredientChoices && typeof data.recipeIngredientChoices === 'object') window.recipeIngredientChoices = data.recipeIngredientChoices;
+        if (typeof data.householdSize !== 'undefined') window.householdSize = Math.max(1, Math.min(8, Number(data.householdSize || 1)));
+        if (typeof data.portionGrams !== 'undefined') window.portionGrams = Math.max(1, Math.min(250, Number(data.portionGrams || 100)));
+        if (data.weekPlanner && typeof data.weekPlanner === 'object') {
+          window.weekPlanner = data.weekPlanner;
+          localStorage.setItem('matlista_weekplanner', JSON.stringify(data.weekPlanner));
         }
-        if (typeof remoteData.selectedWeekDay === 'string' && remoteData.selectedWeekDay) {
-          window.selectedWeekDay = remoteData.selectedWeekDay;
-          localStorage.setItem('matlista_weekplanner_selected', remoteData.selectedWeekDay);
+        if (typeof data.selectedWeekDay === 'string' && data.selectedWeekDay) {
+          window.selectedWeekDay = data.selectedWeekDay;
+          localStorage.setItem('matlista_weekplanner_selected', data.selectedWeekDay);
         }
-        if (Array.isArray(remoteData.weekMealOrder)) {
-          window.weekMealOrder = remoteData.weekMealOrder;
-          localStorage.setItem('matlista_week_meal_order', JSON.stringify(remoteData.weekMealOrder));
+        if (Array.isArray(data.weekMealOrder)) {
+          window.weekMealOrder = data.weekMealOrder;
+          localStorage.setItem('matlista_week_meal_order', JSON.stringify(data.weekMealOrder));
         }
-        if (typeof remoteData.activeKitchenPage === 'string' && remoteData.activeKitchenPage) {
-          localStorage.setItem('activeKitchenPage', remoteData.activeKitchenPage);
-          if (safeCall('setActiveKitchenPage')) window.setActiveKitchenPage(remoteData.activeKitchenPage, false);
+        if (typeof data.activeKitchenPage === 'string' && data.activeKitchenPage) {
+          localStorage.setItem('activeKitchenPage', data.activeKitchenPage);
+          if (safeCall('setActiveKitchenPage')) window.setActiveKitchenPage(data.activeKitchenPage, false);
         }
-        if (typeof remoteData.theme === 'string' && remoteData.theme) {
-          localStorage.setItem('theme', remoteData.theme);
-          if (safeCall('applyTheme')) window.applyTheme(remoteData.theme);
+        if (typeof data.theme === 'string' && data.theme) {
+          localStorage.setItem('theme', data.theme);
+          if (safeCall('applyTheme')) {
+            window.applyTheme(data.theme);
+          }
         }
 
         if (safeCall('hydrateData')) window.hydrateData();
         if (safeCall('save')) window.save();
       }
 
-      if (typeof remoteData.theme === 'string' && remoteData.theme && safeCall('applyTheme')) {
-        window.applyTheme(remoteData.theme);
+      if (typeof data.theme === 'string' && data.theme && safeCall('applyTheme')) {
+        window.applyTheme(data.theme);
       }
       if (safeCall('render')) window.render();
       if (safeCall('refreshWeekPlannerUI')) window.refreshWeekPlannerUI();
-
-      lastAppliedFingerprint = incomingFingerprint;
-      lastSavedFingerprint = incomingFingerprint;
-      if (incomingUpdatedAtMs > lastRemoteUpdatedAtMs) lastRemoteUpdatedAtMs = incomingUpdatedAtMs;
-      return true;
     } finally {
       remoteApplying = false;
     }
   }
 
-  function saveToCloudNow(force = false) {
+  function saveToCloudNow() {
     if (!firebaseReady) return Promise.resolve(false);
     const ref = getDocRef();
     if (!ref || remoteApplying) return Promise.resolve(false);
-
-    const payload = collectState();
-    const fingerprint = String(payload.stateFingerprint || '');
-
-    if (!force && fingerprint && fingerprint === lastSavedFingerprint) {
-      return Promise.resolve(false);
-    }
-
-    lastSavedFingerprint = fingerprint;
-    return ref.set(payload, { merge: true }).then(() => {
-      lastRemoteUpdatedAtMs = Math.max(lastRemoteUpdatedAtMs, Number(payload.updatedAtMs || 0));
-      return true;
-    }).catch(error => {
-      if (fingerprint === lastSavedFingerprint) lastSavedFingerprint = '';
+    return ref.set(collectState(), { merge: true }).then(() => true).catch(error => {
       console.error('Cloud save error:', error);
       setAuthUi(firebase.auth().currentUser, 'Molnsynk-fel: ' + (error && error.message ? error.message : 'okänt fel'));
       return false;
@@ -241,8 +159,8 @@
     if (!firebaseReady || remoteApplying) return;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      saveToCloudNow(false);
-    }, 700);
+      saveToCloudNow();
+    }, 350);
   }
 
   function wrapSaveFunction() {
@@ -273,7 +191,7 @@
       if (!snapshot.exists) {
         if (!pendingInitialUpload) {
           pendingInitialUpload = true;
-          saveToCloudNow(true).finally(() => {
+          saveToCloudNow().finally(() => {
             pendingInitialUpload = false;
             setAuthUi(firebase.auth().currentUser, 'Inloggad – molnsynk aktiv');
           });
@@ -282,21 +200,6 @@
       }
 
       const data = snapshot.data() || {};
-      const incomingUpdatedAtMs = getSnapshotUpdatedAtMs(data);
-      const incomingFingerprint = String(data.stateFingerprint || getStateFingerprint(data));
-
-      if (snapshot.metadata && snapshot.metadata.hasPendingWrites) {
-        lastSavedFingerprint = incomingFingerprint || lastSavedFingerprint;
-        if (incomingUpdatedAtMs > lastRemoteUpdatedAtMs) lastRemoteUpdatedAtMs = incomingUpdatedAtMs;
-        return;
-      }
-
-      if (incomingFingerprint && incomingFingerprint === lastAppliedFingerprint) {
-        if (incomingUpdatedAtMs > lastRemoteUpdatedAtMs) lastRemoteUpdatedAtMs = incomingUpdatedAtMs;
-        setAuthUi(firebase.auth().currentUser, 'Inloggad – molnsynk aktiv');
-        return;
-      }
-
       applyRemoteState(data);
       setAuthUi(firebase.auth().currentUser, 'Inloggad – molnsynk aktiv');
     }, error => {
@@ -310,12 +213,7 @@
       cloudUnsubscribe();
       cloudUnsubscribe = null;
     }
-    clearTimeout(saveTimer);
     syncReady = false;
-    pendingInitialUpload = false;
-    lastAppliedFingerprint = '';
-    lastSavedFingerprint = '';
-    lastRemoteUpdatedAtMs = 0;
   }
 
   window.loginWithGoogle = function loginWithGoogle() {
