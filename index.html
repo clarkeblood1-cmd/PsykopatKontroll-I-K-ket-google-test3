@@ -63,6 +63,18 @@
             <div class="household-empty">Inga medlemmar ännu.</div>
           </div>
         </div>
+        <div class="household-card">
+          <div class="household-card-title">Mina hushåll</div>
+          <div class="household-owner-line">Aktivt hushåll</div>
+          <div class="household-share-row">
+            <select id="myHouseholdsSelect"></select>
+          </div>
+          <div class="household-inline-actions household-inline-actions-stack">
+            <button type="button" class="ghost-btn" onclick="switchSelectedHousehold()">Byt hushåll</button>
+            <button type="button" class="ghost-btn" onclick="refreshMyHouseholds()">Uppdatera lista</button>
+          </div>
+          <div id="myHouseholdsMeta" class="household-hint">Du kan ha flera hushåll och byta mellan dem här.</div>
+        </div>
 
         <div class="household-card">
           <div class="household-card-title">Dela hushåll</div>

@@ -10,9 +10,12 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
+    function memberPath(householdId, uid) {
+      return /databases/$(database)/documents/households/$(householdId)/members/$(uid);
+    }
+
     function isHouseholdMember(householdId) {
-      return signedIn() &&
-        exists(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid));
+      return signedIn() && exists(memberPath(householdId, request.auth.uid));
     }
 
     function isHouseholdOwner(householdId) {
@@ -28,7 +31,10 @@ service cloud.firestore {
     match /households/{householdId} {
       allow read: if isHouseholdMember(householdId);
       allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
-      allow update: if isHouseholdMember(householdId);
+      allow update: if isHouseholdOwner(householdId) || (
+        isHouseholdMember(householdId) &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly(['inviteCode', 'updatedAt'])
+      );
       allow delete: if false;
 
       match /members/{memberId} {
