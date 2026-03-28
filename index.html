@@ -410,8 +410,12 @@
     </section>
   </div>
 
-  <div id="imageModal" onclick="this.style.display='none'">
-    <img id="modalImg" alt="Stor bild">
+  <div id="imageModal">
+    <div id="imageModalInner" class="image-modal-inner">
+      <button type="button" id="imageModalClose" class="image-modal-close" aria-label="Stäng bild">×</button>
+      <img id="modalImg" alt="Stor bild">
+      <div id="imageModalCaption" class="image-modal-caption"></div>
+    </div>
   </div>
 
   <div id="editModal">

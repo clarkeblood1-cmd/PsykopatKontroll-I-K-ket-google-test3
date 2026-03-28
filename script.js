@@ -1181,168 +1181,10 @@ function canUploadImagesToCloud() {
   return !!(getFirebaseStorageInstance() && getCloudUserUid());
 }
 
-const remoteImageUrlCache = new Map();
-const remoteImageLookupInflight = new Map();
-let remoteImageRerenderTimer = null;
-
-function getRemoteImageScopeKey() {
-  const uid = getCloudUserUid();
-  const householdIds = [];
-
-  const add = value => {
-    const normalized = String(value || '').trim();
-    if (normalized && !householdIds.includes(normalized)) householdIds.push(normalized);
-  };
-
-  add(window.activeHouseholdId);
-  add(window.householdId);
-  add(window.currentHouseholdId);
-  add(localStorage.getItem('activeHouseholdId'));
-  add(localStorage.getItem('householdId'));
-  add(localStorage.getItem('matlista_household_id'));
-  add(localStorage.getItem('cloudHouseholdId'));
-
-  return `${uid || 'guest'}|${householdIds.join(',')}`;
-}
-
-function getRemoteImageCacheKey(itemName = '') {
-  return `${getRemoteImageScopeKey()}::${normalizeText(itemName || '')}`;
-}
-
-function scheduleRemoteImageRerender() {
-  if (remoteImageRerenderTimer) return;
-  remoteImageRerenderTimer = setTimeout(() => {
-    remoteImageRerenderTimer = null;
-    try {
-      if (typeof render === 'function') render();
-    } catch (error) {}
-  }, 60);
-}
-
-function getFirebaseAutoImageCandidatePaths(itemName = 'vara') {
-  const variants = [...new Set([
-    ...buildImageNameVariants(itemName),
-    ...getSmartImageMatches(itemName)
-  ].filter(Boolean))];
-  if (!variants.length) return [];
-
-  const bases = [];
-  const uid = getCloudUserUid();
-  if (uid) {
-    bases.push(`users/${uid}/item-images`);
-    bases.push(`users/${uid}/images`);
-    bases.push(`users/${uid}/auto-images`);
-  }
-
-  const householdIds = [];
-  const addHousehold = value => {
-    const normalized = String(value || '').trim();
-    if (normalized && !householdIds.includes(normalized)) householdIds.push(normalized);
-  };
-
-  addHousehold(window.activeHouseholdId);
-  addHousehold(window.householdId);
-  addHousehold(window.currentHouseholdId);
-  addHousehold(localStorage.getItem('activeHouseholdId'));
-  addHousehold(localStorage.getItem('householdId'));
-  addHousehold(localStorage.getItem('matlista_household_id'));
-  addHousehold(localStorage.getItem('cloudHouseholdId'));
-
-  householdIds.forEach(householdId => {
-    bases.push(`households/${householdId}/images`);
-    bases.push(`households/${householdId}/item-images`);
-    bases.push(`households/${householdId}/auto-images`);
-  });
-
-  bases.push('shared-images');
-  bases.push('auto-images');
-
-  const extensions = ['jpg', 'jpeg', 'png', 'webp'];
-  const paths = [];
-  bases.forEach(base => {
-    variants.forEach(fileName => {
-      extensions.forEach(ext => {
-        paths.push(`${base}/${fileName}.${ext}`);
-      });
-    });
-  });
-
-  return [...new Set(paths)];
-}
-
-function lookupRemoteAutoImage(itemName = 'vara') {
-  const storage = getFirebaseStorageInstance();
-  if (!storage) return Promise.resolve('');
-
-  const cacheKey = getRemoteImageCacheKey(itemName);
-  if (remoteImageUrlCache.has(cacheKey)) {
-    return Promise.resolve(String(remoteImageUrlCache.get(cacheKey) || ''));
-  }
-
-  if (remoteImageLookupInflight.has(cacheKey)) {
-    return remoteImageLookupInflight.get(cacheKey);
-  }
-
-  const candidates = getFirebaseAutoImageCandidatePaths(itemName);
-  if (!candidates.length) {
-    remoteImageUrlCache.set(cacheKey, '');
-    return Promise.resolve('');
-  }
-
-  const promise = candidates.reduce((chain, candidatePath) => {
-    return chain.then(found => {
-      if (found) return found;
-      return storage.ref().child(candidatePath).getDownloadURL().catch(() => '');
-    });
-  }, Promise.resolve('')).then(url => {
-    const finalUrl = normalizeCloudImageDisplayUrl(String(url || ''));
-    remoteImageUrlCache.set(cacheKey, finalUrl);
-    return finalUrl;
-  }).finally(() => {
-    remoteImageLookupInflight.delete(cacheKey);
-  });
-
-  remoteImageLookupInflight.set(cacheKey, promise);
-  return promise;
-}
-
-function queueRemoteAutoImageLookup(itemName = 'vara', onResolved = null) {
-  return lookupRemoteAutoImage(itemName).then(url => {
-    if (url) {
-      if (typeof onResolved === 'function') {
-        try { onResolved(url); } catch (error) {}
-      }
-      scheduleRemoteImageRerender();
-    }
-    return url;
-  });
-}
-
-
-function getPreferredCloudImageFolder() {
-  const householdIds = [];
-  const addHousehold = value => {
-    const normalized = String(value || '').trim();
-    if (normalized && !householdIds.includes(normalized)) householdIds.push(normalized);
-  };
-
-  addHousehold(window.activeHouseholdId);
-  addHousehold(window.householdId);
-  addHousehold(window.currentHouseholdId);
-  addHousehold(localStorage.getItem('activeHouseholdId'));
-  addHousehold(localStorage.getItem('householdId'));
-  addHousehold(localStorage.getItem('matlista_household_id'));
-  addHousehold(localStorage.getItem('cloudHouseholdId'));
-
-  if (householdIds.length) return `households/${householdIds[0]}/item-images`;
-
-  const uid = getCloudUserUid();
-  return uid ? `users/${uid}/item-images` : 'shared-images';
-}
-
 function makeCloudImagePath(itemName = 'vara') {
-  const safeName = stripSwedishChars(slugifyImageName(itemName || 'vara', '-')).slice(0, 64) || 'vara';
-  return `${getPreferredCloudImageFolder()}/${safeName}.jpg`;
+  const uid = getCloudUserUid();
+  const safeName = slugifyImageName(itemName || 'vara', '-').slice(0, 64) || 'vara';
+  return `users/${uid}/item-images/${safeName}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
 }
 
 function dataUrlToBlob(dataUrl) {
@@ -1378,12 +1220,7 @@ function uploadItemImageToCloud(dataUrl, itemName = 'vara') {
   const ref = storage.ref().child(makeCloudImagePath(itemName));
   const metadata = {
     contentType: 'image/jpeg',
-    cacheControl: 'public,max-age=300',
-    customMetadata: {
-      itemName: String(itemName || 'vara'),
-      normalizedItemName: stripSwedishChars(slugifyImageName(itemName || 'vara', '-')).slice(0, 64) || 'vara',
-      updatedAtMs: String(Date.now())
-    }
+    cacheControl: 'public,max-age=31536000,immutable'
   };
 
   updateCloudImageStatus('☁️ Laddar upp bild till cloud...');
@@ -1397,14 +1234,8 @@ function uploadItemImageToCloud(dataUrl, itemName = 'vara') {
       return ref.put(blob, metadata).then(snapshot => snapshot.ref.getDownloadURL());
     })
     .then(url => {
-      const rawUrl = String(url || dataUrl || '');
-      const finalUrl = normalizeCloudImageDisplayUrl(rawUrl && /^https?:\/\//i.test(rawUrl)
-        ? `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}v=${Date.now()}`
-        : rawUrl);
-      remoteImageUrlCache.set(getRemoteImageCacheKey(itemName), finalUrl);
       updateCloudImageStatus('☁️ Bild uppladdad till cloud');
-      scheduleRemoteImageRerender();
-      return finalUrl;
+      return String(url || dataUrl || '');
     })
     .catch(error => {
       console.error('Image upload error:', error);
@@ -1413,19 +1244,11 @@ function uploadItemImageToCloud(dataUrl, itemName = 'vara') {
     });
 }
 
-function normalizeCloudImageDisplayUrl(src = '') {
-  const value = String(src || '').trim();
-  if (!value) return '';
-  if (!isCloudImageUrl(value)) return value;
-  if (/([?&])v=\d+/i.test(value)) return value;
-  return `${value}${value.includes('?') ? '&' : '?'}v=1`;
-}
-
 function resolveExplicitImageSource(item) {
   if (!item || !item.img) return '';
   const src = String(item.img || '').trim();
   if (!src) return '';
-  if (isInlineImage(src) || isCloudImageUrl(src) || isLocalImagePath(src)) return normalizeCloudImageDisplayUrl(src);
+  if (isInlineImage(src) || isCloudImageUrl(src) || isLocalImagePath(src)) return src;
   if (/^https?:\/\//i.test(src)) return src;
   return '';
 }
@@ -1465,33 +1288,14 @@ function handleItemImageError(imgEl) {
     return;
   }
 
-  const cacheKey = getRemoteImageCacheKey(itemName);
-  const cachedRemote = String(remoteImageUrlCache.get(cacheKey) || '');
-  if (cachedRemote) {
-    imgEl.onerror = null;
-    imgEl.src = cachedRemote;
-    return;
-  }
-
   imgEl.onerror = null;
   imgEl.src = getNoImagePlaceholder();
-
-  queueRemoteAutoImageLookup(itemName, (url) => {
-    if (!url || !imgEl.isConnected) return;
-    if ((imgEl.dataset.itemName || imgEl.getAttribute('alt') || '') !== itemName) return;
-    imgEl.src = url;
-  }).catch(() => {});
 }
 
 function getItemImage(item) {
   if (!item) return getNoImagePlaceholder();
   const explicit = resolveExplicitImageSource(item);
   if (explicit) return explicit;
-
-  const cachedRemote = String(remoteImageUrlCache.get(getRemoteImageCacheKey(item.name || '')) || '');
-  if (cachedRemote) return cachedRemote;
-
-  queueRemoteAutoImageLookup(item.name || '').catch(() => {});
   return getAutoImagePath(item.name || '') || getNoImagePlaceholder();
 }
 
@@ -1504,14 +1308,10 @@ function getItemImageSourceMeta(item) {
     return { type: 'external', label: '🔗 Länk', title: 'Bilden kommer från en extern länk' };
   }
 
-  const cachedRemote = String(remoteImageUrlCache.get(getRemoteImageCacheKey(item?.name || '')) || '');
-  if (cachedRemote) return { type: 'cloud', label: '☁️ Cloud', title: 'Bilden hittades automatiskt i Firebase Storage' };
-
   const autoImage = getAutoImagePath(item?.name || '');
   if (autoImage) return { type: 'images', label: '🖼️ Images', title: 'Bilden matchades automatiskt från images-mappen' };
 
-  queueRemoteAutoImageLookup(item?.name || '').catch(() => {});
-  return { type: 'default', label: '📄 Standard', title: 'Ingen egen bild hittades ännu. Appen testar även Firebase Storage i bakgrunden.' };
+  return { type: 'default', label: '📄 Standard', title: 'Ingen egen bild hittades, standardikon används' };
 }
 
 function showImageSourceInfo(sourceType = 'default') {
@@ -1536,10 +1336,6 @@ function getRecipeIngredientImage(ingredient) {
   const matchedExplicit = resolveExplicitImageSource(matchedItem);
   if (matchedExplicit) return matchedExplicit;
 
-  const cachedRemote = String(remoteImageUrlCache.get(getRemoteImageCacheKey(ingredient.name || '')) || '');
-  if (cachedRemote) return cachedRemote;
-
-  queueRemoteAutoImageLookup(ingredient.name || '').catch(() => {});
   return getAutoImagePath(ingredient.name || '') || getNoImagePlaceholder();
 }
 
@@ -2590,7 +2386,7 @@ function resizeImage(file, callback) {
       img.onerror = () => reject(new Error('Kunde inte öppna bilden.'));
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const maxSize = 220;
+        const maxSize = 1600;
         let { width, height } = img;
 
         if (width > height && width > maxSize) {
@@ -2601,10 +2397,17 @@ function resizeImage(file, callback) {
           height = maxSize;
         }
 
-        canvas.width = width;
-        canvas.height = height;
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        canvas.width = Math.max(1, Math.round(width));
+        canvas.height = Math.max(1, Math.round(height));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Kunde inte skapa canvas för bilden.'));
+          return;
+        }
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
         if (typeof callback === 'function') callback(dataUrl);
         resolve(dataUrl);
       };
@@ -3660,22 +3463,65 @@ function suggestUnit() {
   updateSizeSelect('itemSize', unit.value, null, category);
 }
 
-function showImage(index) {
-  const src = getItemImage(items[index]);
+function closeImageModal() {
+  const modal = document.getElementById('imageModal');
+  const modalImg = document.getElementById('modalImg');
+  const modalCaption = document.getElementById('imageModalCaption');
+  if (modal) modal.style.display = 'none';
+  if (modalImg) {
+    modalImg.removeAttribute('src');
+    modalImg.style.transform = 'scale(1)';
+  }
+  if (modalCaption) modalCaption.textContent = '';
+}
+
+function openImageModal(src, title = '') {
   if (!src) return;
   const modal = document.getElementById('imageModal');
   const modalImg = document.getElementById('modalImg');
-  if (modal) modal.style.display = 'flex';
-  if (modalImg) modalImg.src = src;
+  const modalCaption = document.getElementById('imageModalCaption');
+  if (!modal || !modalImg) return;
+  modal.style.display = 'flex';
+  modalImg.src = src;
+  modalImg.alt = title || 'Stor bild';
+  modalImg.style.transform = 'scale(1)';
+  if (modalCaption) modalCaption.textContent = title || '';
+}
+
+function showImage(index) {
+  const item = items[index];
+  const src = getItemImage(item);
+  openImageModal(src, item?.name || 'Bild');
 }
 
 function showQuickImage(index) {
-  const src = getItemImage(quickItems[index]);
-  if (!src) return;
+  const item = quickItems[index];
+  const src = getItemImage(item);
+  openImageModal(src, item?.name || 'Bild');
+}
+
+function initImageModal() {
   const modal = document.getElementById('imageModal');
+  const modalInner = document.getElementById('imageModalInner');
   const modalImg = document.getElementById('modalImg');
-  if (modal) modal.style.display = 'flex';
-  if (modalImg) modalImg.src = src;
+  const closeBtn = document.getElementById('imageModalClose');
+
+  if (!modal || modal.dataset.ready === '1') return;
+  modal.dataset.ready = '1';
+
+  modal.addEventListener('click', () => closeImageModal());
+  if (modalInner) modalInner.addEventListener('click', event => event.stopPropagation());
+  if (closeBtn) closeBtn.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    closeImageModal();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeImageModal();
+  });
+  if (modalImg) {
+    modalImg.addEventListener('click', event => event.stopPropagation());
+  }
 }
 
 function clearInputs(focusName = false) {
@@ -6476,6 +6322,7 @@ function initKitchenPageTabs() {
 
 document.addEventListener('DOMContentLoaded', () => {
   initKitchenPageTabs();
+  initImageModal();
   updateManageCounts();
 });
 
