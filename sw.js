@@ -1,5 +1,5 @@
-const CACHE_NAME = 'matlista-app-v7';
-const ASSETS = [
+const CACHE_NAME = 'matlista-app-v10';
+const CORE_ASSETS = [
   './',
   './index.html',
   './style.css',
@@ -12,26 +12,54 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)));
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(cache => cache.addAll(CORE_ASSETS)).catch(() => {})
+  );
   self.skipWaiting();
 });
 
 self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key)))
-    )
-  );
-  self.clients.claim();
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key)));
+    await self.clients.claim();
+  })());
 });
 
+function isSameOrigin(request) {
+  try {
+    const url = new URL(request.url);
+    return url.origin === self.location.origin;
+  } catch (error) {
+    return false;
+  }
+}
+
+function shouldHandleAsAppShell(request) {
+  const destination = request.destination || '';
+  return request.mode === 'navigate' || ['script', 'style', 'manifest', 'image'].includes(destination);
+}
+
 self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') return;
-  event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request).then(response => {
-      const copy = response.clone();
-      caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy)).catch(() => {});
+  if (event.request.method !== 'GET' || !isSameOrigin(event.request) || !shouldHandleAsAppShell(event.request)) return;
+
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(event.request);
+
+    try {
+      const response = await fetch(event.request, { cache: 'no-store' });
+      if (response && response.ok) {
+        cache.put(event.request, response.clone()).catch(() => {});
+      }
       return response;
-    }).catch(() => cached))
-  );
+    } catch (error) {
+      if (cached) return cached;
+      if (event.request.mode === 'navigate') {
+        const fallback = await cache.match('./index.html');
+        if (fallback) return fallback;
+      }
+      throw error;
+    }
+  })());
 });

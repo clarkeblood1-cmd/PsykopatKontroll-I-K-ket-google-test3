@@ -1847,6 +1847,9 @@ window.applyCloudState = function applyCloudState(data) {
   if (typeof data.activeKitchenPage === 'string' && data.activeKitchenPage && typeof window.setActiveKitchenPage === 'function') {
     window.setActiveKitchenPage(data.activeKitchenPage, false);
   }
+
+  if (typeof window.render === 'function') window.render();
+  if (typeof window.refreshWeekPlannerUI === 'function') window.refreshWeekPlannerUI();
 };
 
 function syncQuickItemFromItem(changedItem) {
@@ -6129,7 +6132,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch(err => {
+    navigator.serviceWorker.register('./sw.js').then(registration => {
+      if (registration && typeof registration.update === 'function') {
+        setTimeout(() => registration.update().catch(() => {}), 1200);
+      }
+    }).catch(err => {
       console.warn('Service worker kunde inte registreras:', err);
     });
   }
