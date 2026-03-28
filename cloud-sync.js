@@ -212,7 +212,7 @@
       theme: localStorage.getItem('theme') || 'scifi',
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAtMs: Date.now(),
-      appVersion: 'household-sync-v2'
+      appVersion: 'household-sync-v3'
     };
   }
 

@@ -24,3 +24,9 @@ Bilder:
 - Produktbilder laddas upp till Firebase Storage under households/{householdId}/images/...
 - Bildlänken sparas i hushållets delade Firestore-state så alla enheter ser samma bild.
 - Spara inte rå bilddata i Firestore-dokument, eftersom Firestore har liten dokumentgräns.
+
+Viktigt i denna ZIP:
+- Firebase Storage SDK är inlagd i index.html
+- Hushållsmedlemmar kan ladda upp/läsa bilder via storage.rules
+- members-subcollection skapas automatiskt vid create/join
+- sw.js har ny cache-version så ny kod hämtas lättare
