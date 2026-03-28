@@ -1259,6 +1259,32 @@ function getItemImage(item) {
   return getAutoImagePath(item.name || '') || getNoImagePlaceholder();
 }
 
+function getItemImageSourceMeta(item) {
+  const explicit = resolveExplicitImageSource(item);
+  if (explicit) {
+    if (isCloudImageUrl(explicit)) return { type: 'cloud', label: '☁️ Cloud', title: 'Bilden kommer från Firebase Storage' };
+    if (isLocalImagePath(explicit)) return { type: 'images', label: '🖼️ Images', title: 'Bilden kommer från images-mappen' };
+    if (isInlineImage(explicit)) return { type: 'inline', label: '📦 Lokal', title: 'Bilden är sparad lokalt i appdata' };
+    return { type: 'external', label: '🔗 Länk', title: 'Bilden kommer från en extern länk' };
+  }
+
+  const autoImage = getAutoImagePath(item?.name || '');
+  if (autoImage) return { type: 'images', label: '🖼️ Images', title: 'Bilden matchades automatiskt från images-mappen' };
+
+  return { type: 'default', label: '📄 Standard', title: 'Ingen egen bild hittades, standardikon används' };
+}
+
+function showImageSourceInfo(sourceType = 'default') {
+  const messages = {
+    cloud: 'Bilden kommer från Firebase Storage.',
+    images: 'Bilden kommer från images-mappen.',
+    inline: 'Bilden är sparad lokalt i appens data.',
+    external: 'Bilden kommer från en extern bildlänk.',
+    default: 'Ingen egen bild hittades. Standardikonen visas.'
+  };
+  alert(messages[sourceType] || messages.default);
+}
+
 function getRecipeIngredientImage(ingredient) {
   if (!ingredient) return getNoImagePlaceholder();
 
@@ -2861,8 +2887,9 @@ function createCard(item, source = 'items') {
 
   if (source === 'quick') {
     const quickRoom = item.room || activeRoom;
+    const imageSource = getItemImageSourceMeta(item);
     div.innerHTML = `
-      <img src="${img}" alt="${item.name}" data-item-name="${item.name}" onerror="handleItemImageError(this)" onclick="showQuickImage(${realIndex})">
+      <img src="${img}" alt="${item.name}" data-item-name="${item.name}" data-image-source="${imageSource.type}" onerror="handleItemImageError(this)" onclick="showQuickImage(${realIndex})">
       <div class="info">
         <div class="top-tags quick-top-tags">
           ${createRoomBadge(quickRoom)}
@@ -2878,6 +2905,7 @@ function createCard(item, source = 'items') {
         <div class="quick-path">${getRoomLabel(quickRoom)} • ${item.category || getRoomFallbackCategory(quickRoom)} • ${getPlaceMeta(item.place, quickRoom).label}</div>
       </div>
       <div class="actions">
+        <button type="button" class="ghost-btn image-source-badge image-source-${imageSource.type}" title="${imageSource.title}" onclick="showImageSourceInfo('${imageSource.type}')">${imageSource.label}</button>
         <button type="button" class="ghost-btn" onclick="changeQuickImage(${realIndex})">🖼️ Byt bild</button>
         <button type="button" class="ghost-btn" onclick="editQuickItem(${realIndex})">✏️ Ändra</button>
         <button type="button" class="ghost-btn" onmousedown="startQuickAdd(${realIndex})" onmouseup="finishQuickAdd(${realIndex})" onmouseleave="stopQuickAdd()" ontouchstart="startQuickAdd(${realIndex})" ontouchend="finishQuickAdd(${realIndex})" ontouchcancel="stopQuickAdd()">Lägg till 1</button>
@@ -2887,8 +2915,9 @@ function createCard(item, source = 'items') {
     return div;
   }
 
+  const imageSource = getItemImageSourceMeta(item);
   div.innerHTML = `
-    <img src="${img}" alt="${item.name}" data-item-name="${item.name}" onerror="handleItemImageError(this)" onclick="showImage(${realIndex})">
+    <img src="${img}" alt="${item.name}" data-item-name="${item.name}" data-image-source="${imageSource.type}" onerror="handleItemImageError(this)" onclick="showImage(${realIndex})">
     <div class="info">
       <div class="top-tags">
         <div class="category">${item.category || getRoomFallbackCategory(item.room || activeRoom)}</div>
@@ -2910,6 +2939,7 @@ function createCard(item, source = 'items') {
       </div>
     </div>
     <div class="actions">
+      <button type="button" class="ghost-btn image-source-badge image-source-${imageSource.type}" title="${imageSource.title}" onclick="showImageSourceInfo('${imageSource.type}')">${imageSource.label}</button>
       <button type="button" class="ghost-btn" onclick="editMainItem(${realIndex})">✏️ Ändra</button>
       <button type="button" class="delete" onclick="removeItem(${realIndex})">🗑️</button>
       <button type="button" onclick="moveItem(${realIndex})">${moveText}</button>

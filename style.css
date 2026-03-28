@@ -67,6 +67,12 @@ button:hover{background:var(--green-dark);color:#fff}
 .actions{display:flex;flex-direction:column;gap:8px;align-items:flex-end}
 .delete{background:var(--red);color:#fff;min-width:38px;padding:8px 10px}
 .actions button{min-height:38px;padding:8px 12px;font-size:13px;border-radius:12px}
+
+.image-source-badge{min-width:110px;text-align:center}
+.image-source-cloud{background:#17345f;color:#dbeafe}
+.image-source-images{background:#1f3a2d;color:#dcfce7}
+.image-source-default{background:#3a2d1f;color:#fde68a}
+.image-source-inline,.image-source-external{background:#374151;color:#f3f4f6}
 #quickList .card{grid-template-columns:78px 1fr auto;gap:8px;padding:8px}
 #quickList .card img{width:78px;height:78px;padding:5px}
 #quickList .info{gap:4px}
