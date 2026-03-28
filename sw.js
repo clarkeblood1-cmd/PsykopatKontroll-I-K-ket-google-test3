@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v8-image-system';
+const CACHE_NAME = 'matlista-app-v7';
 const ASSETS = [
   './',
   './index.html',
