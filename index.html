@@ -40,6 +40,40 @@
       </div>
     </section>
 
+    <section class="household-panel">
+      <div class="household-panel-main">
+        <div class="household-title">👨‍👩‍👧 Hushåll</div>
+        <div id="householdStatus" class="household-status">Logga in för att skapa eller gå med i ett hushåll.</div>
+        <div id="householdMeta" class="household-meta">Eget hushåll + säker molnsynk mellan mobil och dator.</div>
+      </div>
+
+      <div class="household-grid">
+        <div class="household-card">
+          <div class="household-card-title">Dela hushåll</div>
+          <div class="household-share-row">
+            <input id="householdInviteCode" type="text" readonly placeholder="Kod kommer här">
+            <button type="button" onclick="copyHouseholdCode()">Kopiera kod</button>
+          </div>
+          <div class="household-share-row">
+            <input id="householdInviteLink" type="text" readonly placeholder="Länk kommer här">
+            <button type="button" onclick="copyHouseholdLink()">Kopiera länk</button>
+          </div>
+          <div class="household-actions-inline">
+            <button type="button" class="ghost-btn" onclick="refreshHouseholdInvite()">Ny kod</button>
+          </div>
+        </div>
+
+        <div class="household-card">
+          <div class="household-card-title">Gå med i hushåll</div>
+          <div class="household-share-row">
+            <input id="joinHouseholdInput" type="text" placeholder="Klistra in kod eller länk">
+            <button type="button" onclick="joinHouseholdFromInput()">Gå med</button>
+          </div>
+          <div class="household-help-text">Klistra in delningskod eller hel länk.</div>
+        </div>
+      </div>
+    </section>
+
     <div class="summary-bar">
       <div class="summary-box"><div>Varor hemma</div><strong id="homeCount">0</strong></div>
       <div class="summary-box"><div>Varor att köpa</div><strong id="buyCount">0</strong></div>
@@ -488,8 +522,8 @@
          <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
         <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
-<script src="cloud-sync.js"></script>
 <script src="script.js"></script>
+<script src="cloud-sync.js"></script>
   
 </body>
 </html>
