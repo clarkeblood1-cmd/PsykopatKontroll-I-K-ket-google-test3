@@ -2054,18 +2054,7 @@ window.applyCloudState = function applyCloudState(data) {
 };
 
 function syncQuickItemFromItem(changedItem) {
-  const quick = quickItems.find(q => normalizeText(q.name) === normalizeText(changedItem.name));
-  if (!quick) return;
-  quick.room = changedItem.room || quick.room || activeRoom;
-  quick.place = ensurePlaceExists(changedItem.place || quick.place || getPlacesForRoom(quick.room)[0]?.key || 'kyl', quick.room);
-  quick.category = ensureCategoryExists(changedItem.category || quick.category || getRoomFallbackCategory(quick.room), quick.room);
-  if (!quick.img && changedItem.img) quick.img = changedItem.img;
-  if (Number(changedItem.price || 0) > 0) quick.price = Number(changedItem.price || 0);
-  quick.unit = changedItem.unit || quick.unit || 'st';
-  quick.size = normalizeSize(quick.unit, parseSmartMeasureInput(changedItem.measureText || changedItem.weightText || changedItem.size, quick.unit) || changedItem.size || quick.size);
-  quick.measureText = supportsSize(quick.unit) ? getMeasureTextFromSize(quick.size, quick.unit) : '';
-  quick.weightText = isWeightUnit(quick.unit) ? quick.measureText : '';
-  quick.quantity = Math.max(1, Number(quick.quantity || 1));
+  return;
 }
 
 function updateToggleButtons() {
@@ -3049,9 +3038,6 @@ function changeQuickPlace(index, newPlace) {
 
   const itemRoom = item.room || activeRoom;
   item.place = ensurePlaceExists(newPlace || 'kyl', itemRoom);
-  items.forEach(entry => {
-    if (normalizeText(entry.name) === normalizeText(item.name)) entry.place = item.place;
-  });
 
   save();
   render();
@@ -3062,9 +3048,6 @@ function changeQuickCategory(index, newCategory) {
   if (!item) return;
 
   item.category = ensureCategoryExists(newCategory || getRoomFallbackCategory(item.room || activeRoom), item.room || activeRoom);
-  items.forEach(entry => {
-    if (normalizeText(entry.name) === normalizeText(item.name)) entry.category = item.category;
-  });
 
   save();
   render();
@@ -3802,7 +3785,6 @@ function saveHomeItem(item) {
     }
     existingHome.packMode = isWeightUnit(existingHome.unit) && (existingHome.quantity > 1 || existingHome.openedAmount > 0 || normalizedItem.packMode === 'bags' || existingHome.packMode === 'bags') ? 'bags' : '';
     if (normalizedItem.img) existingHome.img = normalizedItem.img;
-    syncQuickItemFromItem(existingHome);
   } else {
     items.push({
       ...normalizedItem,
@@ -3810,7 +3792,6 @@ function saveHomeItem(item) {
       openedAmount: Math.max(0, Number(normalizedItem.openedAmount || 0)),
       packMode: isWeightUnit(normalizedItem.unit) && (Number(normalizedItem.quantity || 0) > 1 || Number(normalizedItem.openedAmount || 0) > 0 || normalizedItem.packMode === 'bags') ? 'bags' : ''
     });
-    syncQuickItemFromItem(normalizedItem);
   }
 }
 
@@ -3886,8 +3867,6 @@ function updateQuantity(index, value) {
 
   if (newQty === 0 && item.type === 'home') {
     items.splice(index, 1);
-  } else {
-    syncQuickItemFromItem(item);
   }
 
   save();
@@ -4698,15 +4677,16 @@ function createBuyItemFromMissingEntry(entry) {
 
   const unit = String(template.unit || ingredient.unit || 'st').toLowerCase();
   if (supportsSize(unit)) {
-    const totalAmount = Math.max(1, Math.round(missingAmount));
+    const packSize = Math.max(1, Math.round(Number(template.size || 0) || 0));
+    const packCount = packSize > 0 ? Math.max(1, Math.ceil(missingAmount / packSize)) : 1;
     return {
       ...template,
       type: 'buy',
-      quantity: 1,
+      quantity: packCount,
       unit,
-      size: totalAmount,
-      measureText: formatSmartMeasureDisplay(totalAmount, unit),
-      weightText: isWeightUnit(unit) ? formatSmartMeasureDisplay(totalAmount, unit) : ''
+      size: packSize,
+      measureText: formatSmartMeasureDisplay(packSize, unit),
+      weightText: isWeightUnit(unit) ? formatSmartMeasureDisplay(packSize, unit) : ''
     };
   }
 
@@ -4744,7 +4724,13 @@ function mergeCanonicalItemIntoList(nextItem, type = 'buy') {
   );
 
   if (existing) {
-    if (supportsSize(copy.unit)) {
+    if (normalizedType === 'buy' && supportsSize(copy.unit) && Number(existing.size || 0) === Number(copy.size || 0)) {
+      existing.quantity = Math.max(1, Number(existing.quantity || 1) + Number(copy.quantity || 1));
+      existing.unit = copy.unit;
+      existing.size = copy.size;
+      existing.measureText = formatSmartMeasureDisplay(copy.size, copy.unit);
+      existing.weightText = isWeightUnit(copy.unit) ? formatSmartMeasureDisplay(copy.size, copy.unit) : '';
+    } else if (supportsSize(copy.unit)) {
       const currentTotal = getItemCanonicalAmount(existing, copy.unit);
       const incomingTotal = getItemCanonicalAmount(copy, copy.unit);
       const mergedTotal = Math.max(0, Math.round(currentTotal + incomingTotal));
@@ -4820,6 +4806,11 @@ function queueRestockIfDepleted(ingredient, amountBefore = 0) {
 
   const buyItem = createRestockBuyItemFromQuick(ing);
   if (!buyItem) return;
+
+  if (supportsSize(buyItem.unit) && Number(buyItem.size || 0) > 0) {
+    const packCount = Math.max(1, Math.ceil(Number(amountBefore || 0) / Number(buyItem.size || 1)));
+    buyItem.quantity = packCount * Math.max(1, Number(buyItem.quantity || 1));
+  }
 
   mergeCanonicalItemIntoList(buyItem, 'buy');
 }
@@ -6494,177 +6485,4 @@ window.addEventListener('load', () => {
 });
 
 
-
-/* === FULL MERGE PATCH: locked quick list + hybrid recipe restock === */
-(function () {
-  function safeNum(v) {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  function getNormalizedIngredient(value) {
-    return typeof normalizeRecipeIngredient === 'function'
-      ? normalizeRecipeIngredient(value)
-      : value;
-  }
-
-  function getQuickTemplateForIngredient(ingredient) {
-    const ing = getNormalizedIngredient(ingredient);
-    if (!ing || typeof findQuickItemByName !== 'function') return null;
-    return findQuickItemByName(ing.name) || null;
-  }
-
-  function getQuickPackInfo(ingredient) {
-    const ing = getNormalizedIngredient(ingredient);
-    const quick = getQuickTemplateForIngredient(ing);
-    if (!ing || !quick) return null;
-
-    const unit = String(quick.unit || ing.unit || 'st').toLowerCase();
-    const size = supportsSize(unit) ? Math.max(0, safeNum(quick.size || 0)) : null;
-
-    return { ing, quick, unit, size };
-  }
-
-  function buildQuickPackBuyItem(ingredient, packCount) {
-    const info = getQuickPackInfo(ingredient);
-    if (!info || packCount <= 0) return null;
-
-    const room = info.quick.room || (typeof activeRoom !== 'undefined' ? activeRoom : 'koket');
-    const quantity = Math.max(1, Math.round(packCount)) * Math.max(1, safeNum(info.quick.quantity || 1));
-
-    return {
-      name: info.quick.name || info.ing.name,
-      price: safeNum(info.quick.price || 0),
-      quantity,
-      unit: info.unit,
-      size: supportsSize(info.unit) ? normalizeSize(info.unit, info.size, info.quick.category || info.ing.category) : null,
-      measureText: supportsSize(info.unit) && info.size ? getMeasureTextFromSize(info.size, info.unit) : '',
-      weightText: (typeof isWeightUnit === 'function' && isWeightUnit(info.unit) && info.size) ? getMeasureTextFromSize(info.size, info.unit) : '',
-      category: ensureCategoryExists(info.quick.category || info.ing.category || getRoomFallbackCategory(room), room),
-      place: ensurePlaceExists(info.quick.place || 'kyl', room),
-      room,
-      img: info.quick.img ? String(info.quick.img) : '',
-      type: 'buy',
-      openedAmount: 0,
-      packMode: ''
-    };
-  }
-
-  function mergeQuickPackBuyItem(nextItem) {
-    if (!nextItem) return;
-    const existing = items.find(entry =>
-      entry &&
-      entry.type === 'buy' &&
-      normalizeText(entry.name) === normalizeText(nextItem.name) &&
-      String(entry.unit || 'st').toLowerCase() === String(nextItem.unit || 'st').toLowerCase() &&
-      Number(entry.size || 0) === Number(nextItem.size || 0)
-    );
-
-    if (existing) {
-      existing.quantity = Math.max(1, safeNum(existing.quantity || 0) + safeNum(nextItem.quantity || 0));
-      if (safeNum(existing.price || 0) === 0 && safeNum(nextItem.price || 0) > 0) existing.price = safeNum(nextItem.price || 0);
-      existing.category = nextItem.category || existing.category;
-      existing.place = nextItem.place || existing.place || 'kyl';
-      existing.room = nextItem.room || existing.room || (typeof activeRoom !== 'undefined' ? activeRoom : 'koket');
-      if (!existing.img && nextItem.img) existing.img = nextItem.img;
-      existing.measureText = nextItem.measureText || existing.measureText || '';
-      existing.weightText = nextItem.weightText || existing.weightText || '';
-      return;
-    }
-
-    items.push({
-      ...nextItem,
-      quantity: Math.max(1, safeNum(nextItem.quantity || 1))
-    });
-  }
-
-  function addWholeQuickPacksToBuy(ingredient, packCount) {
-    const buyItem = buildQuickPackBuyItem(ingredient, packCount);
-    if (!buyItem) return false;
-    mergeQuickPackBuyItem(buyItem);
-    return true;
-  }
-
-  function computeMissingPackCount(entry) {
-    const ingredient = getNormalizedIngredient(entry && (entry.ingredient || entry));
-    const info = getQuickPackInfo(ingredient);
-    if (!ingredient || !info || !info.size) return 0;
-    const missingAmount = Math.max(0, safeNum(entry && entry.missing || 0));
-    if (missingAmount <= 0) return 0;
-    return Math.max(1, Math.ceil(missingAmount / info.size));
-  }
-
-  /* Lock Snabblista so home/recipe actions never mutate it */
-  syncQuickItemFromItem = function () {};
-
-  changeQuickPlace = function (index, newPlace) {
-    const item = quickItems[index];
-    if (!item) return;
-    const room = item.room || activeRoom;
-    item.place = ensurePlaceExists(newPlace || 'kyl', room);
-    save();
-    render();
-  };
-
-  changeQuickCategory = function (index, newCategory) {
-    const item = quickItems[index];
-    if (!item) return;
-    item.category = ensureCategoryExists(newCategory || getRoomFallbackCategory(item.room || activeRoom), item.room || activeRoom);
-    save();
-    render();
-  };
-
-  /* Hybrid restock: consume grams at home, but buy whole quick-template packs when depleted */
-  queueRestockIfDepleted = function (ingredient, amountBefore = 0) {
-    const ing = getNormalizedIngredient(ingredient);
-    if (!ing || amountBefore <= 0) return;
-
-    const amountAfter = typeof getHomeAmountForIngredient === 'function'
-      ? Math.max(0, safeNum(getHomeAmountForIngredient(ing)))
-      : 0;
-
-    if (amountAfter > 0) return;
-
-    const info = getQuickPackInfo(ing);
-    if (info && info.size) {
-      const packCount = Math.max(1, Math.ceil(Math.max(0, safeNum(amountBefore)) / info.size));
-      addWholeQuickPacksToBuy(ing, packCount);
-      return;
-    }
-
-    const buyItem = typeof createRestockBuyItemFromQuick === 'function'
-      ? createRestockBuyItemFromQuick(ing)
-      : null;
-
-    if (buyItem && typeof mergeCanonicalItemIntoList === 'function') {
-      mergeCanonicalItemIntoList(buyItem, 'buy');
-    }
-  };
-
-  addMissingToBuy = function () {
-    if (!currentRecipeMissing.length) {
-      if (typeof checkRecipe === 'function') checkRecipe();
-    }
-    if (!currentRecipeMissing.length) return;
-
-    currentRecipeMissing.forEach(entry => {
-      const ingredient = getNormalizedIngredient(entry && (entry.ingredient || entry));
-      if (!ingredient) return;
-
-      const packCount = computeMissingPackCount(entry);
-      if (packCount > 0 && addWholeQuickPacksToBuy(ingredient, packCount)) return;
-
-      const buyItem = typeof createBuyItemFromMissingEntry === 'function'
-        ? createBuyItemFromMissingEntry(entry)
-        : null;
-      if (buyItem && typeof mergeCanonicalItemIntoList === 'function') {
-        mergeCanonicalItemIntoList(buyItem, 'buy');
-      }
-    });
-
-    if (typeof save === 'function') save();
-    if (typeof checkRecipe === 'function') checkRecipe();
-    if (typeof render === 'function') render();
-  };
-})();
-
+window.__stableRebuildVersion = 'v1';
