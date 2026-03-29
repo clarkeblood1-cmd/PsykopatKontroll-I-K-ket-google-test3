@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v21-threshold-5g';
+const CACHE_NAME = 'matlista-app-v24-st-threshold-1';
 const ASSETS = [
   './',
   './index.html',

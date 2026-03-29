@@ -6653,14 +6653,45 @@ window.addEventListener('load', () => {
   createBuyItemFromMissingEntry = window.createBuyItemFromMissingEntry;
 
   const AUTO_BUY_WEIGHT_THRESHOLD_GRAMS = 5;
+  const AUTO_BUY_COUNT_THRESHOLD = 1;
+
+  function getAmountAfterRecipeUse(ingredient) {
+    const ing = normalizeRecipeIngredient(ingredient);
+    if (!ing) return 0;
+    return Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
+  }
 
   function shouldAutoBuyPack(ingredient) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing) return false;
 
-    const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
+    const amountAfter = getAmountAfterRecipeUse(ing);
     if (isWeightUnit(ing.unit)) return amountAfter <= AUTO_BUY_WEIGHT_THRESHOLD_GRAMS;
-    return amountAfter <= 0;
+    return amountAfter <= AUTO_BUY_COUNT_THRESHOLD;
+  }
+
+  function buildQuickCountBuyItem(ingredient, count = 1) {
+    const ing = normalizeRecipeIngredient(ingredient);
+    const quick = getQuickTemplateForIngredient(ing);
+    if (!ing || !quick) return null;
+
+    const room = quick.room || activeRoom;
+    const quantityPerTemplate = Math.max(1, Math.round(Number(quick.quantity || 1)));
+
+    return {
+      name: quick.name || ing.name,
+      price: Number(quick.price || 0),
+      quantity: Math.max(1, Math.round(Number(count || 1))) * quantityPerTemplate,
+      unit: String(quick.unit || ing.unit || 'st').toLowerCase(),
+      size: null,
+      measureText: '',
+      weightText: '',
+      category: ensureCategoryExists(quick.category || ing.category || getRoomFallbackCategory(room), room),
+      place: ensurePlaceExists(quick.place || 'kyl', room),
+      room,
+      img: quick.img ? String(quick.img) : '',
+      type: 'buy'
+    };
   }
 
   /* Restock size-based items only when they are nearly empty.
@@ -6676,9 +6707,46 @@ window.addEventListener('load', () => {
   };
   queueRestockIfDepleted = window.queueRestockIfDepleted;
 
+  /* Count items (st) should add +1 from Snabblistan when only 1 st is left after recipe use. */
+  window.queueConsumedCountToBuy = function queueConsumedCountToBuyAutoBuy(ingredient, consumedAmount = 0) {
+    const ing = normalizeRecipeIngredient(ingredient);
+    if (!ing) return;
+
+    const unit = String(ing.unit || 'st').toLowerCase();
+    if (supportsSize(unit)) return;
+
+    const amountAfter = getAmountAfterRecipeUse(ing);
+    if (amountAfter > AUTO_BUY_COUNT_THRESHOLD) return;
+
+    const buyItem = buildQuickCountBuyItem(ing, 1);
+    if (buyItem) {
+      mergeCanonicalItemIntoList(buyItem, 'buy');
+      return;
+    }
+
+    const countToBuy = Math.max(1, Math.round(Number(consumedAmount || 0)));
+    if (countToBuy <= 0) return;
+
+    mergeCanonicalItemIntoList({
+      name: ing.name,
+      price: 0,
+      quantity: countToBuy,
+      unit,
+      size: null,
+      measureText: '',
+      weightText: '',
+      category: ensureCategoryExists(ing.category || getRoomFallbackCategory(activeRoom), activeRoom),
+      place: ensurePlaceExists('kyl', activeRoom),
+      img: '',
+      type: 'buy'
+    }, 'buy');
+  };
+  queueConsumedCountToBuy = window.queueConsumedCountToBuy;
+
   /* Core behavior:
      - keep original gram consumption in Har hemma
-     - add one new pack to Buy list only when the remaining amount is low enough */
+     - add one new pack to Buy list only when the remaining amount is low enough
+     - add +1 st from Snabblistan when count-based items reach 1 st left */
   const originalUseRecipeIngredients = window.useRecipeIngredients || useRecipeIngredients;
   window.useRecipeIngredients = function useRecipeIngredientsAutoBuy() {
     const recipe = getSelectedRecipe();
@@ -6694,7 +6762,7 @@ window.addEventListener('load', () => {
   };
   useRecipeIngredients = window.useRecipeIngredients;
 
-  window.__autoBuyZip = 'v23-locked-5g';
+  window.__autoBuyZip = 'v24-st-threshold-1';
 })();
 
 
