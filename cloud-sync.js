@@ -83,7 +83,7 @@
       theme: localStorage.getItem('theme') || 'scifi',
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAtMs: Date.now(),
-      appVersion: 'cloud-sync-storage-migration-v3'
+      appVersion: 'cloud-sync-complete-v2'
     };
   }
 
@@ -243,14 +243,6 @@
 
   window.saveToCloud = saveToCloud;
   window.saveToCloudNow = saveToCloudNow;
-  window.setCloudStatusMessage = function setCloudStatusMessage(message) {
-    try {
-      const user = firebaseReady && firebase?.auth ? firebase.auth().currentUser : null;
-      setAuthUi(user || null, message || (user ? 'Inloggad – molnsynk aktiv' : 'Inte inloggad'));
-    } catch (error) {
-      console.error('Cloud status UI error:', error);
-    }
-  };
 
   function startAuthListener() {
     if (authReady || !initFirebase()) return;
@@ -261,11 +253,9 @@
 
       if (user) {
         setAuthUi(user, 'Inloggad – ansluter...');
-        try { window.dispatchEvent(new CustomEvent('cloud-auth-changed', { detail: { loggedIn: true, uid: user.uid || '' } })); } catch (e) {}
         startCloudSync();
       } else {
         stopCloudSync();
-        try { window.dispatchEvent(new CustomEvent('cloud-auth-changed', { detail: { loggedIn: false, uid: '' } })); } catch (e) {}
         setAuthUi(null, 'Inte inloggad');
       }
     });
