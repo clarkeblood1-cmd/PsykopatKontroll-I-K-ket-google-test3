@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v10-clean-image-system';
+const CACHE_NAME = 'matlista-app-v12-recipe-buy-pack-fix';
 const ASSETS = [
   './',
   './index.html',
