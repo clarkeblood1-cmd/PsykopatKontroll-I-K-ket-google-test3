@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v31-st-pack-1-g-0';
+const CACHE_NAME = 'matlista-app-v36-paket-exakt';
 const ASSETS = [
   './',
   './index.html',

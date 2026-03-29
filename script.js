@@ -4893,9 +4893,25 @@ function createRestockBuyItemFromQuick(ingredient) {
   };
 }
 
-function queueRestockIfDepleted(ingredient, amountBefore = 0) {
+function queueRestockIfDepleted(ingredient, amountBefore = 0, consumedAmount = 0) {
   const ing = normalizeRecipeIngredient(ingredient);
   if (!ing || amountBefore <= 0) return;
+
+  const quickPackSize = getQuickPackSizeForIngredient(ing);
+  const isWholePackageRecipe = isWeightUnit(ing.unit) && quickPackSize > 0;
+
+  if (isWholePackageRecipe) {
+    const wholePacksConsumed = Math.floor(Math.max(0, Number(consumedAmount || 0)) / quickPackSize);
+    const usedWholePackages = wholePacksConsumed * quickPackSize;
+    const consumedMatchesWholePackages = wholePacksConsumed > 0 && Math.abs(Math.max(0, Number(consumedAmount || 0)) - usedWholePackages) < 0.0001;
+    if (!consumedMatchesWholePackages) return;
+
+    const buyItem = buildQuickPackBuyItem(ing, wholePacksConsumed);
+    if (!buyItem) return;
+
+    pushOrMergeBuyPack(buyItem);
+    return;
+  }
 
   const amountAfter = getHomeAmountForIngredient(ing);
   if (amountAfter > 0) return;
@@ -5028,7 +5044,7 @@ function consumeIngredientEntries(entries = []) {
 
     const consumedTotal = Math.max(0, requestedAmount - remaining);
     if (supportsSize(ingredient.unit)) {
-      queueRestockIfDepleted(ingredient, amountBefore);
+      queueRestockIfDepleted(ingredient, amountBefore, consumedTotal);
     } else {
       queueConsumedCountToBuy(ingredient, consumedTotal);
     }
@@ -6736,33 +6752,38 @@ window.addEventListener('load', () => {
   };
   createBuyItemFromMissingEntry = window.createBuyItemFromMissingEntry;
 
-  function shouldAutoBuyPack(ingredient) {
+  function getConsumedWholePackageCount(ingredient, consumedAmount = 0) {
     const ing = normalizeRecipeIngredient(ingredient);
-    if (!ing) return false;
+    if (!ing) return 0;
 
-    const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
-    const homeMatches = getMatchingHomeItemsForIngredient(ing).map(match => match.item).filter(Boolean);
-    const packageMatches = homeMatches.filter(item => isPackageItem(item) && isWeightUnit(item.unit) && Number(item.size || 0) > 0);
+    const packSize = getQuickPackSizeForIngredient(ing);
+    const consumed = Math.max(0, Number(consumedAmount || 0));
+    if (!isWeightUnit(ing.unit) || packSize <= 0 || consumed <= 0) return 0;
 
-    if (packageMatches.length) {
-      const packsLeft = packageMatches.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0);
-      return packsLeft <= 1;
-    }
-
-    if (isWeightUnit(ing.unit)) return amountAfter <= 0;
-    return amountAfter <= 0;
+    const wholePacks = Math.floor(consumed / packSize);
+    const consumedWholeAmount = wholePacks * packSize;
+    return wholePacks > 0 && Math.abs(consumed - consumedWholeAmount) < 0.0001 ? wholePacks : 0;
   }
 
-  /* Restock pack-tracked items when they are down to 1 pack left.
-     Loose gram items restock only when they are fully empty. */
-  window.queueRestockIfDepleted = function queueRestockIfDepletedAutoBuy(ingredient, amountBefore = 0) {
+  /* Paket: lägg bara till nytt paket när receptet använder hela paket.
+     Lösa gram-varor köps bara när de är helt slut. */
+  window.queueRestockIfDepleted = function queueRestockIfDepletedAutoBuy(ingredient, amountBefore = 0, consumedAmount = 0) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing || amountBefore <= 0) return;
     if (!supportsSize(ing.unit)) return;
-    if (!shouldAutoBuyPack(ing)) return;
 
-    const buyItem = buildQuickPackBuyItem(ing, 1);
-    if (buyItem) pushOrMergeBuyPack(buyItem);
+    const consumedWholePackages = getConsumedWholePackageCount(ing, consumedAmount);
+    if (consumedWholePackages > 0) {
+      const buyItem = buildQuickPackBuyItem(ing, consumedWholePackages);
+      if (buyItem) pushOrMergeBuyPack(buyItem);
+      return;
+    }
+
+    const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
+    if (amountAfter > 0) return;
+
+    const buyItem = createRestockBuyItemFromQuick(ing);
+    if (buyItem) mergeCanonicalItemIntoList(buyItem, 'buy');
   };
   queueRestockIfDepleted = window.queueRestockIfDepleted;
 
@@ -6784,7 +6805,7 @@ window.addEventListener('load', () => {
   };
   useRecipeIngredients = window.useRecipeIngredients;
 
-  window.__autoBuyZip = 'v33-riktig-paket-system';
+  window.__autoBuyZip = 'v36-paket-exakt';
 })();
 
 
