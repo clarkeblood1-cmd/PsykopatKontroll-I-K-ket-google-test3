@@ -702,6 +702,35 @@ function getOpenedAmount(item) {
   return Math.min(size, opened);
 }
 
+function inferStockKind(item) {
+  if (!item) return 'count';
+  const explicit = String(item.stockKind || item.kind || '').toLowerCase();
+  if (explicit === 'package' || explicit === 'count') return explicit;
+  if (isWeightUnit(item.unit) && Math.max(0, Number(item.size || 0)) > 0) return 'package';
+  return 'count';
+}
+
+function isPackageItem(item) {
+  return inferStockKind(item) === 'package';
+}
+
+function getQuantityUnitLabel(item, amount = null) {
+  const count = Math.max(0, Number(amount != null ? amount : item?.quantity || 0));
+  const singular = count === 1;
+  if (isPackageItem(item)) return singular ? 'paket' : 'paket';
+  const baseUnit = String(item?.unit || 'st').toLowerCase();
+  if (baseUnit === 'st') return singular ? 'st' : 'st';
+  return baseUnit || 'st';
+}
+
+function formatPackageDisplay(item) {
+  if (!item || !supportsSize(item.unit)) return '';
+  const count = Math.max(0, Number(item.quantity || 0));
+  const size = Math.max(0, Number(item.size || 0));
+  if (!count || !size) return '';
+  return `${count} ${getQuantityUnitLabel(item, count)} × ${formatSmartMeasureDisplay(size, item.unit)}`;
+}
+
 function formatPackState(item) {
   if (!isPackTrackedItem(item)) return '';
   const unopened = Math.max(0, Number(item.quantity || 0));
@@ -709,8 +738,8 @@ function formatPackState(item) {
   const opened = getOpenedAmount(item);
   const parts = [];
 
-  if (unopened > 0) parts.push(`${unopened} påsar × ${formatSmartMeasureDisplay(size, item.unit)}`);
-  if (opened > 0) parts.push(`öppnad påse: ${formatSmartMeasureDisplay(opened, item.unit)} kvar`);
+  if (unopened > 0) parts.push(`${unopened} paket × ${formatSmartMeasureDisplay(size, item.unit)}`);
+  if (opened > 0) parts.push(`öppnat paket: ${formatSmartMeasureDisplay(opened, item.unit)} kvar`);
 
   return parts.join(' + ');
 }
@@ -719,12 +748,17 @@ function formatItemAmount(item) {
   const amount = Math.max(0, Number(item?.quantity || 0));
 
   if (supportsSize(item?.unit)) {
-    if (isPackTrackedItem(item)) {
-      const size = Math.max(0, Number(item?.size || 0));
-      const opened = getOpenedAmount(item);
-      const total = (amount * size) + opened;
-      const packText = formatPackState(item);
-      return packText ? `${formatSmartMeasureDisplay(total, item.unit)} totalt • ${packText}` : formatSmartMeasureDisplay(total, item.unit);
+    if (isPackageItem(item)) {
+      if (isPackTrackedItem(item)) {
+        const size = Math.max(0, Number(item?.size || 0));
+        const opened = getOpenedAmount(item);
+        const total = (amount * size) + opened;
+        const packText = formatPackState(item);
+        return packText ? `${formatSmartMeasureDisplay(total, item.unit)} totalt • ${packText}` : formatSmartMeasureDisplay(total, item.unit);
+      }
+
+      const packageText = formatPackageDisplay(item);
+      if (packageText) return packageText;
     }
 
     const size = Number(item?.size || 0);
@@ -732,7 +766,7 @@ function formatItemAmount(item) {
     return formatSmartMeasureDisplay(total, item.unit);
   }
 
-  return `${amount} ${item?.unit || 'st'}`;
+  return `${amount} ${getQuantityUnitLabel(item, amount)}`;
 }
 
 function portionToRecipeSize(portions) {
@@ -900,7 +934,7 @@ function changeRecipeIngredientChoice(recipeName, ingredientName, value) {
 function formatBuyCostLabel(item) {
   const price = Number(item?.price || 0);
   const amount = Math.max(0, Number(item?.quantity || 0));
-  const unitLabel = supportsSize(item?.unit) ? formatSizeValue(item.unit, item.size) : (item?.unit || 'st');
+  const unitLabel = isPackageItem(item) ? `${getQuantityUnitLabel(item, 1)} ${formatSizeValue(item.unit, item.size)}` : (supportsSize(item?.unit) ? formatSizeValue(item.unit, item.size) : getQuantityUnitLabel(item, 1));
   return {
     unitPrice: `${price} kr/${unitLabel}`,
     total: `${price * amount} kr`
@@ -1675,7 +1709,8 @@ function normalizeMeasureItemData(item, unitHint = null) {
     measureText: formatSmartMeasureDisplay(parsed, hint),
     weightText: getUnitFamily(hint) === 'weight' ? formatSmartMeasureDisplay(parsed, hint) : '',
     openedAmount,
-    packMode: getUnitFamily(hint) === 'weight' && (Number(item?.quantity || 0) > 1 || openedAmount > 0 || item?.packMode === 'bags') ? 'bags' : ''
+    packMode: getUnitFamily(hint) === 'weight' && (Number(item?.quantity || 0) > 1 || openedAmount > 0 || item?.packMode === 'bags') ? 'bags' : '',
+    stockKind: getUnitFamily(hint) === 'weight' ? 'package' : inferStockKind(item)
   };
 }
 
@@ -1933,7 +1968,8 @@ function hydrateData() {
       type: item?.type === 'buy' ? 'buy' : 'home',
       img: item?.img ? String(item.img) : getAutoImagePath(item?.name || ''),
       openedAmount: Math.max(0, Number(item?.openedAmount || 0)),
-      packMode: item?.packMode === 'bags' ? 'bags' : ''
+      packMode: item?.packMode === 'bags' ? 'bags' : '',
+      stockKind: inferStockKind(item)
     };
   }).filter(item => item.name);
 
@@ -1952,7 +1988,8 @@ function hydrateData() {
       place: ensurePlaceExists(item?.place || fallbackPlace, room),
       room,
       type: 'home',
-      img: item?.img ? String(item.img) : getAutoImagePath(item?.name || '')
+      img: item?.img ? String(item.img) : getAutoImagePath(item?.name || ''),
+      stockKind: inferStockKind(item)
     };
   }).filter(item => item.name);
 
@@ -3171,7 +3208,7 @@ function createCard(item, source = 'items') {
       <div class="meta">
         <div class="quantity-wrap">
           <input type="number" min="0" value="${Number(item.quantity || 0)}" onchange="updateQuantity(${realIndex}, this.value)">
-          <span>${supportsSize(item.unit) ? formatSizeValue(item.unit, item.size) : (item.unit || 'st')}</span>
+          <span>${isPackageItem(item) ? `${getQuantityUnitLabel(item, Number(item.quantity || 0))} × ${formatSizeValue(item.unit, item.size)}` : (supportsSize(item.unit) ? formatSizeValue(item.unit, item.size) : getQuantityUnitLabel(item, Number(item.quantity || 0)))}</span>
         </div>
         ${item.type === 'buy'
           ? `<div class="price-block">${
@@ -3757,7 +3794,8 @@ function buildItemFromForm() {
     category: ensureCategoryExists(categoryInput?.value || (matchedQuick ? matchedQuick.category : getRoomFallbackCategory(itemRoom)), itemRoom),
     place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : fallbackPlace), itemRoom),
     type: 'home',
-    img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name)
+    img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name),
+    stockKind: isWeightUnit(resolvedUnit) && parsedMeasure ? 'package' : inferStockKind(matchedQuick || { unit: resolvedUnit })
   };
 
   return { item, file: fileInput?.files?.[0] || null, matchedQuick };
@@ -4734,7 +4772,8 @@ function mergeCanonicalItemIntoList(nextItem, type = 'buy') {
     price: Number(nextItem.price || 0),
     category: ensureCategoryExists(nextItem.category || getRoomFallbackCategory(nextItem.room || activeRoom), nextItem.room || activeRoom),
     place: ensurePlaceExists(nextItem.place || 'kyl'),
-    img: nextItem.img ? String(nextItem.img) : ''
+    img: nextItem.img ? String(nextItem.img) : '',
+    stockKind: inferStockKind(nextItem)
   };
 
   const existing = items.find(entry =>
@@ -4807,7 +4846,8 @@ function createRestockBuyItemFromQuick(ingredient) {
     category: ensureCategoryExists(quickMatch.category || ing.category || getRoomFallbackCategory(quickMatch.room || activeRoom), quickMatch.room || activeRoom),
     place: ensurePlaceExists(quickMatch.place || 'kyl'),
     img: quickMatch.img ? String(quickMatch.img) : '',
-    type: 'buy'
+    type: 'buy',
+    stockKind: inferStockKind(quickMatch)
   };
 }
 
@@ -6555,7 +6595,8 @@ window.addEventListener('load', () => {
       place: ensurePlaceExists(quick.place || 'kyl', room),
       room,
       img: quick.img ? String(quick.img) : '',
-      type: 'buy'
+      type: 'buy',
+      stockKind: 'package'
     };
   }
 
@@ -6584,7 +6625,8 @@ window.addEventListener('load', () => {
 
     items.push({
       ...item,
-      quantity: Math.max(1, safeNum(item.quantity || 1))
+      quantity: Math.max(1, safeNum(item.quantity || 1)),
+      stockKind: 'package'
     });
   }
 
@@ -6658,20 +6700,10 @@ window.addEventListener('load', () => {
 
     const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
     const homeMatches = getMatchingHomeItemsForIngredient(ing).map(match => match.item).filter(Boolean);
+    const packageMatches = homeMatches.filter(item => isPackageItem(item) && isWeightUnit(item.unit) && Number(item.size || 0) > 0);
 
-    const hasPackTrackedHomeItem = homeMatches.some(item =>
-      isWeightUnit(item.unit) && Number(item.size || 0) > 0 && (
-        isPackTrackedItem(item) ||
-        String(item.packMode || '') === 'bags' ||
-        Number(item.openedAmount || 0) > 0
-      )
-    );
-
-    if (hasPackTrackedHomeItem) {
-      const packsLeft = homeMatches.reduce((sum, item) => {
-        if (!isWeightUnit(item.unit) || Number(item.size || 0) <= 0) return sum;
-        return sum + Math.max(0, Number(item.quantity || 0));
-      }, 0);
+    if (packageMatches.length) {
+      const packsLeft = packageMatches.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0);
       return packsLeft <= 1;
     }
 
@@ -6710,7 +6742,7 @@ window.addEventListener('load', () => {
   };
   useRecipeIngredients = window.useRecipeIngredients;
 
-  window.__autoBuyZip = 'v23-locked-5g';
+  window.__autoBuyZip = 'v33-riktig-paket-system';
 })();
 
 
