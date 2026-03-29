@@ -6652,19 +6652,33 @@ window.addEventListener('load', () => {
   };
   createBuyItemFromMissingEntry = window.createBuyItemFromMissingEntry;
 
-  /* Disable empty-only restock for size-based recipe items.
-     Auto-buy will handle pack replenishment every time you cook. */
+  const AUTO_BUY_WEIGHT_THRESHOLD_GRAMS = 5;
+
+  function shouldAutoBuyPack(ingredient) {
+    const ing = normalizeRecipeIngredient(ingredient);
+    if (!ing) return false;
+
+    const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
+    if (isWeightUnit(ing.unit)) return amountAfter <= AUTO_BUY_WEIGHT_THRESHOLD_GRAMS;
+    return amountAfter <= 0;
+  }
+
+  /* Restock size-based items only when they are nearly empty.
+     Weight items restock at 5 g or less. */
   window.queueRestockIfDepleted = function queueRestockIfDepletedAutoBuy(ingredient, amountBefore = 0) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing || amountBefore <= 0) return;
+    if (!supportsSize(ing.unit)) return;
+    if (!shouldAutoBuyPack(ing)) return;
 
-    if (supportsSize(ing.unit)) return;
+    const buyItem = buildQuickPackBuyItem(ing, 1);
+    if (buyItem) pushOrMergeBuyPack(buyItem);
   };
   queueRestockIfDepleted = window.queueRestockIfDepleted;
 
   /* Core behavior:
      - keep original gram consumption in Har hemma
-     - after consuming, add whole quick-template packs to Buy list every time recipe uses that ingredient */
+     - add one new pack to Buy list only when the remaining amount is low enough */
   const originalUseRecipeIngredients = window.useRecipeIngredients || useRecipeIngredients;
   window.useRecipeIngredients = function useRecipeIngredientsAutoBuy() {
     const recipe = getSelectedRecipe();
@@ -6674,28 +6688,12 @@ window.addEventListener('load', () => {
 
     consumeIngredientEntries(combinedEntries);
 
-    combinedEntries.forEach(entry => {
-      const ingredient = normalizeRecipeIngredient(entry?.ingredient || entry);
-      if (!ingredient) return;
-      if (!supportsSize(ingredient.unit)) return;
-
-      const packSize = getQuickPackSizeForIngredient(ingredient);
-      if (packSize <= 0) return;
-
-      const requestedAmount = Math.max(0, Number(recipeIngredientCanonicalAmount(ingredient) || 0));
-      if (requestedAmount <= 0) return;
-
-      const packCount = Math.max(1, Math.ceil(requestedAmount / packSize));
-      const buyItem = buildQuickPackBuyItem(ingredient, packCount);
-      if (buyItem) pushOrMergeBuyPack(buyItem);
-    });
-
     save();
     checkRecipe();
     render();
   };
   useRecipeIngredients = window.useRecipeIngredients;
 
-  window.__autoBuyZip = 'v20';
+  window.__autoBuyZip = 'v21-threshold-5g';
 })();
 
