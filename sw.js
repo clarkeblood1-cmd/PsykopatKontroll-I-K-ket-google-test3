@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v11-mobile-css';
+const CACHE_NAME = 'matlista-app-v11-no-sticky-scroll';
 const ASSETS = [
   './',
   './index.html',

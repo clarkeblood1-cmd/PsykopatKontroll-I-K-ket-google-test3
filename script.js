@@ -2386,7 +2386,7 @@ function resizeImage(file, callback) {
       img.onerror = () => reject(new Error('Kunde inte öppna bilden.'));
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const maxSize = 1600;
+        const maxSize = 220;
         let { width, height } = img;
 
         if (width > height && width > maxSize) {
@@ -2397,17 +2397,10 @@ function resizeImage(file, callback) {
           height = maxSize;
         }
 
-        canvas.width = Math.max(1, Math.round(width));
-        canvas.height = Math.max(1, Math.round(height));
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Kunde inte skapa canvas för bilden.'));
-          return;
-        }
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
         if (typeof callback === 'function') callback(dataUrl);
         resolve(dataUrl);
       };
@@ -3463,65 +3456,22 @@ function suggestUnit() {
   updateSizeSelect('itemSize', unit.value, null, category);
 }
 
-function closeImageModal() {
-  const modal = document.getElementById('imageModal');
-  const modalImg = document.getElementById('modalImg');
-  const modalCaption = document.getElementById('imageModalCaption');
-  if (modal) modal.style.display = 'none';
-  if (modalImg) {
-    modalImg.removeAttribute('src');
-    modalImg.style.transform = 'scale(1)';
-  }
-  if (modalCaption) modalCaption.textContent = '';
-}
-
-function openImageModal(src, title = '') {
+function showImage(index) {
+  const src = getItemImage(items[index]);
   if (!src) return;
   const modal = document.getElementById('imageModal');
   const modalImg = document.getElementById('modalImg');
-  const modalCaption = document.getElementById('imageModalCaption');
-  if (!modal || !modalImg) return;
-  modal.style.display = 'flex';
-  modalImg.src = src;
-  modalImg.alt = title || 'Stor bild';
-  modalImg.style.transform = 'scale(1)';
-  if (modalCaption) modalCaption.textContent = title || '';
-}
-
-function showImage(index) {
-  const item = items[index];
-  const src = getItemImage(item);
-  openImageModal(src, item?.name || 'Bild');
+  if (modal) modal.style.display = 'flex';
+  if (modalImg) modalImg.src = src;
 }
 
 function showQuickImage(index) {
-  const item = quickItems[index];
-  const src = getItemImage(item);
-  openImageModal(src, item?.name || 'Bild');
-}
-
-function initImageModal() {
+  const src = getItemImage(quickItems[index]);
+  if (!src) return;
   const modal = document.getElementById('imageModal');
-  const modalInner = document.getElementById('imageModalInner');
   const modalImg = document.getElementById('modalImg');
-  const closeBtn = document.getElementById('imageModalClose');
-
-  if (!modal || modal.dataset.ready === '1') return;
-  modal.dataset.ready = '1';
-
-  modal.addEventListener('click', () => closeImageModal());
-  if (modalInner) modalInner.addEventListener('click', event => event.stopPropagation());
-  if (closeBtn) closeBtn.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    closeImageModal();
-  });
-  document.addEventListener('keydown', event => {
-    if (event.key === 'Escape') closeImageModal();
-  });
-  if (modalImg) {
-    modalImg.addEventListener('click', event => event.stopPropagation());
-  }
+  if (modal) modal.style.display = 'flex';
+  if (modalImg) modalImg.src = src;
 }
 
 function clearInputs(focusName = false) {
@@ -6322,7 +6272,6 @@ function initKitchenPageTabs() {
 
 document.addEventListener('DOMContentLoaded', () => {
   initKitchenPageTabs();
-  initImageModal();
   updateManageCounts();
 });
 
