@@ -1324,3 +1324,13 @@ button:hover{background:var(--green-dark);color:#fff}
     grid-column:auto;
   }
 }
+
+
+#itemPackUnitWrap,
+#editPackUnitWrap{
+  min-width: 120px;
+}
+
+.quick-hidden-field select{
+  width: 100%;
+}

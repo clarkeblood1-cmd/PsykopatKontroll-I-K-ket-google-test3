@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v44-fixed-smart-pack-logic';
+const CACHE_NAME = 'matlista-app-v46-st-without-weight';
 const ASSETS = [
   './',
   './index.html',
