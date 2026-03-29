@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v21-home-display-fix';
+const CACHE_NAME = 'matlista-app-v20-auto-buy';
 const ASSETS = [
   './',
   './index.html',
