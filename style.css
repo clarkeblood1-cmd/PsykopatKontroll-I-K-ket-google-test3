@@ -1324,3 +1324,7 @@ button:hover{background:var(--green-dark);color:#fff}
     grid-column:auto;
   }
 }
+
+
+.measure-option{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;color:var(--muted);font-weight:700}
+.measure-option input{width:auto;min-height:auto;margin:0}

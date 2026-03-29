@@ -1722,6 +1722,10 @@ function getMeasureSummaryEl() {
   return document.getElementById('itemMeasureSummary');
 }
 
+function isNoPackageSelected() {
+  return !!document.getElementById('itemNoPackage')?.checked;
+}
+
 function updateMeasureSummary() {
   const amountEl = document.getElementById('itemQuantity');
   const unitEl = document.getElementById('itemUnit');
@@ -1733,6 +1737,12 @@ function updateMeasureSummary() {
   const amount = Math.max(1, Number(amountEl.value || 1));
   const unit = unitEl.value;
   const parsed = parseSmartMeasureInput(inputEl.value, unit);
+
+  if (isEditNoPackageSelected()) {
+    summaryEl.textContent = '';
+    summaryEl.style.display = 'none';
+    return;
+  }
 
   if (!parsed || !supportsSize(unit)) {
     summaryEl.textContent = '';
@@ -1751,21 +1761,24 @@ function syncMeasureModeVisibility() {
   const sizeWrap = document.getElementById('itemSizeWrap');
   const measureWrap = document.getElementById('itemMeasureTextWrap');
   const inputEl = getMeasureTextInput();
+  const noPackageEl = document.getElementById('itemNoPackage');
 
   if (!unitEl || !sizeWrap || !measureWrap) return;
 
   const smartMode = supportsSize(unitEl.value);
+  const noPackage = smartMode && !!noPackageEl?.checked;
   sizeWrap.style.display = smartMode ? 'none' : '';
   measureWrap.style.display = smartMode ? '' : 'none';
 
-  if (inputEl) inputEl.placeholder = getSmartMeasurePlaceholder(unitEl.value);
+  if (noPackageEl) noPackageEl.parentElement.style.display = smartMode ? 'flex' : 'none';
+  if (inputEl) inputEl.placeholder = noPackage ? 'Ingen förpackning – lämna mängd per st tom' : getSmartMeasurePlaceholder(unitEl.value);
 
-  if (smartMode && inputEl?.value) {
+  if (smartMode && !noPackage && inputEl?.value) {
     const parsed = parseSmartMeasureInput(inputEl.value, unitEl.value);
     if (parsed) inputEl.value = formatSmartMeasureDisplay(parsed, unitEl.value);
   }
 
-  if (!smartMode && inputEl) inputEl.value = '';
+  if ((!smartMode || noPackage) && inputEl) inputEl.value = '';
   updateMeasureSummary();
 }
 
@@ -1775,6 +1788,10 @@ function getEditMeasureTextInput() {
 
 function getEditMeasureSummaryEl() {
   return document.getElementById('editMeasureSummary');
+}
+
+function isEditNoPackageSelected() {
+  return !!document.getElementById('editNoPackage')?.checked;
 }
 
 function getIngredientEditMeasureTextInput() {
@@ -1796,6 +1813,12 @@ function updateIngredientEditMeasureSummary() {
   const amount = Math.max(1, Number(amountEl.value || 1));
   const unit = unitEl.value;
   const parsed = parseSmartMeasureInput(inputEl.value, unit);
+
+  if (isNoPackageSelected()) {
+    summaryEl.textContent = '';
+    summaryEl.style.display = 'none';
+    return;
+  }
 
   if (!parsed || !supportsSize(unit)) {
     summaryEl.textContent = '';
@@ -1844,6 +1867,12 @@ function updateEditMeasureSummary() {
   const unit = unitEl.value;
   const parsed = parseSmartMeasureInput(inputEl.value, unit);
 
+  if (isNoPackageSelected()) {
+    summaryEl.textContent = '';
+    summaryEl.style.display = 'none';
+    return;
+  }
+
   if (!parsed || !supportsSize(unit)) {
     summaryEl.textContent = '';
     summaryEl.style.display = 'none';
@@ -1861,21 +1890,24 @@ function syncEditMeasureModeVisibility() {
   const sizeWrap = document.getElementById('editSizeWrap');
   const measureWrap = document.getElementById('editMeasureTextWrap');
   const inputEl = getEditMeasureTextInput();
+  const noPackageEl = document.getElementById('editNoPackage');
 
   if (!unitEl || !sizeWrap || !measureWrap) return;
 
   const smartMode = supportsSize(unitEl.value);
+  const noPackage = smartMode && !!noPackageEl?.checked;
   sizeWrap.style.display = smartMode ? 'none' : '';
   measureWrap.style.display = smartMode ? '' : 'none';
 
-  if (inputEl) inputEl.placeholder = getSmartMeasurePlaceholder(unitEl.value);
+  if (noPackageEl) noPackageEl.parentElement.style.display = smartMode ? 'flex' : 'none';
+  if (inputEl) inputEl.placeholder = noPackage ? 'Ingen förpackning – lämna mängd per st tom' : getSmartMeasurePlaceholder(unitEl.value);
 
-  if (smartMode && inputEl?.value) {
+  if (smartMode && !noPackage && inputEl?.value) {
     const parsed = parseSmartMeasureInput(inputEl.value, unitEl.value);
     if (parsed) inputEl.value = formatSmartMeasureDisplay(parsed, unitEl.value);
   }
 
-  if (!smartMode && inputEl) inputEl.value = '';
+  if ((!smartMode || noPackage) && inputEl) inputEl.value = '';
   updateEditMeasureSummary();
 }
 
@@ -3327,7 +3359,9 @@ function applyQuickItemToMainForm(index) {
   if (itemCategory) itemCategory.value = item.category || getRoomFallbackCategory(item.room || activeRoom);
   if (itemUnit) itemUnit.value = item.unit || 'st';
   if (itemSize) updateSizeSelect('itemSize', item.unit || 'st', item.size);
-  if (itemMeasureText) itemMeasureText.value = supportsSize(item.unit) ? getMeasureTextFromSize(item.size, item.unit) : '';
+  if (itemMeasureText) itemMeasureText.value = supportsSize(item.unit) && item.size ? getMeasureTextFromSize(item.size, item.unit) : '';
+  const itemNoPackage = document.getElementById('itemNoPackage');
+  if (itemNoPackage) itemNoPackage.checked = !!(supportsSize(item.unit) && !item.size);
   if (itemPlace) {
     itemPlace.dataset.currentValue = item.place || 'kyl';
     renderPlaceOptions();
@@ -3559,7 +3593,9 @@ function openEditModal(item, isQuick, index) {
   if (editQuantity) editQuantity.value = Math.max(1, Number(item.quantity || 1));
   if (editUnit) editUnit.value = item.unit || 'st';
   if (editSize) updateSizeSelect('editSize', item.unit || 'st', item.size);
-  if (editMeasureText) editMeasureText.value = supportsSize(item.unit) ? getMeasureTextFromSize(item.size, item.unit) : '';
+  if (editMeasureText) editMeasureText.value = supportsSize(item.unit) && item.size ? getMeasureTextFromSize(item.size, item.unit) : '';
+  const editNoPackage = document.getElementById('editNoPackage');
+  if (editNoPackage) editNoPackage.checked = !!(supportsSize(item.unit) && !item.size);
   if (editCategory) {
     editCategory.dataset.currentValue = item.category || getRoomFallbackCategory(item.room || activeRoom);
     renderCategoryOptions();
@@ -3621,11 +3657,12 @@ function saveEditItem() {
   const updatedUnit = document.getElementById('editUnit')?.value || 'st';
   const updatedName = document.getElementById('editName')?.value.trim() || '';
   const updatedQuantity = Math.max(1, Number(document.getElementById('editQuantity')?.value || 1));
-  const parsedMeasure = supportsSize(updatedUnit)
+  const editNoPackage = supportsSize(updatedUnit) && !!document.getElementById('editNoPackage')?.checked;
+  const parsedMeasure = supportsSize(updatedUnit) && !editNoPackage
     ? parseSmartMeasureInput(document.getElementById('editMeasureText')?.value || currentItem.measureText || currentItem.weightText || currentItem.size, updatedUnit)
     : null;
 
-  if (supportsSize(updatedUnit)) {
+  if (supportsSize(updatedUnit) && !editNoPackage) {
     if (!parsedMeasure) {
       alert(getMeasureInputError(updatedUnit));
       return;
@@ -3646,16 +3683,17 @@ function saveEditItem() {
     quantity: updatedQuantity,
     unit: updatedUnit,
     size: supportsSize(updatedUnit)
-      ? parsedMeasure
+      ? (editNoPackage ? null : parsedMeasure)
       : normalizeSize(updatedUnit, document.getElementById('editSize')?.value || currentItem.size, document.getElementById('editCategory')?.value || currentItem.category),
-    measureText: supportsSize(updatedUnit) && parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, updatedUnit) : '',
-    weightText: isWeightUnit(updatedUnit) && parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, updatedUnit) : '',
+    measureText: supportsSize(updatedUnit) && parsedMeasure && !editNoPackage ? formatSmartMeasureDisplay(parsedMeasure, updatedUnit) : '',
+    weightText: isWeightUnit(updatedUnit) && parsedMeasure && !editNoPackage ? formatSmartMeasureDisplay(parsedMeasure, updatedUnit) : '',
     room: updatedRoom,
     category: ensureCategoryExists(document.getElementById('editCategory')?.value || currentItem.category || getRoomFallbackCategory(updatedRoom), updatedRoom),
     place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || getPlacesForRoom(updatedRoom)[0]?.key || 'kyl', updatedRoom),
     img: currentItem?.img && String(currentItem.img).startsWith('data:')
       ? String(currentItem.img)
-      : getAutoImagePath(updatedName)
+      : getAutoImagePath(updatedName),
+    stockKind: isWeightUnit(updatedUnit) && parsedMeasure && !editNoPackage ? 'package' : inferStockKind({ ...currentItem, unit: updatedUnit, size: editNoPackage ? null : parsedMeasure })
   };
 
   if (!updated.name) return;
@@ -3736,6 +3774,8 @@ function clearInputs(focusName = false) {
   if (itemUnit) itemUnit.value = 'st';
   if (itemSize) updateSizeSelect('itemSize', 'st');
   if (itemMeasureText) itemMeasureText.value = '';
+  const itemNoPackage = document.getElementById('itemNoPackage');
+  if (itemNoPackage) itemNoPackage.checked = false;
   renderQuickAddRoomOptions(selectedQuickRoom, false);
 
   selectedAddQuickIndex = null;
@@ -3754,6 +3794,7 @@ function buildItemFromForm() {
   const sizeInput = document.getElementById('itemSize');
   const placeInput = document.getElementById('itemPlace');
   const itemMeasureTextInput = document.getElementById('itemMeasureText');
+  const itemNoPackageInput = document.getElementById('itemNoPackage');
 
   const name = nameInput?.value.trim() || '';
   if (!name) return null;
@@ -3761,11 +3802,12 @@ function buildItemFromForm() {
   const matchedQuick = quickItems.find(q => normalizeText(q.name) === normalizeText(name));
   const resolvedUnit = unitInput?.value || (matchedQuick ? matchedQuick.unit : 'st');
   const quantity = Math.max(1, Number(qtyInput?.value || 1));
-  const parsedMeasure = supportsSize(resolvedUnit)
+  const noPackage = supportsSize(resolvedUnit) && !!itemNoPackageInput?.checked;
+  const parsedMeasure = supportsSize(resolvedUnit) && !noPackage
     ? parseSmartMeasureInput(itemMeasureTextInput?.value || matchedQuick?.measureText || matchedQuick?.weightText || matchedQuick?.size, resolvedUnit)
     : null;
 
-  if (supportsSize(resolvedUnit)) {
+  if (supportsSize(resolvedUnit) && !noPackage) {
     if (!parsedMeasure) {
       alert(getMeasureInputError(resolvedUnit));
       return null;
@@ -3786,16 +3828,16 @@ function buildItemFromForm() {
     quantity,
     unit: resolvedUnit,
     size: supportsSize(resolvedUnit)
-      ? parsedMeasure
+      ? (noPackage ? null : parsedMeasure)
       : normalizeSize(resolvedUnit, sizeInput?.value || (matchedQuick ? matchedQuick.size : null), categoryInput?.value || matchedQuick?.category),
-    measureText: supportsSize(resolvedUnit) && parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, resolvedUnit) : '',
-    weightText: isWeightUnit(resolvedUnit) && parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, resolvedUnit) : '',
+    measureText: supportsSize(resolvedUnit) && parsedMeasure && !noPackage ? formatSmartMeasureDisplay(parsedMeasure, resolvedUnit) : '',
+    weightText: isWeightUnit(resolvedUnit) && parsedMeasure && !noPackage ? formatSmartMeasureDisplay(parsedMeasure, resolvedUnit) : '',
     room: itemRoom,
     category: ensureCategoryExists(categoryInput?.value || (matchedQuick ? matchedQuick.category : getRoomFallbackCategory(itemRoom)), itemRoom),
     place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : fallbackPlace), itemRoom),
     type: 'home',
     img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name),
-    stockKind: isWeightUnit(resolvedUnit) && parsedMeasure ? 'package' : inferStockKind(matchedQuick || { unit: resolvedUnit })
+    stockKind: isWeightUnit(resolvedUnit) && parsedMeasure && !noPackage ? 'package' : inferStockKind(matchedQuick || { unit: resolvedUnit, size: noPackage ? null : parsedMeasure })
   };
 
   return { item, file: fileInput?.files?.[0] || null, matchedQuick };
@@ -6392,8 +6434,8 @@ document.addEventListener('input', (e) => {
 
 document.addEventListener('change', (e) => {
   if (!e.target) return;
-  if (e.target.id === 'itemUnit') syncMeasureModeVisibility();
-  if (e.target.id === 'editUnit') syncEditMeasureModeVisibility();
+  if (e.target.id === 'itemUnit' || e.target.id === 'itemNoPackage') syncMeasureModeVisibility();
+  if (e.target.id === 'editUnit' || e.target.id === 'editNoPackage') syncEditMeasureModeVisibility();
   if (e.target.id === 'ingredientEditUnit') syncIngredientEditMeasureModeVisibility();
   if (e.target.id === 'itemMeasureText') formatMeasureInputField(e.target, document.getElementById('itemUnit')?.value || 'g');
   if (e.target.id === 'editMeasureText') formatMeasureInputField(e.target, document.getElementById('editUnit')?.value || 'g');
