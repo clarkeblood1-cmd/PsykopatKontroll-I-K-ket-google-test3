@@ -4829,6 +4829,9 @@ function queueConsumedCountToBuy(ingredient, consumedAmount = 0) {
   const countToBuy = Math.max(0, Math.ceil(Number(consumedAmount || 0)));
   if (!ing || countToBuy <= 0) return;
 
+  const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
+  if (amountAfter > 1) return;
+
   const template = cloneTemplateForIngredient(ing) || {
     name: ing.name,
     price: 0,
@@ -4852,7 +4855,7 @@ function queueConsumedCountToBuy(ingredient, consumedAmount = 0) {
     size: null,
     measureText: '',
     weightText: '',
-    quantity: countToBuy
+    quantity: 1
   }, 'buy');
 }
 
@@ -6642,9 +6645,6 @@ window.addEventListener('load', () => {
     const missingAmount = Math.max(0, Number(entry.missing || 0));
     if (!missingAmount) return null;
 
-    const alreadyHaveAtHome = Math.max(0, Number(getHomeAmountForIngredient(ingredient) || 0));
-    if (alreadyHaveAtHome > 0) return null;
-
     const packSize = getQuickPackSizeForIngredient(ingredient);
     if (packSize > 0) {
       const packCount = Math.max(1, Math.ceil(missingAmount / packSize));
@@ -6655,96 +6655,39 @@ window.addEventListener('load', () => {
   };
   createBuyItemFromMissingEntry = window.createBuyItemFromMissingEntry;
 
-  function getAmountAfterRecipeUse(ingredient) {
-    const ing = normalizeRecipeIngredient(ingredient);
-    if (!ing) return 0;
-    return Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
-  }
-
-  function shouldAutoBuyPack(ingredient) {
+  function shouldAutoBuyPack(ingredient, amountBefore = 0) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing) return false;
 
-    const amountAfter = getAmountAfterRecipeUse(ing);
+    const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
+    const quickPackSize = Math.max(0, Number(getQuickPackSizeForIngredient(ing) || 0));
+
+    if (isWeightUnit(ing.unit)) {
+      const hadMultiplePacksBefore = quickPackSize > 0 && Number(amountBefore || 0) > quickPackSize;
+      if (hadMultiplePacksBefore) return amountAfter <= quickPackSize;
+      return amountAfter <= 0;
+    }
+
     return amountAfter <= 0;
   }
 
-  function buildQuickCountBuyItem(ingredient, count = 1) {
-    const ing = normalizeRecipeIngredient(ingredient);
-    const quick = getQuickTemplateForIngredient(ing);
-    if (!ing || !quick) return null;
-
-    const room = quick.room || activeRoom;
-    const quantityPerTemplate = Math.max(1, Math.round(Number(quick.quantity || 1)));
-
-    return {
-      name: quick.name || ing.name,
-      price: Number(quick.price || 0),
-      quantity: Math.max(1, Math.round(Number(count || 1))) * quantityPerTemplate,
-      unit: String(quick.unit || ing.unit || 'st').toLowerCase(),
-      size: null,
-      measureText: '',
-      weightText: '',
-      category: ensureCategoryExists(quick.category || ing.category || getRoomFallbackCategory(room), room),
-      place: ensurePlaceExists(quick.place || 'kyl', room),
-      room,
-      img: quick.img ? String(quick.img) : '',
-      type: 'buy'
-    };
-  }
-
-  /* Restock size-based items only when nothing is left at home. */
+  /* Recipe button:
+     - weight packs (e.g. 2 st × 450 g) add +1 pack when they go down to 1 pack left
+     - loose gram items add only when they are completely empty */
   window.queueRestockIfDepleted = function queueRestockIfDepletedAutoBuy(ingredient, amountBefore = 0) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing || amountBefore <= 0) return;
     if (!supportsSize(ing.unit)) return;
-    if (!shouldAutoBuyPack(ing)) return;
+    if (!shouldAutoBuyPack(ing, amountBefore)) return;
 
     const buyItem = buildQuickPackBuyItem(ing, 1);
     if (buyItem) pushOrMergeBuyPack(buyItem);
   };
   queueRestockIfDepleted = window.queueRestockIfDepleted;
 
-  /* Count items (st) should add +1 from Snabblistan when Har hemma goes down to 1 st or less after recipe use. */
-  window.queueConsumedCountToBuy = function queueConsumedCountToBuyAutoBuy(ingredient, consumedAmount = 0) {
-    const ing = normalizeRecipeIngredient(ingredient);
-    if (!ing) return;
-
-    const unit = String(ing.unit || 'st').toLowerCase();
-    if (supportsSize(unit)) return;
-
-    const amountAfter = getAmountAfterRecipeUse(ing);
-    if (amountAfter > 1) return;
-
-    const buyItem = buildQuickCountBuyItem(ing, 1);
-    if (buyItem) {
-      mergeCanonicalItemIntoList(buyItem, 'buy');
-      return;
-    }
-
-    const countToBuy = Math.max(1, Math.round(Number(consumedAmount || 0)));
-    if (countToBuy <= 0) return;
-
-    mergeCanonicalItemIntoList({
-      name: ing.name,
-      price: 0,
-      quantity: countToBuy,
-      unit,
-      size: null,
-      measureText: '',
-      weightText: '',
-      category: ensureCategoryExists(ing.category || getRoomFallbackCategory(activeRoom), activeRoom),
-      place: ensurePlaceExists('kyl', activeRoom),
-      img: '',
-      type: 'buy'
-    }, 'buy');
-  };
-  queueConsumedCountToBuy = window.queueConsumedCountToBuy;
-
   /* Core behavior:
-     - keep original consumption in Har hemma
-     - add one new pack to Buy list only when nothing is left at home
-     - add +1 st from Snabblistan when Har hemma goes down to 1 st or less */
+     - keep original gram consumption in Har hemma
+     - add one new pack to Buy list only when the remaining amount is low enough */
   const originalUseRecipeIngredients = window.useRecipeIngredients || useRecipeIngredients;
   window.useRecipeIngredients = function useRecipeIngredientsAutoBuy() {
     const recipe = getSelectedRecipe();
@@ -6754,38 +6697,13 @@ window.addEventListener('load', () => {
 
     consumeIngredientEntries(combinedEntries);
 
-    combinedEntries.forEach(entry => {
-      const ing = normalizeRecipeIngredient(entry?.ingredient || entry);
-      if (!ing) return;
-      const unit = String(ing.unit || 'st').toLowerCase();
-
-      if (supportsSize(unit)) {
-        const amountAfter = getAmountAfterRecipeUse(ing);
-        if (amountAfter > 0) return;
-
-        const restockBuyItem = createRestockBuyItemFromQuick(ing);
-        if (restockBuyItem) {
-          mergeCanonicalItemIntoList(restockBuyItem, 'buy');
-        }
-        return;
-      }
-
-      const amountAfter = getAmountAfterRecipeUse(ing);
-      if (amountAfter > 1) return;
-
-      const buyItem = buildQuickCountBuyItem(ing, 1);
-      if (buyItem) {
-        mergeCanonicalItemIntoList(buyItem, 'buy');
-      }
-    });
-
     save();
     checkRecipe();
     render();
   };
   useRecipeIngredients = window.useRecipeIngredients;
 
-  window.__autoBuyZip = 'v29-st-at-1-g-at-0';
+  window.__autoBuyZip = 'v30-recipe-button-pack-restock';
 })();
 
 
