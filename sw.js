@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v38-ui-rad-system';
+const CACHE_NAME = 'matlista-app-v39-riktig-ui';
 const ASSETS = [
   './',
   './index.html',

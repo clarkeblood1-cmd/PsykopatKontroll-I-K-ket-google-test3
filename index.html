@@ -97,75 +97,74 @@
       </div>
     </section>
 
-    <div class="controls quick-add-controls quick-add-controls-v38" data-page="quick">
-      <div class="quick-row quick-row-main">
-        <div class="quick-field quick-field-room">
-          <label class="quick-label" for="quickRoom">Rum</label>
-          <select id="quickRoom" class="quick-room-select" onchange="handleQuickRoomChange(this.value)"></select>
-        </div>
-
-        <div class="quick-field quick-field-place">
-          <label class="quick-label" for="itemPlace">Plats</label>
-          <select id="itemPlace" data-place-select></select>
-        </div>
-
-        <div class="quick-field quick-field-category">
-          <label class="quick-label" for="itemCategory">Kategori</label>
-          <select id="itemCategory" data-category-select onchange="suggestUnit()"></select>
-        </div>
-
-        <div class="quick-field quick-field-search quick-field-search-wide" style="position:relative;">
-          <label class="quick-label" for="itemName">Vara</label>
-          <input id="itemName" placeholder="Sök eller skriv vara..." oninput="showMainItemSuggestions()">
-          <div id="mainItemSuggestions" class="suggestion-box"></div>
-        </div>
+    <div class="controls quick-add-controls" data-page="quick">
+      <div class="quick-field quick-field-room">
+        <select id="quickRoom" class="quick-room-select" onchange="handleQuickRoomChange(this.value)"></select>
       </div>
 
-      <div class="quick-row quick-row-type">
-        <div class="quick-field quick-field-quantity">
-          <label class="quick-label" for="itemQuantity">Antal</label>
-          <input id="itemQuantity" type="number" min="1" placeholder="Antal">
-        </div>
-
-        <div class="quick-field quick-field-unit">
-          <label class="quick-label" for="itemUnit">Typ</label>
-          <select id="itemUnit" onchange="updateSizeSelect('itemSize', this.value); syncMeasureModeVisibility();">
-            <option value="st">st</option>
-            <option value="pkt">paket</option>
-            <option value="g">g</option>
-            <option value="kg">kg</option>
-            <option value="ml">ml</option>
-            <option value="dl">dl</option>
-            <option value="l">l</option>
-            <option value="krm">krm</option>
-            <option value="tsk">tsk</option>
-            <option value="msk">msk</option>
-          </select>
-        </div>
-
-        <div class="quick-field quick-field-price">
-          <label class="quick-label" for="itemPrice">Pris</label>
-          <input id="itemPrice" type="number" min="0" placeholder="Pris (kr)">
-        </div>
+      <div class="quick-field quick-field-place">
+        <select id="itemPlace" data-place-select></select>
       </div>
 
-      <div class="quick-row quick-row-weight">
-        <div id="itemMeasureTextWrap" class="quick-field quick-field-weight" style="display:none;">
-          <label class="quick-label" for="itemMeasureText">Vikt / mängd</label>
-          <input id="itemMeasureText" type="text" placeholder="Vikt eller mängd, t.ex. 450 g eller 1,5 l">
-          <div id="itemMeasureSummary" class="measure-summary" style="display:none;"></div>
+      <div class="quick-field quick-field-category">
+        <select id="itemCategory" data-category-select onchange="suggestUnit()"></select>
+      </div>
+
+      <div class="quick-field quick-field-search" style="position:relative;">
+        <input id="itemName" placeholder="Sök eller skriv vara..." oninput="showMainItemSuggestions()">
+        <div id="mainItemSuggestions" class="suggestion-box"></div>
+      </div>
+
+      <div class="quick-field quick-field-quantity">
+        <input id="itemQuantity" type="number" min="1" placeholder="Antal">
+      </div>
+
+      <div class="quick-field quick-field-unit quick-type-field">
+        <div class="type-row-label">Typ</div>
+        <div class="type-toggle-row">
+          <label class="type-chip"><input type="radio" name="itemTypeMode" id="itemTypeSt" value="st" checked onchange="syncUnitUiFromControls('item')"><span>st</span></label>
+          <label class="type-chip"><input type="radio" name="itemTypeMode" id="itemTypePkt" value="pkt" onchange="syncUnitUiFromControls('item')"><span>paket</span></label>
+          <label class="type-chip"><input type="radio" name="itemTypeMode" id="itemTypeGram" value="g" onchange="syncUnitUiFromControls('item')"><span>gram</span></label>
         </div>
-        <div id="itemSizeWrap" class="quick-hidden-field"><select id="itemSize" style="display:none"></select></div>
+        <select id="itemUnit" class="legacy-hidden-select" onchange="updateSizeSelect('itemSize', this.value); syncMeasureModeVisibility(); syncTypeControlsFromLegacyUnit('item');">
+          <option value="st">st</option>
+          <option value="g">g</option>
+          <option value="kg">kg</option>
+          <option value="ml">ml</option>
+          <option value="dl">dl</option>
+          <option value="l">l</option>
+          <option value="krm">krm</option>
+          <option value="tsk">tsk</option>
+          <option value="msk">msk</option>
+          <option value="pkt">pkt</option>
+        </select>
       </div>
 
       <input type="file" id="itemImage" class="file-input" accept="image/png, image/jpeg, image/webp">
 
-      <div class="quick-row quick-row-actions">
-        <button type="button" class="ghost-btn quick-gallery-btn" onclick="pickGallery()">🖼️ Galleri</button>
-        <button type="button" class="ghost-btn quick-camera-btn" onclick="pickCamera()">📷 Kamera</button>
-        <button type="button" class="quick-home-btn" onclick="addItemAndUse()">Lägg till</button>
-        <button type="button" class="ghost-btn quick-save-btn" onclick="addItem()">💾 Spara i snabblista</button>
-        <button type="button" class="ghost-btn quick-clear-btn" onclick="clearInputs()">🧹 Rensa</button>
+      <button type="button" class="ghost-btn quick-gallery-btn" onclick="pickGallery()">🖼️ Galleri</button>
+      <button type="button" class="ghost-btn quick-camera-btn" onclick="pickCamera()">📷 Kamera</button>
+      <button type="button" class="quick-home-btn" onclick="addItemAndUse()">Lägg till</button>
+      <button type="button" class="ghost-btn quick-save-btn" onclick="addItem()">💾 Spara i snabblista</button>
+
+      <div class="quick-field quick-field-price">
+        <input id="itemPrice" type="number" min="0" placeholder="Pris (kr)">
+      </div>
+
+      <button type="button" class="ghost-btn quick-clear-btn" onclick="clearInputs()">🧹 Rensa</button>
+
+      <div id="itemSizeWrap" class="quick-hidden-field"><select id="itemSize" style="display:none"></select></div>
+      <div id="itemMeasureTextWrap" class="quick-hidden-field type-weight-wrap" style="display:block;">
+        <div class="type-row-label">Vikt</div>
+        <div class="type-weight-row">
+          <input id="itemWeightValue" type="number" min="0" step="any" placeholder="Hur mycket gram">
+          <select id="itemWeightUnit" onchange="syncUnitUiFromControls('item')">
+            <option value="g">g</option>
+            <option value="kg">kg</option>
+          </select>
+        </div>
+        <input id="itemMeasureText" class="legacy-hidden-input" type="text" placeholder="Mängd per st, t.ex. 500 eller 1,5">
+        <div id="itemMeasureSummary" class="measure-summary" style="display:none;"></div>
       </div>
     </div>
 
@@ -432,24 +431,19 @@
   <div id="editModal">
     <div class="modal-box">
       <h3 style="margin-top:0; margin-bottom:12px;">✏️ Ändra vara</h3>
-      <div class="modal-grid modal-grid-v38">
-        <div class="modal-field modal-field-wide">
-          <label class="quick-label" for="editName">Vara</label>
-          <input id="editName" placeholder="Namn">
-        </div>
-        <div class="modal-field">
-          <label class="quick-label" for="editPrice">Pris</label>
-          <input id="editPrice" type="number" min="0" placeholder="Pris">
-        </div>
-        <div class="modal-field">
-          <label class="quick-label" for="editQuantity">Antal</label>
-          <input id="editQuantity" type="number" min="1" placeholder="Antal">
-        </div>
-        <div class="modal-field">
-          <label class="quick-label" for="editUnit">Typ</label>
-          <select id="editUnit" onchange="updateSizeSelect('editSize', this.value, document.getElementById('editSize')?.value); syncEditMeasureModeVisibility();">
+      <div class="modal-grid">
+        <input id="editName" placeholder="Namn">
+        <input id="editPrice" type="number" min="0" placeholder="Pris">
+        <input id="editQuantity" type="number" min="1" placeholder="Antal">
+        <div class="edit-type-block">
+          <div class="type-row-label">Typ</div>
+          <div class="type-toggle-row">
+            <label class="type-chip"><input type="radio" name="editTypeMode" id="editTypeSt" value="st" checked onchange="syncUnitUiFromControls('edit')"><span>st</span></label>
+            <label class="type-chip"><input type="radio" name="editTypeMode" id="editTypePkt" value="pkt" onchange="syncUnitUiFromControls('edit')"><span>paket</span></label>
+            <label class="type-chip"><input type="radio" name="editTypeMode" id="editTypeGram" value="g" onchange="syncUnitUiFromControls('edit')"><span>gram</span></label>
+          </div>
+          <select id="editUnit" class="legacy-hidden-select" onchange="updateSizeSelect('editSize', this.value, document.getElementById('editSize')?.value); syncEditMeasureModeVisibility(); syncTypeControlsFromLegacyUnit('edit');">
             <option value="st">st</option>
-            <option value="pkt">paket</option>
             <option value="g">g</option>
             <option value="kg">kg</option>
             <option value="ml">ml</option>
@@ -458,22 +452,28 @@
             <option value="krm">krm</option>
             <option value="tsk">tsk</option>
             <option value="msk">msk</option>
+            <option value="pkt">pkt</option>
           </select>
         </div>
-        <div class="modal-field modal-field-wide" id="editMeasureTextWrap" style="display:none;">
-          <label class="quick-label" for="editMeasureText">Vikt / mängd</label>
-          <input id="editMeasureText" type="text" placeholder="Vikt eller mängd, t.ex. 450 g eller 1,5 l">
+
+        <div id="editSizeWrap"><select id="editSize" style="display:none"></select></div>
+        <div id="editMeasureTextWrap" class="type-weight-wrap" style="display:block;">
+          <div class="type-row-label">Vikt</div>
+          <div class="type-weight-row">
+            <input id="editWeightValue" type="number" min="0" step="any" placeholder="Hur mycket gram">
+            <select id="editWeightUnit" onchange="syncUnitUiFromControls('edit')">
+              <option value="g">g</option>
+              <option value="kg">kg</option>
+            </select>
+          </div>
+          <input id="editMeasureText" class="legacy-hidden-input" type="text" placeholder="Mängd per st, t.ex. 500 eller 1,5">
           <div id="editMeasureSummary" class="measure-summary" style="display:none;"></div>
         </div>
-        <div id="editSizeWrap"><select id="editSize" style="display:none"></select></div>
-        <div class="modal-field">
-          <label class="quick-label" for="editCategory">Kategori</label>
-          <select id="editCategory" data-category-select></select>
-        </div>
-        <div class="modal-field">
-          <label class="quick-label" for="editPlace">Plats</label>
-          <select id="editPlace" data-place-select></select>
-        </div>
+
+        <select id="editCategory" data-category-select></select>
+
+        <select id="editPlace" data-place-select></select>
+
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button type="button" class="ghost-btn" style="flex:1;" onclick="closeEditModal()">Avbryt</button>
           <button type="button" style="flex:1;" onclick="saveEditItem()">Spara</button>
