@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v18-recipe-fix-clean';
+const CACHE_NAME = 'matlista-app-v19-restock-fix';
 const ASSETS = [
   './',
   './index.html',
