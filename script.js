@@ -2053,19 +2053,20 @@ window.applyCloudState = function applyCloudState(data) {
   }
 };
 
-function // removed sync to keep quick list static {
-  const quick = quickItems.find(q => normalizeText(q.name) === normalizeText(changedItem.name));
-  if (!quick) return;
-  quick.room = changedItem.room || quick.room || activeRoom;
-  quick.place = ensurePlaceExists(changedItem.place || quick.place || getPlacesForRoom(quick.room)[0]?.key || 'kyl', quick.room);
-  quick.category = ensureCategoryExists(changedItem.category || quick.category || getRoomFallbackCategory(quick.room), quick.room);
-  if (!quick.img && changedItem.img) quick.img = changedItem.img;
-  if (Number(changedItem.price || 0) > 0) quick.price = Number(changedItem.price || 0);
-  quick.unit = changedItem.unit || quick.unit || 'st';
-  quick.size = normalizeSize(quick.unit, parseSmartMeasureInput(changedItem.measureText || changedItem.weightText || changedItem.size, quick.unit) || changedItem.size || quick.size);
-  quick.measureText = supportsSize(quick.unit) ? getMeasureTextFromSize(quick.size, quick.unit) : '';
-  quick.weightText = isWeightUnit(quick.unit) ? quick.measureText : '';
-  quick.quantity = Math.max(1, Number(quick.quantity || 1));
+function getQuickTemplatePackSize(name) {
+  const quick = findQuickItemByName(name);
+  if (!quick) return 0;
+  if (!isWeightUnit(quick.unit || '')) return 0;
+  return Math.max(0, Number(parseSmartMeasureInput(quick.measureText || quick.weightText || quick.size, quick.unit || 'g') || quick.size || 0));
+}
+
+function shouldUseQuickPackTracking(item) {
+  if (!item || item.type !== 'home' || !isWeightUnit(item.unit || '')) return false;
+  return getQuickTemplatePackSize(item.name) > 0;
+}
+
+function syncQuickItemFromItem(changedItem) {
+  return;
 }
 
 function updateToggleButtons() {
@@ -2853,7 +2854,12 @@ function addHomeItemFromTemplate(sourceItem, quantity = 1, targetPlace = null) {
     type: 'home',
     img: sourceItem.img ? String(sourceItem.img) : '',
     openedAmount: Math.max(0, Number(sourceItem.openedAmount || 0)),
-    packMode: isWeightUnit(sourceItem.unit || 'st') && (Number(quantity || sourceItem.quantity || 0) > 1 || Number(sourceItem.openedAmount || 0) > 0 || sourceItem.packMode === 'bags') ? 'bags' : ''
+    packMode: isWeightUnit(sourceItem.unit || 'st') && (
+      Number(quantity || sourceItem.quantity || 0) > 1 ||
+      Number(sourceItem.openedAmount || 0) > 0 ||
+      sourceItem.packMode === 'bags' ||
+      getQuickTemplatePackSize(sourceItem.name || '') > 0
+    ) ? 'bags' : ''
   };
 
   const existing = items.find(entry =>
@@ -2867,14 +2873,20 @@ function addHomeItemFromTemplate(sourceItem, quantity = 1, targetPlace = null) {
       existing.quantity += 1;
       existing.openedAmount -= Number(existing.size || 0);
     }
-    existing.packMode = isWeightUnit(existing.unit) && (existing.quantity > 1 || existing.openedAmount > 0 || existing.packMode === 'bags' || copy.packMode === 'bags') ? 'bags' : '';
+    existing.packMode = isWeightUnit(existing.unit) && (
+      existing.quantity > 1 ||
+      existing.openedAmount > 0 ||
+      existing.packMode === 'bags' ||
+      copy.packMode === 'bags' ||
+      getQuickTemplatePackSize(existing.name || '') > 0
+    ) ? 'bags' : '';
     existing.price = Number(copy.price || existing.price || 0);
     existing.category = copy.category;
     if (copy.img) existing.img = copy.img;
-    // removed sync to keep quick list static
+    syncQuickItemFromItem(existing);
   } else {
     items.push(copy);
-    // removed sync to keep quick list static
+    syncQuickItemFromItem(copy);
   }
 }
 
@@ -2957,7 +2969,7 @@ function transferSingleItem(index, targetType, targetPlace = null) {
   if (sourceItem.quantity === 0) {
     items.splice(index, 1);
   } else {
-    // removed sync to keep quick list static
+    syncQuickItemFromItem(sourceItem);
   }
 
   items = mergeItems(items);
@@ -3049,7 +3061,6 @@ function changeQuickPlace(index, newPlace) {
 
   const itemRoom = item.room || activeRoom;
   item.place = ensurePlaceExists(newPlace || 'kyl', itemRoom);
-  // removed sync place
 
   save();
   render();
@@ -3060,7 +3071,6 @@ function changeQuickCategory(index, newCategory) {
   if (!item) return;
 
   item.category = ensureCategoryExists(newCategory || getRoomFallbackCategory(item.room || activeRoom), item.room || activeRoom);
-  // removed sync category
 
   save();
   render();
@@ -3630,7 +3640,7 @@ function saveEditItem() {
     );
     syncRecipeNames(oldName, updated.name);
   } else {
-    // removed sync to keep quick list static
+    syncQuickItemFromItem(targetList[editingIndex]);
   }
 
   items = mergeItems(items);
@@ -3796,17 +3806,26 @@ function saveHomeItem(item) {
       existingHome.quantity += 1;
       existingHome.openedAmount -= Number(existingHome.size || 0);
     }
-    existingHome.packMode = isWeightUnit(existingHome.unit) && (existingHome.quantity > 1 || existingHome.openedAmount > 0 || normalizedItem.packMode === 'bags' || existingHome.packMode === 'bags') ? 'bags' : '';
+    existingHome.packMode = isWeightUnit(existingHome.unit) && (
+      existingHome.quantity > 1 ||
+      existingHome.openedAmount > 0 ||
+      normalizedItem.packMode === 'bags' ||
+      existingHome.packMode === 'bags' ||
+      getQuickTemplatePackSize(existingHome.name || '') > 0
+    ) ? 'bags' : '';
     if (normalizedItem.img) existingHome.img = normalizedItem.img;
-    // removed sync to keep quick list static
   } else {
     items.push({
       ...normalizedItem,
       room: normalizedItem.room || activeRoom,
       openedAmount: Math.max(0, Number(normalizedItem.openedAmount || 0)),
-      packMode: isWeightUnit(normalizedItem.unit) && (Number(normalizedItem.quantity || 0) > 1 || Number(normalizedItem.openedAmount || 0) > 0 || normalizedItem.packMode === 'bags') ? 'bags' : ''
+      packMode: isWeightUnit(normalizedItem.unit) && (
+        Number(normalizedItem.quantity || 0) > 1 ||
+        Number(normalizedItem.openedAmount || 0) > 0 ||
+        normalizedItem.packMode === 'bags' ||
+        getQuickTemplatePackSize(normalizedItem.name || '') > 0
+      ) ? 'bags' : ''
     });
-    // removed sync to keep quick list static
   }
 }
 
@@ -3882,8 +3901,6 @@ function updateQuantity(index, value) {
 
   if (newQty === 0 && item.type === 'home') {
     items.splice(index, 1);
-  } else {
-    // removed sync to keep quick list static
   }
 
   save();
@@ -4896,6 +4913,27 @@ function consumeIngredientEntries(entries = []) {
       if (supportsSize(stored.unit)) {
         const currentStoredAmount = Math.max(0, Number(getItemCanonicalAmount(stored, stored.unit) || 0));
         const nextStoredAmount = Math.max(0, Math.round(currentStoredAmount - consumedForStored));
+        const templatePackSize = shouldUseQuickPackTracking(stored)
+          ? getQuickTemplatePackSize(stored.name || '')
+          : 0;
+
+        if (isWeightUnit(stored.unit) && templatePackSize > 0) {
+          if (nextStoredAmount <= 0) {
+            items.splice(index, 1);
+            return;
+          }
+
+          const unopened = Math.floor(nextStoredAmount / templatePackSize);
+          const opened = nextStoredAmount % templatePackSize;
+
+          stored.quantity = unopened;
+          stored.size = templatePackSize;
+          stored.openedAmount = opened;
+          stored.packMode = 'bags';
+          stored.measureText = formatSmartMeasureDisplay(templatePackSize, stored.unit);
+          stored.weightText = isWeightUnit(stored.unit) ? formatSmartMeasureDisplay(templatePackSize, stored.unit) : '';
+          return;
+        }
 
         if (isPackTrackedItem(stored)) {
           const packSize = Math.max(0, Number(stored.size || 0));
