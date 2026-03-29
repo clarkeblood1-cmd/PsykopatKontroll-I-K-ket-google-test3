@@ -1640,18 +1640,21 @@ function formatSmartMeasureDisplay(baseValue, unitHint = 'g') {
 
 function getSmartMeasurePlaceholder(unit) {
   const u = String(unit || '').toLowerCase();
-  if (u === 'kg' || u === 'l') return 'Mängd per st, t.ex. 1 eller 1,5';
-  if (u === 'dl') return 'Mängd per st, t.ex. 5 eller 2,5';
-  if (u === 'tsk') return 'Mängd per st, t.ex. 1 eller 2';
-  if (u === 'msk') return 'Mängd per st, t.ex. 1 eller 2';
-  if (u === 'krm') return 'Mängd per st, t.ex. 1 eller 3';
-  return 'Mängd per st, t.ex. 500 eller 1,5';
+  if (u === 'pkt') return 'Hur mycket varje paket innehåller, t.ex. 500 g eller 1 l';
+  if (u === 'kg' || u === 'l') return 'Mängd per vara, t.ex. 1 eller 1,5';
+  if (u === 'dl') return 'Mängd per vara, t.ex. 5 eller 2,5';
+  if (u === 'tsk') return 'Mängd per vara, t.ex. 1 eller 2';
+  if (u === 'msk') return 'Mängd per vara, t.ex. 1 eller 2';
+  if (u === 'krm') return 'Mängd per vara, t.ex. 1 eller 3';
+  return 'Mängd per vara, t.ex. 500 eller 1,5';
 }
 
 function getMeasureInputError(unit) {
+  const normalized = String(unit || '').toLowerCase();
+  if (normalized === 'pkt') return 'Skriv hur mycket varje paket innehåller, t.ex. 500 g eller 1 l.';
   return getUnitFamily(unit) === 'liquid'
-    ? 'Skriv mängd per st. Du kan skriva bara 500 eller 1,5.'
-    : 'Skriv vikt per st. Du kan skriva bara 500 eller 1,5.';
+    ? 'Skriv mängd per vara. Du kan skriva bara 500 eller 1,5.'
+    : 'Skriv vikt per vara. Du kan skriva bara 500 eller 1,5.';
 }
 
 function getMeasureValidationMessage(baseValue, amount, unit) {
@@ -1794,9 +1797,9 @@ function applySmartUnitUi(prefix = 'item') {
     weightLabel.textContent = unit === 'pkt' ? 'Vikt per paket' : (supportsSize(unit) ? 'Mängd' : 'Vikt per st');
   }
   if (measureInput) {
-    if (unit === 'pkt') measureInput.placeholder = 'Hur mycket per paket, t.ex. 500 g';
+    if (unit === 'pkt') measureInput.placeholder = 'Hur mycket per paket, t.ex. 500 g eller 1 l';
     else if (supportsSize(unit)) measureInput.placeholder = `Total mängd, t.ex. ${unit === 'kg' ? '1,5 kg' : `500 ${unit}`}`;
-    else measureInput.placeholder = 'Mängd per st, t.ex. 500 g';
+    else measureInput.placeholder = 'Mängd per st, t.ex. 500 g eller 1 l';
   }
 }
 
@@ -3661,7 +3664,7 @@ function saveEditItem() {
 
   if (usesSmartMeasure(updatedUnit)) {
     if (!parsedMeasure) {
-      alert(updatedUnit === 'pkt' ? 'Du måste ange hur mycket varje paket innehåller, t.ex. 500 g.' : getMeasureInputError(updatedMeasureHint));
+      alert(updatedUnit === 'pkt' ? 'Paket kräver mängd. Skriv t.ex. 500 g eller 1 l per paket.' : getMeasureInputError(updatedMeasureHint));
       return;
     }
     const measureWarning = getMeasureValidationMessage(parsedMeasure, updatedQuantity, updatedMeasureHint);
@@ -3802,7 +3805,7 @@ function buildItemFromForm() {
 
   if (usesSmartMeasure(resolvedUnit)) {
     if (!parsedMeasure) {
-      alert(resolvedUnit === 'pkt' ? 'Du måste ange hur mycket varje paket innehåller, t.ex. 500 g.' : getMeasureInputError(measureHintUnit));
+      alert(resolvedUnit === 'pkt' ? 'Paket kräver mängd. Skriv t.ex. 500 g eller 1 l per paket.' : getMeasureInputError(measureHintUnit));
       return null;
     }
     const measureWarning = getMeasureValidationMessage(parsedMeasure, quantity, measureHintUnit);
