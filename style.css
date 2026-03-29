@@ -1324,5 +1324,3 @@ button:hover{background:var(--green-dark);color:#fff}
     grid-column:auto;
   }
 }
-
-.edit-quantity-wrap{display:flex;flex-direction:column;gap:6px}
