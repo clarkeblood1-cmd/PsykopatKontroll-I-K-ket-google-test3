@@ -919,7 +919,8 @@ function sameVariant(a, b, includeType = true) {
     && (a.room || 'koket') === (b.room || 'koket')
     && (a.place || 'kyl') === (b.place || 'kyl')
     && (a.unit || 'st') === (b.unit || 'st')
-    && Number(a.size || 0) === Number(b.size || 0);
+    && Number(a.size || 0) === Number(b.size || 0)
+    && getItemMeasureUnit(a) === getItemMeasureUnit(b);
 }
 
 function getCategoryForSelect(selectId) {
@@ -1666,21 +1667,26 @@ function getMeasureValidationMessage(baseValue, amount, unit) {
 }
 
 function normalizeMeasureItemData(item, unitHint = null) {
-  if (!item || !supportsSize(item.unit)) return item;
-  const hint = unitHint || item.unit || 'g';
+  if (!item) return item;
+  const itemUnit = String(item.unit || '').toLowerCase();
+  const measureUnit = getItemMeasureUnit(item, unitHint || (supportsSize(itemUnit) ? itemUnit : 'g'));
+  const shouldNormalizeMeasure = supportsSize(itemUnit) || hasMeasuredCountItem(item);
+  if (!shouldNormalizeMeasure) return { ...item, measureUnit: '' };
+
+  const hint = supportsSize(itemUnit) ? itemUnit : measureUnit;
   const parsed = parseSmartMeasureInput(item.measureText || item.weightText || item.size, hint);
-  if (!parsed) return item;
+  if (!parsed) return { ...item, measureUnit: supportsSize(itemUnit) ? itemUnit : measureUnit };
   const openedAmount = getUnitFamily(hint) === 'weight'
     ? Math.max(0, Math.min(parsed, Number(item?.openedAmount || 0)))
     : 0;
   return {
     ...item,
-    unit: hint,
     size: parsed,
+    measureUnit: supportsSize(itemUnit) ? itemUnit : hint,
     measureText: formatSmartMeasureDisplay(parsed, hint),
     weightText: getUnitFamily(hint) === 'weight' ? formatSmartMeasureDisplay(parsed, hint) : '',
     openedAmount,
-    packMode: getUnitFamily(hint) === 'weight' && (Number(item?.quantity || 0) > 1 || openedAmount > 0 || item?.packMode === 'bags') ? 'bags' : ''
+    packMode: itemUnit === 'pkt' && getUnitFamily(hint) === 'weight' && (Number(item?.quantity || 0) > 1 || openedAmount > 0 || item?.packMode === 'bags') ? 'bags' : ''
   };
 }
 
@@ -1702,7 +1708,9 @@ function updateMeasureSummary() {
 
   const amount = Math.max(1, Number(amountEl.value || 1));
   const unit = unitEl.value;
-  const parsed = parseSmartMeasureInput(inputEl.value, supportsSize(unit) ? unit : 'g');
+  const fallbackMeasureUnit = String(document.getElementById('itemWeightUnit')?.value || 'g').toLowerCase();
+  const displayUnit = supportsSize(unit) ? unit : fallbackMeasureUnit;
+  const parsed = parseSmartMeasureInput(inputEl.value, displayUnit);
 
   if (!parsed) {
     summaryEl.textContent = '';
@@ -1710,7 +1718,6 @@ function updateMeasureSummary() {
     return;
   }
 
-  const displayUnit = supportsSize(unit) ? unit : 'g';
   const total = parsed * amount;
   const warning = getMeasureValidationMessage(parsed, amount, displayUnit);
   summaryEl.textContent = warning || `${amount} × ${formatSmartMeasureDisplay(parsed, displayUnit)} = ${formatSmartMeasureDisplay(total, displayUnit)}`;
@@ -1729,11 +1736,12 @@ function syncMeasureModeVisibility() {
   sizeWrap.style.display = 'none';
   measureWrap.style.display = '';
 
-  if (inputEl) inputEl.placeholder = getSmartMeasurePlaceholder(unitEl.value);
+  const measurePlaceholderUnit = supportsSize(unitEl.value) ? unitEl.value : String(document.getElementById('itemWeightUnit')?.value || 'g').toLowerCase();
+  if (inputEl) inputEl.placeholder = getSmartMeasurePlaceholder(measurePlaceholderUnit);
 
-  if (smartMode && inputEl?.value) {
-    const parsed = parseSmartMeasureInput(inputEl.value, unitEl.value);
-    if (parsed) inputEl.value = formatSmartMeasureDisplay(parsed, unitEl.value);
+  if (inputEl?.value) {
+    const parsed = parseSmartMeasureInput(inputEl.value, measurePlaceholderUnit);
+    if (parsed) inputEl.value = formatSmartMeasureDisplay(parsed, measurePlaceholderUnit);
   }
 
   updateMeasureSummary();
@@ -1791,11 +1799,12 @@ function syncIngredientEditMeasureModeVisibility() {
   sizeWrap.style.display = smartMode ? 'none' : '';
   measureWrap.style.display = smartMode ? '' : 'none';
 
-  if (inputEl) inputEl.placeholder = getSmartMeasurePlaceholder(unitEl.value);
+  const measurePlaceholderUnit = supportsSize(unitEl.value) ? unitEl.value : String(document.getElementById('editWeightUnit')?.value || 'g').toLowerCase();
+  if (inputEl) inputEl.placeholder = getSmartMeasurePlaceholder(measurePlaceholderUnit);
 
-  if (smartMode && inputEl?.value) {
-    const parsed = parseSmartMeasureInput(inputEl.value, unitEl.value);
-    if (parsed) inputEl.value = formatSmartMeasureDisplay(parsed, unitEl.value);
+  if (inputEl?.value) {
+    const parsed = parseSmartMeasureInput(inputEl.value, measurePlaceholderUnit);
+    if (parsed) inputEl.value = formatSmartMeasureDisplay(parsed, measurePlaceholderUnit);
   }
 
   if (!smartMode && inputEl) inputEl.value = '';
@@ -1812,7 +1821,9 @@ function updateEditMeasureSummary() {
 
   const amount = Math.max(1, Number(amountEl.value || 1));
   const unit = unitEl.value;
-  const parsed = parseSmartMeasureInput(inputEl.value, supportsSize(unit) ? unit : 'g');
+  const fallbackMeasureUnit = String(document.getElementById('editWeightUnit')?.value || 'g').toLowerCase();
+  const displayUnit = supportsSize(unit) ? unit : fallbackMeasureUnit;
+  const parsed = parseSmartMeasureInput(inputEl.value, displayUnit);
 
   if (!parsed) {
     summaryEl.textContent = '';
@@ -1820,7 +1831,6 @@ function updateEditMeasureSummary() {
     return;
   }
 
-  const displayUnit = supportsSize(unit) ? unit : 'g';
   const total = parsed * amount;
   const warning = getMeasureValidationMessage(parsed, amount, displayUnit);
   summaryEl.textContent = warning || `${amount} × ${formatSmartMeasureDisplay(parsed, displayUnit)} = ${formatSmartMeasureDisplay(total, displayUnit)}`;
@@ -1885,6 +1895,29 @@ function formatUnitLabel(unit) {
   return String(unit || 'st').toLowerCase() === 'pkt' ? 'paket' : (unit || 'st');
 }
 
+function getItemMeasureUnit(item, fallback = 'g') {
+  const directUnit = String(item?.measureUnit || '').trim().toLowerCase();
+  if (getUnitFamily(directUnit)) return directUnit;
+
+  const itemUnit = String(item?.unit || '').trim().toLowerCase();
+  if (supportsSize(itemUnit)) return itemUnit;
+
+  const rawMeasure = String(item?.measureText || item?.weightText || '').trim().toLowerCase();
+  const match = rawMeasure.match(/(kg|g|ml|dl|l|krm|tsk|msk)\s*$/i);
+  if (match && getUnitFamily(match[1])) return match[1].toLowerCase();
+
+  const fallbackUnit = String(fallback || '').trim().toLowerCase();
+  return getUnitFamily(fallbackUnit) ? fallbackUnit : 'g';
+}
+
+function hasMeasuredCountItem(item) {
+  if (!item) return false;
+  const unit = String(item.unit || '').toLowerCase();
+  if (!['st', 'pkt'].includes(unit)) return false;
+  const size = Number(item.size || parseSmartMeasureInput(item.measureText || item.weightText || '', getItemMeasureUnit(item)) || 0);
+  return Number.isFinite(size) && size > 0 && !!getUnitFamily(getItemMeasureUnit(item));
+}
+
 function getSelectedTypeMode(prefix = 'item') {
   return document.querySelector(`input[name="${prefix}TypeMode"]:checked`)?.value || 'st';
 }
@@ -1909,19 +1942,20 @@ function getUiWeightControls(prefix = 'item') {
 function setWeightControlsFromItem(prefix = 'item', item = null) {
   const controls = getUiWeightControls(prefix);
   const unit = String(item?.unit || 'st').toLowerCase();
-  const type = unit === 'pkt' ? 'pkt' : ((unit === 'g' || unit === 'kg') ? 'g' : 'st');
-  const size = Number(item?.size || parseSmartMeasureInput(item?.measureText || item?.weightText || '', 'g') || 0);
+  const type = unit === 'pkt' ? 'pkt' : (supportsSize(unit) ? 'g' : 'st');
+  const measureUnit = getItemMeasureUnit(item, supportsSize(unit) ? unit : 'g');
+  const size = Number(item?.size || parseSmartMeasureInput(item?.measureText || item?.weightText || '', measureUnit) || 0);
 
   setSelectedTypeMode(prefix, type);
 
   if (controls.weightUnit) {
-    controls.weightUnit.value = size >= 1000 ? 'kg' : 'g';
+    controls.weightUnit.value = measureUnit;
   }
   if (controls.weightValue) {
     if (size > 0) {
-      controls.weightValue.value = controls.weightUnit?.value === 'kg'
-        ? String(Number((size / 1000).toFixed(3))).replace('.', ',')
-        : String(Math.round(size));
+      const divider = unitToBaseMultiplier(controls.weightUnit?.value || measureUnit);
+      const displayValue = divider > 0 ? (size / divider) : size;
+      controls.weightValue.value = String(Number(displayValue.toFixed(3))).replace('.', ',');
     } else {
       controls.weightValue.value = '';
     }
@@ -1933,7 +1967,7 @@ function setWeightControlsFromItem(prefix = 'item', item = null) {
 function syncTypeControlsFromLegacyUnit(prefix = 'item') {
   const controls = getUiWeightControls(prefix);
   const unit = String(controls.unitSelect?.value || 'st').toLowerCase();
-  setSelectedTypeMode(prefix, unit === 'pkt' ? 'pkt' : ((unit === 'g' || unit === 'kg') ? 'g' : 'st'));
+  setSelectedTypeMode(prefix, unit === 'pkt' ? 'pkt' : (supportsSize(unit) ? 'g' : 'st'));
   syncUnitUiFromControls(prefix);
 }
 
@@ -3709,6 +3743,7 @@ function saveEditItem() {
   }
 
   const updatedRoom = currentItem.room || activeRoom;
+  const updatedMeasureUnit = supportsSize(updatedUnit) ? updatedUnit : (parsedMeasure ? editWeight.weightUnit : getItemMeasureUnit(currentItem, 'g'));
   const updated = {
     name: updatedName,
     price: Number(document.getElementById('editPrice')?.value || 0),
@@ -3717,8 +3752,9 @@ function saveEditItem() {
     size: parsedMeasure || (supportsSize(updatedUnit)
       ? parsedMeasure
       : (Number(document.getElementById('editSize')?.value || currentItem.size) || null)),
-    measureText: parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, supportsSize(updatedUnit) ? updatedUnit : 'g') : '',
-    weightText: parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, 'g') : '',
+    measureUnit: parsedMeasure ? updatedMeasureUnit : '',
+    measureText: parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, updatedMeasureUnit) : '',
+    weightText: parsedMeasure && isWeightUnit(updatedMeasureUnit) ? formatSmartMeasureDisplay(parsedMeasure, updatedMeasureUnit) : '',
     room: updatedRoom,
     category: ensureCategoryExists(document.getElementById('editCategory')?.value || currentItem.category || getRoomFallbackCategory(updatedRoom), updatedRoom),
     place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || getPlacesForRoom(updatedRoom)[0]?.key || 'kyl', updatedRoom),
@@ -3856,6 +3892,7 @@ function buildItemFromForm() {
 
   const itemRoom = getQuickRoomSelection() || matchedQuick?.room || activeRoom;
   const fallbackPlace = getPlacesForRoom(itemRoom)[0]?.key || 'kyl';
+  const itemMeasureUnit = supportsSize(resolvedUnit) ? resolvedUnit : (parsedMeasure ? formWeight.weightUnit : getItemMeasureUnit(matchedQuick, 'g'));
   const item = {
     name: matchedQuick ? matchedQuick.name : name,
     price: Number(priceInput?.value || (matchedQuick ? matchedQuick.price : 0) || 0),
@@ -3864,8 +3901,9 @@ function buildItemFromForm() {
     size: parsedMeasure || (supportsSize(resolvedUnit)
       ? parsedMeasure
       : (Number(sizeInput?.value || (matchedQuick ? matchedQuick.size : null)) || null)),
-    measureText: parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, supportsSize(resolvedUnit) ? resolvedUnit : 'g') : '',
-    weightText: parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, 'g') : '',
+    measureUnit: parsedMeasure ? itemMeasureUnit : '',
+    measureText: parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, itemMeasureUnit) : '',
+    weightText: parsedMeasure && isWeightUnit(itemMeasureUnit) ? formatSmartMeasureDisplay(parsedMeasure, itemMeasureUnit) : '',
     room: itemRoom,
     category: ensureCategoryExists(categoryInput?.value || (matchedQuick ? matchedQuick.category : getRoomFallbackCategory(itemRoom)), itemRoom),
     place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : fallbackPlace), itemRoom),
@@ -3884,9 +3922,11 @@ function saveQuickTemplate(item) {
     existingQuick.price = Number(normalized.price || existingQuick.price || 0);
     existingQuick.quantity = Math.max(1, Number(normalized.quantity || existingQuick.quantity || 1));
     existingQuick.unit = normalized.unit || existingQuick.unit || 'st';
-    existingQuick.size = parseSmartMeasureInput(normalized.measureText || normalized.weightText || normalized.size, supportsSize(existingQuick.unit) ? existingQuick.unit : 'g') || Number(normalized.size || existingQuick.size || 0) || null;
-    existingQuick.measureText = existingQuick.size ? getMeasureTextFromSize(existingQuick.size, supportsSize(existingQuick.unit) ? existingQuick.unit : 'g') : '';
-    existingQuick.weightText = existingQuick.size ? getMeasureTextFromSize(existingQuick.size, 'g') : '';
+    existingQuick.measureUnit = normalized.measureUnit || existingQuick.measureUnit || '';
+    const quickMeasureUnit = supportsSize(existingQuick.unit) ? existingQuick.unit : getItemMeasureUnit({ ...existingQuick, ...normalized }, 'g');
+    existingQuick.size = parseSmartMeasureInput(normalized.measureText || normalized.weightText || normalized.size, quickMeasureUnit) || Number(normalized.size || existingQuick.size || 0) || null;
+    existingQuick.measureText = existingQuick.size ? getMeasureTextFromSize(existingQuick.size, quickMeasureUnit) : '';
+    existingQuick.weightText = existingQuick.size && isWeightUnit(quickMeasureUnit) ? getMeasureTextFromSize(existingQuick.size, quickMeasureUnit) : '';
     existingQuick.room = normalized.room || existingQuick.room || activeRoom;
     existingQuick.category = normalized.category || existingQuick.category || getRoomFallbackCategory(existingQuick.room || activeRoom);
     existingQuick.place = normalized.place || existingQuick.place || getPlacesForRoom(existingQuick.room)[0]?.key || 'kyl';
@@ -3906,6 +3946,7 @@ function saveHomeItem(item) {
     existingHome.category = normalizedItem.category;
     existingHome.unit = normalizedItem.unit;
     existingHome.size = normalizedItem.size;
+    existingHome.measureUnit = normalizedItem.measureUnit || existingHome.measureUnit || '';
     existingHome.measureText = normalizedItem.measureText || '';
     existingHome.weightText = normalizedItem.weightText || '';
     existingHome.openedAmount = Math.max(0, Number(existingHome.openedAmount || 0)) + Math.max(0, Number(normalizedItem.openedAmount || 0));
@@ -3920,6 +3961,7 @@ function saveHomeItem(item) {
     items.push({
       ...normalizedItem,
       room: normalizedItem.room || activeRoom,
+      measureUnit: normalizedItem.measureUnit || '',
       openedAmount: Math.max(0, Number(normalizedItem.openedAmount || 0)),
       packMode: isWeightUnit(normalizedItem.unit) && (Number(normalizedItem.quantity || 0) > 1 || Number(normalizedItem.openedAmount || 0) > 0 || normalizedItem.packMode === 'bags') ? 'bags' : ''
     });
@@ -4690,6 +4732,12 @@ function getItemCanonicalAmount(item, unitHint = null) {
     return quantity * size;
   }
 
+  if (hasMeasuredCountItem(item)) {
+    const measureUnit = getItemMeasureUnit(item);
+    const parsedSize = Math.max(0, Number(item.size || parseSmartMeasureInput(item.measureText || item.weightText || '', measureUnit) || 0));
+    return parsedSize > 0 ? quantity * parsedSize : quantity;
+  }
+
   return quantity;
 }
 
@@ -4769,8 +4817,11 @@ function cloneTemplateForIngredient(ingredient) {
     category: base.category || ing.category || ''
   });
 
-  const normalizedSize = supportsSize(resolvedUnit)
-    ? normalizeSize(resolvedUnit, base.size ?? ing.size, context)
+  const measureUnit = supportsSize(resolvedUnit)
+    ? resolvedUnit
+    : getItemMeasureUnit(base, 'g');
+  const normalizedSize = (supportsSize(resolvedUnit) || (['st', 'pkt'].includes(String(resolvedUnit || '').toLowerCase()) && Number(base.size || ing.size || 0) > 0))
+    ? normalizeSize(measureUnit, base.size ?? ing.size, context)
     : null;
 
   return {
@@ -4779,8 +4830,9 @@ function cloneTemplateForIngredient(ingredient) {
     quantity: 1,
     unit: resolvedUnit,
     size: normalizedSize,
-    measureText: supportsSize(resolvedUnit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, resolvedUnit) : '',
-    weightText: isWeightUnit(resolvedUnit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, resolvedUnit) : '',
+    measureUnit: normalizedSize ? measureUnit : '',
+    measureText: normalizedSize ? formatSmartMeasureDisplay(normalizedSize, measureUnit) : '',
+    weightText: isWeightUnit(measureUnit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, measureUnit) : '',
     category: ensureCategoryExists(base.category || ing.category || getRoomFallbackCategory(activeRoom), activeRoom),
     place: ensurePlaceExists(base.place || 'kyl'),
     img: base.img ? String(base.img) : ''
@@ -4905,8 +4957,11 @@ function createRestockBuyItemFromQuick(ingredient) {
     unit,
     category: quickMatch.category || ing.category || ''
   });
-  const normalizedSize = supportsSize(unit)
-    ? normalizeSize(unit, quickMatch.size, context)
+  const measureUnit = supportsSize(unit)
+    ? unit
+    : getItemMeasureUnit(quickMatch, 'g');
+  const normalizedSize = (supportsSize(unit) || hasMeasuredCountItem(quickMatch))
+    ? normalizeSize(measureUnit, quickMatch.size, context)
     : null;
 
   return {
@@ -4915,8 +4970,9 @@ function createRestockBuyItemFromQuick(ingredient) {
     quantity: Math.max(1, Number(quickMatch.quantity || 1)),
     unit,
     size: normalizedSize,
-    measureText: supportsSize(unit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, unit) : '',
-    weightText: isWeightUnit(unit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, unit) : '',
+    measureUnit: normalizedSize ? measureUnit : '',
+    measureText: normalizedSize ? formatSmartMeasureDisplay(normalizedSize, measureUnit) : '',
+    weightText: isWeightUnit(measureUnit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, measureUnit) : '',
     category: ensureCategoryExists(quickMatch.category || ing.category || getRoomFallbackCategory(quickMatch.room || activeRoom), quickMatch.room || activeRoom),
     place: ensurePlaceExists(quickMatch.place || 'kyl'),
     img: quickMatch.img ? String(quickMatch.img) : '',
@@ -4924,11 +4980,29 @@ function createRestockBuyItemFromQuick(ingredient) {
   };
 }
 
+function getHomeMeasuredCountAmountForIngredient(ingredient) {
+  const ing = normalizeRecipeIngredient(ingredient);
+  if (!ing) return 0;
+
+  const template = cloneTemplateForIngredient(ing);
+  const measureUnit = getItemMeasureUnit(template, 'g');
+  return getMatchingHomeItemsForIngredient(ing)
+    .reduce((sum, { item }) => {
+      const familyUnit = getItemMeasureUnit(item, measureUnit);
+      const size = Math.max(0, Number(item?.size || parseSmartMeasureInput(item?.measureText || item?.weightText || '', familyUnit) || 0));
+      if (!['st', 'pkt'].includes(String(item?.unit || '').toLowerCase()) || size <= 0) return sum;
+      return sum + (Math.max(0, Number(item?.quantity || 0)) * size);
+    }, 0);
+}
+
 function queueRestockIfDepleted(ingredient, amountBefore = 0) {
   const ing = normalizeRecipeIngredient(ingredient);
   if (!ing || amountBefore <= 0) return;
 
-  const amountAfter = getHomeAmountForIngredient(ing);
+  const template = cloneTemplateForIngredient(ing);
+  const amountAfter = hasMeasuredCountItem(template)
+    ? getHomeMeasuredCountAmountForIngredient(ing)
+    : getHomeAmountForIngredient(ing);
   if (amountAfter > 0) return;
 
   const buyItem = createRestockBuyItemFromQuick(ing);
@@ -5058,8 +5132,14 @@ function consumeIngredientEntries(entries = []) {
     });
 
     const consumedTotal = Math.max(0, requestedAmount - remaining);
-    if (supportsSize(ingredient.unit)) {
-      queueRestockIfDepleted(ingredient, amountBefore);
+    const measuredTemplate = cloneTemplateForIngredient(ingredient);
+    const isMeasuredCount = hasMeasuredCountItem(measuredTemplate);
+
+    if (supportsSize(ingredient.unit) || isMeasuredCount) {
+      const restockAmountBefore = isMeasuredCount
+        ? getHomeMeasuredCountAmountForIngredient({ ...ingredient, size: measuredTemplate?.size, measureUnit: getItemMeasureUnit(measuredTemplate, 'g') }) + Math.max(0, Number(consumedTotal || 0)) * Math.max(0, Number(measuredTemplate?.size || 0))
+        : amountBefore;
+      queueRestockIfDepleted(ingredient, restockAmountBefore);
     } else {
       queueConsumedCountToBuy(ingredient, consumedTotal);
     }
