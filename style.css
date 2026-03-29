@@ -1324,3 +1324,7 @@ button:hover{background:var(--green-dark);color:#fff}
     grid-column:auto;
   }
 }
+
+
+#itemType,#editType{font-weight:800;}
+#itemUnitWrap,#editUnitWrap{width:100%;}
