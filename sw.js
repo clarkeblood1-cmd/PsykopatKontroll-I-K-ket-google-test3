@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v14-hybrid-zip';
+const CACHE_NAME = 'matlista-app-v15-hybrid-restocksafe';
 const ASSETS = [
   './',
   './index.html',
