@@ -6495,7 +6495,7 @@ window.addEventListener('load', () => {
 
 
 
-/* === RESTOCK FIX ZIP OVERRIDES === */
+/* === AUTO BUY ZIP: grams at home + add whole quick-template packs to buy on every cook === */
 (function () {
   function safeNum(v) {
     const n = Number(v);
@@ -6510,36 +6510,47 @@ window.addEventListener('load', () => {
     return findQuickItemByName(ing.name) || null;
   }
 
-  function buildBuyPackFromQuickTemplate(ingredient, packCountOverride = 1) {
-    const ing = typeof normalizeRecipeIngredient === 'function'
-      ? normalizeRecipeIngredient(ingredient)
-      : ingredient;
+  function getQuickPackSizeForIngredient(ingredient) {
+    const ing = normalizeRecipeIngredient(ingredient);
+    const quick = getQuickTemplateForIngredient(ing);
+    if (!ing || !quick) return 0;
+
+    const unit = String(quick.unit || ing.unit || 'st').toLowerCase();
+    if (!supportsSize(unit)) return 0;
+
+    const context = getRecipeIngredientContext({
+      ...quick,
+      ...ing,
+      unit,
+      category: quick.category || ing.category || ''
+    });
+
+    return Math.max(0, Number(normalizeSize(unit, quick.size, context) || 0));
+  }
+
+  function buildQuickPackBuyItem(ingredient, packCount = 1) {
+    const ing = normalizeRecipeIngredient(ingredient);
     const quick = getQuickTemplateForIngredient(ing);
     if (!ing || !quick) return null;
 
-    const room = quick.room || (typeof activeRoom !== 'undefined' ? activeRoom : 'koket');
+    const room = quick.room || activeRoom;
     const unit = String(quick.unit || ing.unit || 'st').toLowerCase();
-    const context = typeof getRecipeIngredientContext === 'function'
-      ? getRecipeIngredientContext({
-          ...quick,
-          ...ing,
-          unit,
-          category: quick.category || ing.category || ''
-        })
-      : (quick.category || ing.category || '');
-
-    const size = (typeof supportsSize === 'function' && supportsSize(unit))
-      ? normalizeSize(unit, quick.size, context)
-      : null;
+    const context = getRecipeIngredientContext({
+      ...quick,
+      ...ing,
+      unit,
+      category: quick.category || ing.category || ''
+    });
+    const size = supportsSize(unit) ? normalizeSize(unit, quick.size, context) : null;
 
     return {
       name: quick.name || ing.name,
-      price: safeNum(quick.price || 0),
-      quantity: Math.max(1, Math.round(packCountOverride)) * Math.max(1, safeNum(quick.quantity || 1)),
+      price: Number(quick.price || 0),
+      quantity: Math.max(1, Math.round(packCount)) * Math.max(1, Number(quick.quantity || 1)),
       unit,
       size,
-      measureText: (typeof supportsSize === 'function' && supportsSize(unit) && size) ? formatSmartMeasureDisplay(size, unit) : '',
-      weightText: (typeof isWeightUnit === 'function' && isWeightUnit(unit) && size) ? formatSmartMeasureDisplay(size, unit) : '',
+      measureText: supportsSize(unit) && size ? formatSmartMeasureDisplay(size, unit) : '',
+      weightText: isWeightUnit(unit) && size ? formatSmartMeasureDisplay(size, unit) : '',
       category: ensureCategoryExists(quick.category || ing.category || getRoomFallbackCategory(room), room),
       place: ensurePlaceExists(quick.place || 'kyl', room),
       room,
@@ -6549,7 +6560,7 @@ window.addEventListener('load', () => {
   }
 
   function pushOrMergeBuyPack(item) {
-    if (!item || !Array.isArray(items)) return;
+    if (!item) return;
 
     const existing = items.find(entry =>
       entry &&
@@ -6577,7 +6588,7 @@ window.addEventListener('load', () => {
     });
   }
 
-  /* Snabblista must stay locked */
+  /* Lock Snabblista: recipe/home should never mutate quick templates */
   window.syncQuickItemFromItem = function () { return; };
   syncQuickItemFromItem = window.syncQuickItemFromItem;
 
@@ -6600,19 +6611,14 @@ window.addEventListener('load', () => {
   };
   changeQuickCategory = window.changeQuickCategory;
 
-  /* Keep buy list as pack-counts for Snabblista pack templates */
+  /* Buy list should keep whole pack rows instead of merging to weird total kg */
   const originalMergeCanonicalItemIntoList = window.mergeCanonicalItemIntoList || mergeCanonicalItemIntoList;
-  window.mergeCanonicalItemIntoList = function mergeCanonicalItemIntoListOverride(nextItem, type = 'buy') {
+  window.mergeCanonicalItemIntoList = function mergeCanonicalItemIntoListAutoBuy(nextItem, type = 'buy') {
     if (!nextItem) return;
     const normalizedType = type === 'home' ? 'home' : 'buy';
     const unit = String(nextItem.unit || 'st').toLowerCase();
 
-    if (
-      normalizedType === 'buy' &&
-      typeof supportsSize === 'function' &&
-      supportsSize(unit) &&
-      Number(nextItem.size || 0) > 0
-    ) {
+    if (normalizedType === 'buy' && supportsSize(unit) && Number(nextItem.size || 0) > 0) {
       pushOrMergeBuyPack({
         ...nextItem,
         type: 'buy',
@@ -6626,63 +6632,70 @@ window.addEventListener('load', () => {
   };
   mergeCanonicalItemIntoList = window.mergeCanonicalItemIntoList;
 
-  /* Missing recipe items -> buy whole packs from Snabblistan */
-  window.createBuyItemFromMissingEntry = function createBuyItemFromMissingEntryOverride(entry) {
+  /* Missing ingredients button should use whole packs from quick template */
+  window.createBuyItemFromMissingEntry = function createBuyItemFromMissingEntryAutoBuy(entry) {
     if (!entry) return null;
+
     const ingredient = normalizeRecipeIngredient(entry.ingredient || entry);
     if (!ingredient) return null;
 
-    const missingAmount = Math.max(0, safeNum(entry.missing || 0));
+    const missingAmount = Math.max(0, Number(entry.missing || 0));
     if (!missingAmount) return null;
 
-    const quick = getQuickTemplateForIngredient(ingredient);
-    if (quick) {
-      const unit = String(quick.unit || ingredient.unit || 'st').toLowerCase();
-      if (typeof supportsSize === 'function' && supportsSize(unit)) {
-        const context = typeof getRecipeIngredientContext === 'function'
-          ? getRecipeIngredientContext({
-              ...quick,
-              ...ingredient,
-              unit,
-              category: quick.category || ingredient.category || ''
-            })
-          : (quick.category || ingredient.category || '');
-
-        const packSize = Math.max(0, Number(normalizeSize(unit, quick.size, context) || 0));
-        const packCount = packSize > 0 ? Math.max(1, Math.ceil(missingAmount / packSize)) : 1;
-        return buildBuyPackFromQuickTemplate(ingredient, packCount);
-      }
+    const packSize = getQuickPackSizeForIngredient(ingredient);
+    if (packSize > 0) {
+      const packCount = Math.max(1, Math.ceil(missingAmount / packSize));
+      return buildQuickPackBuyItem(ingredient, packCount);
     }
 
     return null;
   };
   createBuyItemFromMissingEntry = window.createBuyItemFromMissingEntry;
 
-  /* CRITICAL FIX:
-     only restock when amountAfter is actually 0 or less after consumeIngredientEntries() */
-  window.queueRestockIfDepleted = function queueRestockIfDepletedOverride(ingredient, amountBefore = 0) {
+  /* Disable empty-only restock for size-based recipe items.
+     Auto-buy will handle pack replenishment every time you cook. */
+  window.queueRestockIfDepleted = function queueRestockIfDepletedAutoBuy(ingredient, amountBefore = 0) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing || amountBefore <= 0) return;
 
-    const amountAfter = Math.max(0, safeNum(getHomeAmountForIngredient(ing)));
-    if (amountAfter > 0) return;
-
-    const buyItem = buildBuyPackFromQuickTemplate(ing, 1) || createRestockBuyItemFromQuick(ing);
-    if (!buyItem) return;
-
-    if (
-      typeof supportsSize === 'function' &&
-      supportsSize(buyItem.unit) &&
-      Number(buyItem.size || 0) > 0
-    ) {
-      pushOrMergeBuyPack(buyItem);
-      return;
-    }
-
-    mergeCanonicalItemIntoList(buyItem, 'buy');
+    if (supportsSize(ing.unit)) return;
   };
   queueRestockIfDepleted = window.queueRestockIfDepleted;
 
-  window.__restockFixZip = 'v19';
+  /* Core behavior:
+     - keep original gram consumption in Har hemma
+     - after consuming, add whole quick-template packs to Buy list every time recipe uses that ingredient */
+  const originalUseRecipeIngredients = window.useRecipeIngredients || useRecipeIngredients;
+  window.useRecipeIngredients = function useRecipeIngredientsAutoBuy() {
+    const recipe = getSelectedRecipe();
+    if (!recipe) return;
+
+    const combinedEntries = getCombinedRecipeIngredientEntries([{ slot: { label: 'Recept' }, recipe, recipeName: recipe.name }]);
+
+    consumeIngredientEntries(combinedEntries);
+
+    combinedEntries.forEach(entry => {
+      const ingredient = normalizeRecipeIngredient(entry?.ingredient || entry);
+      if (!ingredient) return;
+      if (!supportsSize(ingredient.unit)) return;
+
+      const packSize = getQuickPackSizeForIngredient(ingredient);
+      if (packSize <= 0) return;
+
+      const requestedAmount = Math.max(0, Number(recipeIngredientCanonicalAmount(ingredient) || 0));
+      if (requestedAmount <= 0) return;
+
+      const packCount = Math.max(1, Math.ceil(requestedAmount / packSize));
+      const buyItem = buildQuickPackBuyItem(ingredient, packCount);
+      if (buyItem) pushOrMergeBuyPack(buyItem);
+    });
+
+    save();
+    checkRecipe();
+    render();
+  };
+  useRecipeIngredients = window.useRecipeIngredients;
+
+  window.__autoBuyZip = 'v20';
 })();
 
