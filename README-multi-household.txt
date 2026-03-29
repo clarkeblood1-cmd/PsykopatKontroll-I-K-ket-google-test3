@@ -1,1 +1,1 @@
-Ny version med flera hushåll per konto, hushållsväxling, eget hushåll + vänners hushåll samtidigt.
+Ny version med hushållspanel: visar medlemmar, visar ägare, lämna hushåll-knapp och stoppar auto-create när man öppnar join-länk.

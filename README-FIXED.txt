@@ -1,12 +1,23 @@
-PsykopatKontroll – riktig household/cloud ZIP
+PsykopatKontroll – cloud sync paket
 
-Det här paketet är byggt från dina uppladdade filer och fixar:
-- hushållssynk via households/{householdId}/state/main
-- members-subcollection skapas automatiskt
-- bilduppladdning till Firebase Storage
-- Storage SDK laddas i index.html
-- ny cache-version i sw.js
+Filer:
+- index.html
+- script.js
+- cloud-sync.js
+- style.css
+- firebase-config.js
+- firestore.rules
+- storage.rules
 
-Ladda upp allt i ZIP:en till samma mapp i GitHub Pages.
-Publicera sedan både firestore.rules och storage.rules i Firebase.
-Efter uppladdning: gör hård uppdatering / rensa cache på mobil och dator.
+Gör så här:
+1. Ladda upp alla filer till samma mapp i repo:t.
+2. I Firebase:
+   - Authentication -> aktivera Google
+   - Firestore Database -> skapa databas
+   - Firestore Rules -> klistra in firestore.rules
+   - Storage -> aktivera Firebase Storage
+   - Storage Rules -> klistra in storage.rules
+3. Lägg till domänen clarkeblood1-cmd.github.io under Authorized domains.
+4. Commit + vänta på GitHub Pages.
+
+5. Bilder laddas nu upp till Firebase Storage när du är inloggad. Äldre base64-bilder flyttas automatiskt till molnet första gången appen öppnas.
