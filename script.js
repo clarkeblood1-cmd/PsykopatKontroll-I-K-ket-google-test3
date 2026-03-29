@@ -6756,6 +6756,21 @@ window.addEventListener('load', () => {
 
     consumeIngredientEntries(combinedEntries);
 
+    combinedEntries.forEach(entry => {
+      const ing = normalizeRecipeIngredient(entry?.ingredient || entry);
+      if (!ing) return;
+      const unit = String(ing.unit || 'st').toLowerCase();
+      if (supportsSize(unit)) return;
+
+      const amountAfter = getAmountAfterRecipeUse(ing);
+      if (amountAfter > AUTO_BUY_COUNT_THRESHOLD) return;
+
+      const buyItem = buildQuickCountBuyItem(ing, 1);
+      if (buyItem) {
+        mergeCanonicalItemIntoList(buyItem, 'buy');
+      }
+    });
+
     save();
     checkRecipe();
     render();
