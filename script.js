@@ -6495,249 +6495,128 @@ window.addEventListener('load', () => {
 
 
 
-/* === pack-system patch: recipe -> consume whole packs from quick template === */
+/* === hybrid recipe patch: consume grams at home, buy whole packs when needed === */
 (function () {
-  const originalUseRecipeIngredients = typeof window.useRecipeIngredients === 'function'
-    ? window.useRecipeIngredients
-    : null;
-
   function safeNum(v) {
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
   }
 
-  function normName(v) {
-    return typeof normalizeText === 'function'
-      ? normalizeText(v)
-      : String(v || '').trim().toLowerCase();
-  }
-
-  function findQuickTemplatePack(ingredient) {
+  function getQuickPackInfoForIngredient(ingredient) {
     const ing = typeof normalizeRecipeIngredient === 'function'
       ? normalizeRecipeIngredient(ingredient)
       : ingredient;
+    if (!ing || typeof findQuickItemByName !== 'function') return null;
 
-    if (!ing || !Array.isArray(window.quickItems)) return null;
+    const quickMatch = findQuickItemByName(ing.name);
+    if (!quickMatch) return null;
 
-    const quick = window.quickItems.find(item => normName(item && item.name) === normName(ing.name));
-    if (!quick) return null;
+    const unit = String(quickMatch.unit || ing.unit || 'st').toLowerCase();
+    if (!(typeof supportsSize === 'function' && supportsSize(unit))) return null;
 
-    const unit = String(quick.unit || ing.unit || '').toLowerCase();
-    const size = safeNum(quick.size || 0);
-
-    if (!(typeof isWeightUnit === 'function' && isWeightUnit(unit))) return null;
+    const size = Math.max(0, Number(quickMatch.size || 0));
     if (size <= 0) return null;
 
     return {
-      template: quick,
-      name: quick.name || ing.name,
+      quickMatch,
+      ingredient: ing,
       unit,
-      size,
-      category: quick.category || ing.category || 'ÖVRIGT',
-      place: quick.place || 'kyl',
-      room: quick.room || (typeof activeRoom !== 'undefined' ? activeRoom : 'koket'),
-      price: safeNum(quick.price || 0),
-      img: quick.img ? String(quick.img) : ''
+      size
     };
   }
 
-  function packCountForIngredient(ingredient, pack) {
-    const ing = typeof normalizeRecipeIngredient === 'function'
-      ? normalizeRecipeIngredient(ingredient)
-      : ingredient;
-    if (!ing || !pack) return 0;
+  function buildBuyItemFromQuickPack(ingredient, packCount) {
+    const pack = getQuickPackInfoForIngredient(ingredient);
+    if (!pack || packCount <= 0) return null;
 
-    let requested = 0;
-    if (typeof recipeIngredientCanonicalAmount === 'function') {
-      requested = safeNum(recipeIngredientCanonicalAmount(ing));
-    } else {
-      requested = safeNum(ing.size || ing.quantity || 0);
-    }
-    if (requested <= 0) return 0;
+    const quickMatch = pack.quickMatch;
+    const ing = pack.ingredient;
+    const unit = pack.unit;
+    const normalizedSize = pack.size;
 
-    let packAmountInIngredientUnit = pack.size;
-    if (typeof convertCanonicalAmountForIngredient === 'function') {
-      packAmountInIngredientUnit = safeNum(convertCanonicalAmountForIngredient(
-        pack.size,
-        pack.unit,
-        ing.unit || pack.unit,
-        ing.name
-      ));
-    }
-
-    if (packAmountInIngredientUnit <= 0) packAmountInIngredientUnit = pack.size;
-    return Math.max(1, Math.ceil(requested / packAmountInIngredientUnit));
-  }
-
-  function mergeBuyPack(ingredient, packCount) {
-    const pack = findQuickTemplatePack(ingredient);
-    if (!pack || packCount <= 0 || !Array.isArray(window.items)) return false;
-
-    const buyItem = {
-      name: pack.name,
-      price: pack.price,
-      quantity: Math.max(1, Math.round(packCount)),
-      unit: pack.unit,
-      size: pack.size,
-      measureText: typeof formatSmartMeasureDisplay === 'function' ? formatSmartMeasureDisplay(pack.size, pack.unit) : '',
-      weightText: typeof formatSmartMeasureDisplay === 'function' ? formatSmartMeasureDisplay(pack.size, pack.unit) : '',
-      category: typeof ensureCategoryExists === 'function'
-        ? ensureCategoryExists(pack.category || (typeof getRoomFallbackCategory === 'function' ? getRoomFallbackCategory(pack.room) : 'ÖVRIGT'), pack.room)
-        : (pack.category || 'ÖVRIGT'),
-      place: typeof ensurePlaceExists === 'function' ? ensurePlaceExists(pack.place || 'kyl', pack.room) : (pack.place || 'kyl'),
-      room: pack.room,
-      img: pack.img,
+    return {
+      name: quickMatch.name || ing.name,
+      price: Number(quickMatch.price || 0),
+      quantity: Math.max(1, Math.round(packCount)) * Math.max(1, Number(quickMatch.quantity || 1)),
+      unit,
+      size: normalizedSize,
+      measureText: supportsSize(unit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, unit) : '',
+      weightText: (typeof isWeightUnit === 'function' && isWeightUnit(unit) && normalizedSize) ? formatSmartMeasureDisplay(normalizedSize, unit) : '',
+      category: ensureCategoryExists(quickMatch.category || ing.category || getRoomFallbackCategory(quickMatch.room || activeRoom), quickMatch.room || activeRoom),
+      place: ensurePlaceExists(quickMatch.place || 'kyl'),
+      img: quickMatch.img ? String(quickMatch.img) : '',
       type: 'buy'
     };
+  }
 
+  function mergeWholePacksToBuy(ingredient, packCount) {
+    const buyItem = buildBuyItemFromQuickPack(ingredient, packCount);
+    if (!buyItem) return false;
     if (typeof mergeCanonicalItemIntoList === 'function') {
       mergeCanonicalItemIntoList(buyItem, 'buy');
       return true;
     }
-
-    window.items.push(buyItem);
-    return true;
+    return false;
   }
 
-  function consumeWholePacksFromHome(ingredient, packCount) {
-    const ing = typeof normalizeRecipeIngredient === 'function'
-      ? normalizeRecipeIngredient(ingredient)
-      : ingredient;
-    const pack = findQuickTemplatePack(ing);
-    if (!ing || !pack || packCount <= 0 || !Array.isArray(window.items)) return false;
-    if (typeof getMatchingHomeItemsForIngredient !== 'function') return false;
-    if (typeof getItemCanonicalAmount !== 'function') return false;
-
-    let remainingPacks = Math.max(1, Math.round(packCount));
-    const matches = getMatchingHomeItemsForIngredient(ing)
-      .map(match => ({
-        item: match.item,
-        index: match.index
-      }))
-      .sort((a, b) => {
-        const aTotal = safeNum(getItemCanonicalAmount(a.item, a.item.unit));
-        const bTotal = safeNum(getItemCanonicalAmount(b.item, b.item.unit));
-        return bTotal - aTotal;
-      });
-
-    for (const match of matches) {
-      if (remainingPacks <= 0) break;
-      const stored = window.items[match.index];
-      if (!stored) continue;
-
-      const storedTotal = safeNum(getItemCanonicalAmount(stored, stored.unit));
-      if (storedTotal <= 0) continue;
-
-      let packSizeInStoredUnit = pack.size;
-      if (typeof convertCanonicalAmountForIngredient === 'function') {
-        packSizeInStoredUnit = safeNum(convertCanonicalAmountForIngredient(
-          pack.size,
-          pack.unit,
-          stored.unit || pack.unit,
-          ing.name
-        ));
-      }
-      if (packSizeInStoredUnit <= 0) packSizeInStoredUnit = pack.size;
-
-      const maxPacksFromThisItem = Math.max(0, Math.floor(storedTotal / packSizeInStoredUnit));
-      if (maxPacksFromThisItem <= 0) continue;
-
-      const takePacks = Math.min(remainingPacks, maxPacksFromThisItem);
-      const nextTotal = Math.max(0, Math.round(storedTotal - (takePacks * packSizeInStoredUnit)));
-
-      if (nextTotal <= 0) {
-        window.items.splice(match.index, 1);
-      } else {
-        stored.quantity = 1;
-        stored.unit = stored.unit || pack.unit;
-        stored.size = nextTotal;
-        stored.measureText = typeof formatSmartMeasureDisplay === 'function'
-          ? formatSmartMeasureDisplay(nextTotal, stored.unit)
-          : '';
-        stored.weightText = (typeof isWeightUnit === 'function' && isWeightUnit(stored.unit) && typeof formatSmartMeasureDisplay === 'function')
-          ? formatSmartMeasureDisplay(nextTotal, stored.unit)
-          : '';
-        stored.openedAmount = 0;
-        stored.packMode = '';
-      }
-
-      remainingPacks -= takePacks;
+  function addMissingToBuyHybrid() {
+    if (!Array.isArray(window.currentRecipeMissing) || !window.currentRecipeMissing.length) {
+      if (typeof checkRecipe === 'function') checkRecipe();
     }
 
-    return remainingPacks < packCount;
-  }
+    if (!Array.isArray(window.currentRecipeMissing) || !window.currentRecipeMissing.length) return;
 
-  function consumeIngredientEntriesWithPackSystem(entries) {
-    const normalizedEntries = Array.isArray(entries) ? entries : [];
-
-    normalizedEntries.forEach(entry => {
-      const ingredient = typeof normalizeRecipeIngredient === 'function'
-        ? normalizeRecipeIngredient(entry && (entry.ingredient || entry))
-        : (entry && (entry.ingredient || entry));
-
+    window.currentRecipeMissing.forEach(entry => {
+      const ingredient = normalizeRecipeIngredient(entry?.ingredient || entry);
       if (!ingredient) return;
 
-      const pack = findQuickTemplatePack(ingredient);
-      if (!pack) {
-        if (typeof consumeIngredientEntries === 'function') {
-          consumeIngredientEntries([entry]);
-        }
+      const pack = getQuickPackInfoForIngredient(ingredient);
+      if (pack) {
+        const missingAmount = Math.max(0, Number(entry?.missing || 0));
+        const packsNeeded = Math.max(1, Math.ceil(missingAmount / pack.size));
+        mergeWholePacksToBuy(ingredient, packsNeeded);
         return;
       }
 
-      const packsNeeded = packCountForIngredient(ingredient, pack);
-      if (packsNeeded <= 0) return;
-
-      consumeWholePacksFromHome(ingredient, packsNeeded);
-      mergeBuyPack(ingredient, packsNeeded);
+      const buyItem = typeof createBuyItemFromMissingEntry === 'function'
+        ? createBuyItemFromMissingEntry(entry)
+        : null;
+      if (buyItem && typeof mergeCanonicalItemIntoList === 'function') {
+        mergeCanonicalItemIntoList(buyItem, 'buy');
+      }
     });
 
     if (typeof save === 'function') save();
+    if (typeof checkRecipe === 'function') checkRecipe();
+    if (typeof render === 'function') render();
   }
 
-  window.useRecipeIngredients = function useRecipeIngredientsPackSystem() {
-    const recipe = typeof getSelectedRecipe === 'function' ? getSelectedRecipe() : null;
-    if (!recipe) return;
+  function queueRestockIfDepletedHybrid(ingredient, amountBefore = 0) {
+    const ing = normalizeRecipeIngredient(ingredient);
+    if (!ing || amountBefore <= 0) return;
 
-    if (typeof getCombinedRecipeIngredientEntries !== 'function') {
-      if (originalUseRecipeIngredients) return originalUseRecipeIngredients();
+    const amountAfter = typeof getHomeAmountForIngredient === 'function'
+      ? getHomeAmountForIngredient(ing)
+      : 0;
+
+    if (amountAfter > 0) return;
+
+    const pack = getQuickPackInfoForIngredient(ing);
+    if (pack) {
+      const estimatedConsumedPacks = Math.max(1, Math.round(amountBefore / pack.size));
+      mergeWholePacksToBuy(ing, estimatedConsumedPacks);
       return;
     }
 
-    const combinedEntries = getCombinedRecipeIngredientEntries([{ slot: { label: 'Recept' }, recipe, recipeName: recipe.name }]);
-    consumeIngredientEntriesWithPackSystem(combinedEntries);
+    const buyItem = typeof createRestockBuyItemFromQuick === 'function'
+      ? createRestockBuyItemFromQuick(ing)
+      : null;
+    if (buyItem && typeof mergeCanonicalItemIntoList === 'function') {
+      mergeCanonicalItemIntoList(buyItem, 'buy');
+    }
+  }
 
-    if (typeof checkRecipe === 'function') checkRecipe();
-    if (typeof render === 'function') render();
-  };
-
-  window.addMissingToBuy = function addMissingToBuyPackSystem() {
-    const missing = Array.isArray(window.currentRecipeMissing) ? window.currentRecipeMissing : [];
-    if (!missing.length) return;
-
-    missing.forEach(entry => {
-      const ingredient = typeof normalizeRecipeIngredient === 'function'
-        ? normalizeRecipeIngredient(entry && (entry.ingredient || entry))
-        : (entry && (entry.ingredient || entry));
-
-      if (!ingredient) return;
-
-      const pack = findQuickTemplatePack(ingredient);
-      if (!pack) {
-        if (typeof createBuyItemFromMissingEntry === 'function' && typeof mergeCanonicalItemIntoList === 'function') {
-          const buyItem = createBuyItemFromMissingEntry(entry);
-          if (buyItem) mergeCanonicalItemIntoList(buyItem, 'buy');
-        }
-        return;
-      }
-
-      const packsNeeded = packCountForIngredient(ingredient, pack);
-      if (packsNeeded > 0) mergeBuyPack(ingredient, packsNeeded);
-    });
-
-    if (typeof checkRecipe === 'function') checkRecipe();
-    if (typeof render === 'function') render();
-    if (typeof save === 'function') save();
-  };
+  window.addMissingToBuy = addMissingToBuyHybrid;
+  window.queueRestockIfDepleted = queueRestockIfDepletedHybrid;
 })();
 
