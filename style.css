@@ -1326,5 +1326,27 @@ button:hover{background:var(--green-dark);color:#fff}
 }
 
 
-.measure-option{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;color:var(--muted);font-weight:700}
-.measure-option input{width:auto;min-height:auto;margin:0}
+/* v38 row layout */
+.quick-label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin:0 0 6px}
+.quick-add-controls-v38{display:flex;flex-direction:column;gap:12px}
+.quick-add-controls-v38 .quick-row{display:grid;gap:10px}
+.quick-add-controls-v38 .quick-row-main{grid-template-columns:1fr 1fr 1fr 2fr}
+.quick-add-controls-v38 .quick-row-type{grid-template-columns:1fr 1fr 1fr}
+.quick-add-controls-v38 .quick-row-weight{grid-template-columns:1fr}
+.quick-add-controls-v38 .quick-row-actions{grid-template-columns:repeat(5,minmax(0,1fr))}
+.quick-add-controls-v38 .quick-field-search-wide{min-width:0}
+.quick-add-controls-v38 .quick-field-weight{max-width:420px}
+.quick-add-controls-v38 .quick-row-actions button{width:100%}
+.modal-grid-v38{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.modal-grid-v38 .modal-field-wide{grid-column:1/-1}
+@media (max-width:900px){
+  .quick-add-controls-v38 .quick-row-main{grid-template-columns:1fr 1fr}
+  .quick-add-controls-v38 .quick-row-type{grid-template-columns:1fr 1fr 1fr}
+  .quick-add-controls-v38 .quick-row-actions{grid-template-columns:1fr 1fr}
+}
+@media (max-width:640px){
+  .quick-add-controls-v38 .quick-row-main,
+  .quick-add-controls-v38 .quick-row-type,
+  .quick-add-controls-v38 .quick-row-actions,
+  .modal-grid-v38{grid-template-columns:1fr}
+}

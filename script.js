@@ -570,6 +570,47 @@ function supportsSize(unit) {
   return isWeightUnit(unit) || isLiquidUnit(unit);
 }
 
+function supportsAttachedMeasure(unit) {
+  return supportsSize(unit) || ['st', 'pkt'].includes(String(unit || '').toLowerCase());
+}
+
+function getCountLabel(unit) {
+  return String(unit || '').toLowerCase() === 'pkt' ? 'paket' : (unit || 'st');
+}
+
+function isCountWithMeasureUnit(unit) {
+  return ['st', 'pkt'].includes(String(unit || '').toLowerCase());
+}
+
+function isMeasuredItem(item) {
+  if (!item) return false;
+  return supportsSize(item.unit) || (isCountWithMeasureUnit(item.unit) && Number(item.size || 0) > 0);
+}
+
+function getMeasureHintForItemUnit(unit, item = null) {
+  if (supportsSize(unit)) return unit;
+  const measureUnit = String(item?.measureUnit || '').toLowerCase();
+  if (measureUnit) return measureUnit;
+  return 'g';
+}
+
+function parseFlexibleMeasureInput(text, unitHint = 'g') {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+
+  const match = raw.toLowerCase().replace(',', '.').match(/^(\d+(?:\.\d+)?)\s*(kg|g|ml|dl|l|krm|tsk|msk)?$/i);
+  if (!match) return null;
+
+  const suffix = String(match[2] || unitHint || 'g').toLowerCase();
+  const baseValue = parseSmartMeasureInput(raw, suffix);
+  if (!baseValue) return null;
+
+  return {
+    value: baseValue,
+    displayUnit: suffix === 'kg' ? 'kg' : (suffix || 'g')
+  };
+}
+
 function normalizeCategoryName(category) {
   return String(category || '').trim().toUpperCase();
 }
@@ -702,35 +743,6 @@ function getOpenedAmount(item) {
   return Math.min(size, opened);
 }
 
-function inferStockKind(item) {
-  if (!item) return 'count';
-  const explicit = String(item.stockKind || item.kind || '').toLowerCase();
-  if (explicit === 'package' || explicit === 'count') return explicit;
-  if (isWeightUnit(item.unit) && Math.max(0, Number(item.size || 0)) > 0) return 'package';
-  return 'count';
-}
-
-function isPackageItem(item) {
-  return inferStockKind(item) === 'package';
-}
-
-function getQuantityUnitLabel(item, amount = null) {
-  const count = Math.max(0, Number(amount != null ? amount : item?.quantity || 0));
-  const singular = count === 1;
-  if (isPackageItem(item)) return singular ? 'paket' : 'paket';
-  const baseUnit = String(item?.unit || 'st').toLowerCase();
-  if (baseUnit === 'st') return singular ? 'st' : 'st';
-  return baseUnit || 'st';
-}
-
-function formatPackageDisplay(item) {
-  if (!item || !supportsSize(item.unit)) return '';
-  const count = Math.max(0, Number(item.quantity || 0));
-  const size = Math.max(0, Number(item.size || 0));
-  if (!count || !size) return '';
-  return `${count} ${getQuantityUnitLabel(item, count)} × ${formatSmartMeasureDisplay(size, item.unit)}`;
-}
-
 function formatPackState(item) {
   if (!isPackTrackedItem(item)) return '';
   const unopened = Math.max(0, Number(item.quantity || 0));
@@ -738,8 +750,8 @@ function formatPackState(item) {
   const opened = getOpenedAmount(item);
   const parts = [];
 
-  if (unopened > 0) parts.push(`${unopened} paket × ${formatSmartMeasureDisplay(size, item.unit)}`);
-  if (opened > 0) parts.push(`öppnat paket: ${formatSmartMeasureDisplay(opened, item.unit)} kvar`);
+  if (unopened > 0) parts.push(`${unopened} påsar × ${formatSmartMeasureDisplay(size, item.unit)}`);
+  if (opened > 0) parts.push(`öppnad påse: ${formatSmartMeasureDisplay(opened, item.unit)} kvar`);
 
   return parts.join(' + ');
 }
@@ -748,17 +760,12 @@ function formatItemAmount(item) {
   const amount = Math.max(0, Number(item?.quantity || 0));
 
   if (supportsSize(item?.unit)) {
-    if (isPackageItem(item)) {
-      if (isPackTrackedItem(item)) {
-        const size = Math.max(0, Number(item?.size || 0));
-        const opened = getOpenedAmount(item);
-        const total = (amount * size) + opened;
-        const packText = formatPackState(item);
-        return packText ? `${formatSmartMeasureDisplay(total, item.unit)} totalt • ${packText}` : formatSmartMeasureDisplay(total, item.unit);
-      }
-
-      const packageText = formatPackageDisplay(item);
-      if (packageText) return packageText;
+    if (isPackTrackedItem(item)) {
+      const size = Math.max(0, Number(item?.size || 0));
+      const opened = getOpenedAmount(item);
+      const total = (amount * size) + opened;
+      const packText = formatPackState(item);
+      return packText ? `${formatSmartMeasureDisplay(total, item.unit)} totalt • ${packText}` : formatSmartMeasureDisplay(total, item.unit);
     }
 
     const size = Number(item?.size || 0);
@@ -766,7 +773,11 @@ function formatItemAmount(item) {
     return formatSmartMeasureDisplay(total, item.unit);
   }
 
-  return `${amount} ${getQuantityUnitLabel(item, amount)}`;
+  if (isCountWithMeasureUnit(item?.unit) && Number(item?.size || 0) > 0) {
+    return `${amount} ${getCountLabel(item?.unit)} × ${formatSmartMeasureDisplay(Number(item.size || 0), getMeasureHintForItemUnit(item?.unit, item))}`;
+  }
+
+  return `${amount} ${getCountLabel(item?.unit || 'st')}`;
 }
 
 function portionToRecipeSize(portions) {
@@ -934,7 +945,7 @@ function changeRecipeIngredientChoice(recipeName, ingredientName, value) {
 function formatBuyCostLabel(item) {
   const price = Number(item?.price || 0);
   const amount = Math.max(0, Number(item?.quantity || 0));
-  const unitLabel = isPackageItem(item) ? `${getQuantityUnitLabel(item, 1)} ${formatSizeValue(item.unit, item.size)}` : (supportsSize(item?.unit) ? formatSizeValue(item.unit, item.size) : getQuantityUnitLabel(item, 1));
+  const unitLabel = supportsSize(item?.unit) ? formatSizeValue(item.unit, item.size) : (isCountWithMeasureUnit(item?.unit) && Number(item?.size || 0) > 0 ? `${getCountLabel(item?.unit)} × ${formatSmartMeasureDisplay(Number(item.size || 0), getMeasureHintForItemUnit(item?.unit, item))}` : getCountLabel(item?.unit || 'st'));
   return {
     unitPrice: `${price} kr/${unitLabel}`,
     total: `${price * amount} kr`
@@ -1709,8 +1720,7 @@ function normalizeMeasureItemData(item, unitHint = null) {
     measureText: formatSmartMeasureDisplay(parsed, hint),
     weightText: getUnitFamily(hint) === 'weight' ? formatSmartMeasureDisplay(parsed, hint) : '',
     openedAmount,
-    packMode: getUnitFamily(hint) === 'weight' && (Number(item?.quantity || 0) > 1 || openedAmount > 0 || item?.packMode === 'bags') ? 'bags' : '',
-    stockKind: getUnitFamily(hint) === 'weight' ? 'package' : inferStockKind(item)
+    packMode: getUnitFamily(hint) === 'weight' && (Number(item?.quantity || 0) > 1 || openedAmount > 0 || item?.packMode === 'bags') ? 'bags' : ''
   };
 }
 
@@ -1720,10 +1730,6 @@ function getMeasureTextInput() {
 
 function getMeasureSummaryEl() {
   return document.getElementById('itemMeasureSummary');
-}
-
-function isNoPackageSelected() {
-  return !!document.getElementById('itemNoPackage')?.checked;
 }
 
 function updateMeasureSummary() {
@@ -1736,23 +1742,19 @@ function updateMeasureSummary() {
 
   const amount = Math.max(1, Number(amountEl.value || 1));
   const unit = unitEl.value;
-  const parsed = parseSmartMeasureInput(inputEl.value, unit);
+  const parsedEntry = parseFlexibleMeasureInput(inputEl.value, getMeasureHintForItemUnit(unit));
 
-  if (isEditNoPackageSelected()) {
+  if (!parsedEntry || !supportsAttachedMeasure(unit)) {
     summaryEl.textContent = '';
     summaryEl.style.display = 'none';
     return;
   }
 
-  if (!parsed || !supportsSize(unit)) {
-    summaryEl.textContent = '';
-    summaryEl.style.display = 'none';
-    return;
-  }
-
+  const parsed = parsedEntry.value;
+  const displayUnit = parsedEntry.displayUnit || getMeasureHintForItemUnit(unit);
   const total = parsed * amount;
-  const warning = getMeasureValidationMessage(parsed, amount, unit);
-  summaryEl.textContent = warning || `${amount} × ${formatSmartMeasureDisplay(parsed, unit)} = ${formatSmartMeasureDisplay(total, unit)}`;
+  const warning = getMeasureValidationMessage(parsed, amount, displayUnit);
+  summaryEl.textContent = warning || `${amount} × ${formatSmartMeasureDisplay(parsed, displayUnit)} = ${formatSmartMeasureDisplay(total, displayUnit)}`;
   summaryEl.style.display = 'block';
 }
 
@@ -1761,24 +1763,21 @@ function syncMeasureModeVisibility() {
   const sizeWrap = document.getElementById('itemSizeWrap');
   const measureWrap = document.getElementById('itemMeasureTextWrap');
   const inputEl = getMeasureTextInput();
-  const noPackageEl = document.getElementById('itemNoPackage');
 
   if (!unitEl || !sizeWrap || !measureWrap) return;
 
-  const smartMode = supportsSize(unitEl.value);
-  const noPackage = smartMode && !!noPackageEl?.checked;
-  sizeWrap.style.display = smartMode ? 'none' : '';
+  const smartMode = supportsAttachedMeasure(unitEl.value);
+  sizeWrap.style.display = supportsSize(unitEl.value) ? 'none' : '';
   measureWrap.style.display = smartMode ? '' : 'none';
 
-  if (noPackageEl) noPackageEl.parentElement.style.display = smartMode ? 'flex' : 'none';
-  if (inputEl) inputEl.placeholder = noPackage ? 'Ingen förpackning – lämna mängd per st tom' : getSmartMeasurePlaceholder(unitEl.value);
+  if (inputEl) inputEl.placeholder = getSmartMeasurePlaceholder(getMeasureHintForItemUnit(unitEl.value));
 
-  if (smartMode && !noPackage && inputEl?.value) {
-    const parsed = parseSmartMeasureInput(inputEl.value, unitEl.value);
-    if (parsed) inputEl.value = formatSmartMeasureDisplay(parsed, unitEl.value);
+  if (smartMode && inputEl?.value) {
+    const parsedEntry = parseFlexibleMeasureInput(inputEl.value, getMeasureHintForItemUnit(unitEl.value));
+    if (parsedEntry) inputEl.value = formatSmartMeasureDisplay(parsedEntry.value, parsedEntry.displayUnit || getMeasureHintForItemUnit(unitEl.value));
   }
 
-  if ((!smartMode || noPackage) && inputEl) inputEl.value = '';
+  if (!smartMode && inputEl) inputEl.value = '';
   updateMeasureSummary();
 }
 
@@ -1788,10 +1787,6 @@ function getEditMeasureTextInput() {
 
 function getEditMeasureSummaryEl() {
   return document.getElementById('editMeasureSummary');
-}
-
-function isEditNoPackageSelected() {
-  return !!document.getElementById('editNoPackage')?.checked;
 }
 
 function getIngredientEditMeasureTextInput() {
@@ -1814,12 +1809,6 @@ function updateIngredientEditMeasureSummary() {
   const unit = unitEl.value;
   const parsed = parseSmartMeasureInput(inputEl.value, unit);
 
-  if (isNoPackageSelected()) {
-    summaryEl.textContent = '';
-    summaryEl.style.display = 'none';
-    return;
-  }
-
   if (!parsed || !supportsSize(unit)) {
     summaryEl.textContent = '';
     summaryEl.style.display = 'none';
@@ -1840,15 +1829,15 @@ function syncIngredientEditMeasureModeVisibility() {
 
   if (!unitEl || !sizeWrap || !measureWrap) return;
 
-  const smartMode = supportsSize(unitEl.value);
-  sizeWrap.style.display = smartMode ? 'none' : '';
+  const smartMode = supportsAttachedMeasure(unitEl.value);
+  sizeWrap.style.display = supportsSize(unitEl.value) ? 'none' : '';
   measureWrap.style.display = smartMode ? '' : 'none';
 
-  if (inputEl) inputEl.placeholder = getSmartMeasurePlaceholder(unitEl.value);
+  if (inputEl) inputEl.placeholder = getSmartMeasurePlaceholder(getMeasureHintForItemUnit(unitEl.value));
 
   if (smartMode && inputEl?.value) {
-    const parsed = parseSmartMeasureInput(inputEl.value, unitEl.value);
-    if (parsed) inputEl.value = formatSmartMeasureDisplay(parsed, unitEl.value);
+    const parsedEntry = parseFlexibleMeasureInput(inputEl.value, getMeasureHintForItemUnit(unitEl.value));
+    if (parsedEntry) inputEl.value = formatSmartMeasureDisplay(parsedEntry.value, parsedEntry.displayUnit || getMeasureHintForItemUnit(unitEl.value));
   }
 
   if (!smartMode && inputEl) inputEl.value = '';
@@ -1867,12 +1856,6 @@ function updateEditMeasureSummary() {
   const unit = unitEl.value;
   const parsed = parseSmartMeasureInput(inputEl.value, unit);
 
-  if (isNoPackageSelected()) {
-    summaryEl.textContent = '';
-    summaryEl.style.display = 'none';
-    return;
-  }
-
   if (!parsed || !supportsSize(unit)) {
     summaryEl.textContent = '';
     summaryEl.style.display = 'none';
@@ -1890,24 +1873,21 @@ function syncEditMeasureModeVisibility() {
   const sizeWrap = document.getElementById('editSizeWrap');
   const measureWrap = document.getElementById('editMeasureTextWrap');
   const inputEl = getEditMeasureTextInput();
-  const noPackageEl = document.getElementById('editNoPackage');
 
   if (!unitEl || !sizeWrap || !measureWrap) return;
 
   const smartMode = supportsSize(unitEl.value);
-  const noPackage = smartMode && !!noPackageEl?.checked;
   sizeWrap.style.display = smartMode ? 'none' : '';
   measureWrap.style.display = smartMode ? '' : 'none';
 
-  if (noPackageEl) noPackageEl.parentElement.style.display = smartMode ? 'flex' : 'none';
-  if (inputEl) inputEl.placeholder = noPackage ? 'Ingen förpackning – lämna mängd per st tom' : getSmartMeasurePlaceholder(unitEl.value);
+  if (inputEl) inputEl.placeholder = getSmartMeasurePlaceholder(unitEl.value);
 
-  if (smartMode && !noPackage && inputEl?.value) {
+  if (smartMode && inputEl?.value) {
     const parsed = parseSmartMeasureInput(inputEl.value, unitEl.value);
     if (parsed) inputEl.value = formatSmartMeasureDisplay(parsed, unitEl.value);
   }
 
-  if ((!smartMode || noPackage) && inputEl) inputEl.value = '';
+  if (!smartMode && inputEl) inputEl.value = '';
   updateEditMeasureSummary();
 }
 
@@ -2000,8 +1980,7 @@ function hydrateData() {
       type: item?.type === 'buy' ? 'buy' : 'home',
       img: item?.img ? String(item.img) : getAutoImagePath(item?.name || ''),
       openedAmount: Math.max(0, Number(item?.openedAmount || 0)),
-      packMode: item?.packMode === 'bags' ? 'bags' : '',
-      stockKind: inferStockKind(item)
+      packMode: item?.packMode === 'bags' ? 'bags' : ''
     };
   }).filter(item => item.name);
 
@@ -2020,8 +1999,7 @@ function hydrateData() {
       place: ensurePlaceExists(item?.place || fallbackPlace, room),
       room,
       type: 'home',
-      img: item?.img ? String(item.img) : getAutoImagePath(item?.name || ''),
-      stockKind: inferStockKind(item)
+      img: item?.img ? String(item.img) : getAutoImagePath(item?.name || '')
     };
   }).filter(item => item.name);
 
@@ -3240,7 +3218,7 @@ function createCard(item, source = 'items') {
       <div class="meta">
         <div class="quantity-wrap">
           <input type="number" min="0" value="${Number(item.quantity || 0)}" onchange="updateQuantity(${realIndex}, this.value)">
-          <span>${isPackageItem(item) ? `${getQuantityUnitLabel(item, Number(item.quantity || 0))} × ${formatSizeValue(item.unit, item.size)}` : (supportsSize(item.unit) ? formatSizeValue(item.unit, item.size) : getQuantityUnitLabel(item, Number(item.quantity || 0)))}</span>
+          <span>${supportsSize(item.unit) ? formatSizeValue(item.unit, item.size) : (item.unit || 'st')}</span>
         </div>
         ${item.type === 'buy'
           ? `<div class="price-block">${
@@ -3359,9 +3337,7 @@ function applyQuickItemToMainForm(index) {
   if (itemCategory) itemCategory.value = item.category || getRoomFallbackCategory(item.room || activeRoom);
   if (itemUnit) itemUnit.value = item.unit || 'st';
   if (itemSize) updateSizeSelect('itemSize', item.unit || 'st', item.size);
-  if (itemMeasureText) itemMeasureText.value = supportsSize(item.unit) && item.size ? getMeasureTextFromSize(item.size, item.unit) : '';
-  const itemNoPackage = document.getElementById('itemNoPackage');
-  if (itemNoPackage) itemNoPackage.checked = !!(supportsSize(item.unit) && !item.size);
+  if (itemMeasureText) itemMeasureText.value = isMeasuredItem(item) ? getMeasureTextFromSize(item.size, getMeasureHintForItemUnit(item.unit, item)) : '';
   if (itemPlace) {
     itemPlace.dataset.currentValue = item.place || 'kyl';
     renderPlaceOptions();
@@ -3593,9 +3569,7 @@ function openEditModal(item, isQuick, index) {
   if (editQuantity) editQuantity.value = Math.max(1, Number(item.quantity || 1));
   if (editUnit) editUnit.value = item.unit || 'st';
   if (editSize) updateSizeSelect('editSize', item.unit || 'st', item.size);
-  if (editMeasureText) editMeasureText.value = supportsSize(item.unit) && item.size ? getMeasureTextFromSize(item.size, item.unit) : '';
-  const editNoPackage = document.getElementById('editNoPackage');
-  if (editNoPackage) editNoPackage.checked = !!(supportsSize(item.unit) && !item.size);
+  if (editMeasureText) editMeasureText.value = isMeasuredItem(item) ? getMeasureTextFromSize(item.size, getMeasureHintForItemUnit(item.unit, item)) : '';
   if (editCategory) {
     editCategory.dataset.currentValue = item.category || getRoomFallbackCategory(item.room || activeRoom);
     renderCategoryOptions();
@@ -3657,23 +3631,25 @@ function saveEditItem() {
   const updatedUnit = document.getElementById('editUnit')?.value || 'st';
   const updatedName = document.getElementById('editName')?.value.trim() || '';
   const updatedQuantity = Math.max(1, Number(document.getElementById('editQuantity')?.value || 1));
-  const editNoPackage = supportsSize(updatedUnit) && !!document.getElementById('editNoPackage')?.checked;
-  const parsedMeasure = supportsSize(updatedUnit) && !editNoPackage
-    ? parseSmartMeasureInput(document.getElementById('editMeasureText')?.value || currentItem.measureText || currentItem.weightText || currentItem.size, updatedUnit)
+  const editMeasureRaw = document.getElementById('editMeasureText')?.value || currentItem.measureText || currentItem.weightText || currentItem.size;
+  const parsedMeasureEntry = supportsAttachedMeasure(updatedUnit)
+    ? parseFlexibleMeasureInput(editMeasureRaw, getMeasureHintForItemUnit(updatedUnit, currentItem))
     : null;
+  const parsedMeasure = parsedMeasureEntry?.value || null;
+  const parsedMeasureUnit = parsedMeasureEntry?.displayUnit || currentItem.measureUnit || '';
 
-  if (supportsSize(updatedUnit) && !editNoPackage) {
+  if (supportsAttachedMeasure(updatedUnit) && editMeasureRaw) {
     if (!parsedMeasure) {
-      alert(getMeasureInputError(updatedUnit));
+      alert(getMeasureInputError(getMeasureHintForItemUnit(updatedUnit, currentItem)));
       return;
     }
-    const measureWarning = getMeasureValidationMessage(parsedMeasure, updatedQuantity, updatedUnit);
+    const measureWarning = getMeasureValidationMessage(parsedMeasure, updatedQuantity, parsedMeasureUnit || getMeasureHintForItemUnit(updatedUnit, currentItem));
     if (measureWarning) {
       alert(measureWarning);
       return;
     }
     const editMeasureInput = document.getElementById('editMeasureText');
-    if (editMeasureInput) editMeasureInput.value = formatSmartMeasureDisplay(parsedMeasure, updatedUnit);
+    if (editMeasureInput) editMeasureInput.value = formatSmartMeasureDisplay(parsedMeasure, parsedMeasureUnit || getMeasureHintForItemUnit(updatedUnit, currentItem));
   }
 
   const updatedRoom = currentItem.room || activeRoom;
@@ -3682,18 +3658,18 @@ function saveEditItem() {
     price: Number(document.getElementById('editPrice')?.value || 0),
     quantity: updatedQuantity,
     unit: updatedUnit,
-    size: supportsSize(updatedUnit)
-      ? (editNoPackage ? null : parsedMeasure)
-      : normalizeSize(updatedUnit, document.getElementById('editSize')?.value || currentItem.size, document.getElementById('editCategory')?.value || currentItem.category),
-    measureText: supportsSize(updatedUnit) && parsedMeasure && !editNoPackage ? formatSmartMeasureDisplay(parsedMeasure, updatedUnit) : '',
-    weightText: isWeightUnit(updatedUnit) && parsedMeasure && !editNoPackage ? formatSmartMeasureDisplay(parsedMeasure, updatedUnit) : '',
+    size: parsedMeasure || (supportsSize(updatedUnit)
+      ? parsedMeasure
+      : normalizeSize(updatedUnit, document.getElementById('editSize')?.value || currentItem.size, document.getElementById('editCategory')?.value || currentItem.category)),
+    measureUnit: parsedMeasure ? (parsedMeasureUnit || getMeasureHintForItemUnit(updatedUnit, currentItem)) : (currentItem.measureUnit || ''),
+    measureText: parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, parsedMeasureUnit || getMeasureHintForItemUnit(updatedUnit, currentItem)) : '',
+    weightText: (parsedMeasure && isWeightUnit(parsedMeasureUnit || getMeasureHintForItemUnit(updatedUnit, currentItem))) ? formatSmartMeasureDisplay(parsedMeasure, parsedMeasureUnit || getMeasureHintForItemUnit(updatedUnit, currentItem)) : '',
     room: updatedRoom,
     category: ensureCategoryExists(document.getElementById('editCategory')?.value || currentItem.category || getRoomFallbackCategory(updatedRoom), updatedRoom),
     place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || getPlacesForRoom(updatedRoom)[0]?.key || 'kyl', updatedRoom),
     img: currentItem?.img && String(currentItem.img).startsWith('data:')
       ? String(currentItem.img)
-      : getAutoImagePath(updatedName),
-    stockKind: isWeightUnit(updatedUnit) && parsedMeasure && !editNoPackage ? 'package' : inferStockKind({ ...currentItem, unit: updatedUnit, size: editNoPackage ? null : parsedMeasure })
+      : getAutoImagePath(updatedName)
   };
 
   if (!updated.name) return;
@@ -3774,8 +3750,6 @@ function clearInputs(focusName = false) {
   if (itemUnit) itemUnit.value = 'st';
   if (itemSize) updateSizeSelect('itemSize', 'st');
   if (itemMeasureText) itemMeasureText.value = '';
-  const itemNoPackage = document.getElementById('itemNoPackage');
-  if (itemNoPackage) itemNoPackage.checked = false;
   renderQuickAddRoomOptions(selectedQuickRoom, false);
 
   selectedAddQuickIndex = null;
@@ -3794,7 +3768,6 @@ function buildItemFromForm() {
   const sizeInput = document.getElementById('itemSize');
   const placeInput = document.getElementById('itemPlace');
   const itemMeasureTextInput = document.getElementById('itemMeasureText');
-  const itemNoPackageInput = document.getElementById('itemNoPackage');
 
   const name = nameInput?.value.trim() || '';
   if (!name) return null;
@@ -3802,22 +3775,24 @@ function buildItemFromForm() {
   const matchedQuick = quickItems.find(q => normalizeText(q.name) === normalizeText(name));
   const resolvedUnit = unitInput?.value || (matchedQuick ? matchedQuick.unit : 'st');
   const quantity = Math.max(1, Number(qtyInput?.value || 1));
-  const noPackage = supportsSize(resolvedUnit) && !!itemNoPackageInput?.checked;
-  const parsedMeasure = supportsSize(resolvedUnit) && !noPackage
-    ? parseSmartMeasureInput(itemMeasureTextInput?.value || matchedQuick?.measureText || matchedQuick?.weightText || matchedQuick?.size, resolvedUnit)
+  const measureSource = itemMeasureTextInput?.value || matchedQuick?.measureText || matchedQuick?.weightText || matchedQuick?.size;
+  const parsedMeasureEntry = supportsAttachedMeasure(resolvedUnit)
+    ? parseFlexibleMeasureInput(measureSource, getMeasureHintForItemUnit(resolvedUnit, matchedQuick))
     : null;
+  const parsedMeasure = parsedMeasureEntry?.value || null;
+  const parsedMeasureUnit = parsedMeasureEntry?.displayUnit || matchedQuick?.measureUnit || '';
 
-  if (supportsSize(resolvedUnit) && !noPackage) {
+  if (supportsAttachedMeasure(resolvedUnit) && measureSource) {
     if (!parsedMeasure) {
-      alert(getMeasureInputError(resolvedUnit));
+      alert(getMeasureInputError(getMeasureHintForItemUnit(resolvedUnit, matchedQuick)));
       return null;
     }
-    const measureWarning = getMeasureValidationMessage(parsedMeasure, quantity, resolvedUnit);
+    const measureWarning = getMeasureValidationMessage(parsedMeasure, quantity, parsedMeasureUnit || getMeasureHintForItemUnit(resolvedUnit, matchedQuick));
     if (measureWarning) {
       alert(measureWarning);
       return null;
     }
-    if (itemMeasureTextInput) itemMeasureTextInput.value = formatSmartMeasureDisplay(parsedMeasure, resolvedUnit);
+    if (itemMeasureTextInput) itemMeasureTextInput.value = formatSmartMeasureDisplay(parsedMeasure, parsedMeasureUnit || getMeasureHintForItemUnit(resolvedUnit, matchedQuick));
   }
 
   const itemRoom = getQuickRoomSelection() || matchedQuick?.room || activeRoom;
@@ -3827,17 +3802,17 @@ function buildItemFromForm() {
     price: Number(priceInput?.value || (matchedQuick ? matchedQuick.price : 0) || 0),
     quantity,
     unit: resolvedUnit,
-    size: supportsSize(resolvedUnit)
-      ? (noPackage ? null : parsedMeasure)
-      : normalizeSize(resolvedUnit, sizeInput?.value || (matchedQuick ? matchedQuick.size : null), categoryInput?.value || matchedQuick?.category),
-    measureText: supportsSize(resolvedUnit) && parsedMeasure && !noPackage ? formatSmartMeasureDisplay(parsedMeasure, resolvedUnit) : '',
-    weightText: isWeightUnit(resolvedUnit) && parsedMeasure && !noPackage ? formatSmartMeasureDisplay(parsedMeasure, resolvedUnit) : '',
+    size: parsedMeasure || (supportsSize(resolvedUnit)
+      ? parsedMeasure
+      : normalizeSize(resolvedUnit, sizeInput?.value || (matchedQuick ? matchedQuick.size : null), categoryInput?.value || matchedQuick?.category)),
+    measureUnit: parsedMeasure ? (parsedMeasureUnit || getMeasureHintForItemUnit(resolvedUnit, matchedQuick)) : (matchedQuick?.measureUnit || ''),
+    measureText: parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, parsedMeasureUnit || getMeasureHintForItemUnit(resolvedUnit, matchedQuick)) : '',
+    weightText: (parsedMeasure && isWeightUnit(parsedMeasureUnit || getMeasureHintForItemUnit(resolvedUnit, matchedQuick))) ? formatSmartMeasureDisplay(parsedMeasure, parsedMeasureUnit || getMeasureHintForItemUnit(resolvedUnit, matchedQuick)) : '',
     room: itemRoom,
     category: ensureCategoryExists(categoryInput?.value || (matchedQuick ? matchedQuick.category : getRoomFallbackCategory(itemRoom)), itemRoom),
     place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : fallbackPlace), itemRoom),
     type: 'home',
-    img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name),
-    stockKind: isWeightUnit(resolvedUnit) && parsedMeasure && !noPackage ? 'package' : inferStockKind(matchedQuick || { unit: resolvedUnit, size: noPackage ? null : parsedMeasure })
+    img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name)
   };
 
   return { item, file: fileInput?.files?.[0] || null, matchedQuick };
@@ -4746,6 +4721,7 @@ function cloneTemplateForIngredient(ingredient) {
     quantity: 1,
     unit: resolvedUnit,
     size: normalizedSize,
+    measureUnit: String(base.measureUnit || '').toLowerCase(),
     measureText: supportsSize(resolvedUnit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, resolvedUnit) : '',
     weightText: isWeightUnit(resolvedUnit) && normalizedSize ? formatSmartMeasureDisplay(normalizedSize, resolvedUnit) : '',
     category: ensureCategoryExists(base.category || ing.category || getRoomFallbackCategory(activeRoom), activeRoom),
@@ -4815,7 +4791,7 @@ function mergeCanonicalItemIntoList(nextItem, type = 'buy') {
     category: ensureCategoryExists(nextItem.category || getRoomFallbackCategory(nextItem.room || activeRoom), nextItem.room || activeRoom),
     place: ensurePlaceExists(nextItem.place || 'kyl'),
     img: nextItem.img ? String(nextItem.img) : '',
-    stockKind: inferStockKind(nextItem)
+    measureUnit: String(nextItem.measureUnit || '').toLowerCase()
   };
 
   const existing = items.find(entry =>
@@ -4888,30 +4864,14 @@ function createRestockBuyItemFromQuick(ingredient) {
     category: ensureCategoryExists(quickMatch.category || ing.category || getRoomFallbackCategory(quickMatch.room || activeRoom), quickMatch.room || activeRoom),
     place: ensurePlaceExists(quickMatch.place || 'kyl'),
     img: quickMatch.img ? String(quickMatch.img) : '',
-    type: 'buy',
-    stockKind: inferStockKind(quickMatch)
+    measureUnit: String(quickMatch.measureUnit || '').toLowerCase(),
+    type: 'buy'
   };
 }
 
-function queueRestockIfDepleted(ingredient, amountBefore = 0, consumedAmount = 0) {
+function queueRestockIfDepleted(ingredient, amountBefore = 0) {
   const ing = normalizeRecipeIngredient(ingredient);
   if (!ing || amountBefore <= 0) return;
-
-  const quickPackSize = getQuickPackSizeForIngredient(ing);
-  const isWholePackageRecipe = isWeightUnit(ing.unit) && quickPackSize > 0;
-
-  if (isWholePackageRecipe) {
-    const wholePacksConsumed = Math.floor(Math.max(0, Number(consumedAmount || 0)) / quickPackSize);
-    const usedWholePackages = wholePacksConsumed * quickPackSize;
-    const consumedMatchesWholePackages = wholePacksConsumed > 0 && Math.abs(Math.max(0, Number(consumedAmount || 0)) - usedWholePackages) < 0.0001;
-    if (!consumedMatchesWholePackages) return;
-
-    const buyItem = buildQuickPackBuyItem(ing, wholePacksConsumed);
-    if (!buyItem) return;
-
-    pushOrMergeBuyPack(buyItem);
-    return;
-  }
 
   const amountAfter = getHomeAmountForIngredient(ing);
   if (amountAfter > 0) return;
@@ -5044,7 +5004,7 @@ function consumeIngredientEntries(entries = []) {
 
     const consumedTotal = Math.max(0, requestedAmount - remaining);
     if (supportsSize(ingredient.unit)) {
-      queueRestockIfDepleted(ingredient, amountBefore, consumedTotal);
+      queueRestockIfDepleted(ingredient, amountBefore);
     } else {
       queueConsumedCountToBuy(ingredient, consumedTotal);
     }
@@ -6450,8 +6410,8 @@ document.addEventListener('input', (e) => {
 
 document.addEventListener('change', (e) => {
   if (!e.target) return;
-  if (e.target.id === 'itemUnit' || e.target.id === 'itemNoPackage') syncMeasureModeVisibility();
-  if (e.target.id === 'editUnit' || e.target.id === 'editNoPackage') syncEditMeasureModeVisibility();
+  if (e.target.id === 'itemUnit') syncMeasureModeVisibility();
+  if (e.target.id === 'editUnit') syncEditMeasureModeVisibility();
   if (e.target.id === 'ingredientEditUnit') syncIngredientEditMeasureModeVisibility();
   if (e.target.id === 'itemMeasureText') formatMeasureInputField(e.target, document.getElementById('itemUnit')?.value || 'g');
   if (e.target.id === 'editMeasureText') formatMeasureInputField(e.target, document.getElementById('editUnit')?.value || 'g');
@@ -6653,8 +6613,7 @@ window.addEventListener('load', () => {
       place: ensurePlaceExists(quick.place || 'kyl', room),
       room,
       img: quick.img ? String(quick.img) : '',
-      type: 'buy',
-      stockKind: 'package'
+      type: 'buy'
     };
   }
 
@@ -6683,8 +6642,7 @@ window.addEventListener('load', () => {
 
     items.push({
       ...item,
-      quantity: Math.max(1, safeNum(item.quantity || 1)),
-      stockKind: 'package'
+      quantity: Math.max(1, safeNum(item.quantity || 1))
     });
   }
 
@@ -6752,38 +6710,27 @@ window.addEventListener('load', () => {
   };
   createBuyItemFromMissingEntry = window.createBuyItemFromMissingEntry;
 
-  function getConsumedWholePackageCount(ingredient, consumedAmount = 0) {
+  const AUTO_BUY_WEIGHT_THRESHOLD_GRAMS = 5;
+
+  function shouldAutoBuyPack(ingredient) {
     const ing = normalizeRecipeIngredient(ingredient);
-    if (!ing) return 0;
+    if (!ing) return false;
 
-    const packSize = getQuickPackSizeForIngredient(ing);
-    const consumed = Math.max(0, Number(consumedAmount || 0));
-    if (!isWeightUnit(ing.unit) || packSize <= 0 || consumed <= 0) return 0;
-
-    const wholePacks = Math.floor(consumed / packSize);
-    const consumedWholeAmount = wholePacks * packSize;
-    return wholePacks > 0 && Math.abs(consumed - consumedWholeAmount) < 0.0001 ? wholePacks : 0;
+    const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
+    if (isWeightUnit(ing.unit)) return amountAfter <= AUTO_BUY_WEIGHT_THRESHOLD_GRAMS;
+    return amountAfter <= 0;
   }
 
-  /* Paket: lägg bara till nytt paket när receptet använder hela paket.
-     Lösa gram-varor köps bara när de är helt slut. */
-  window.queueRestockIfDepleted = function queueRestockIfDepletedAutoBuy(ingredient, amountBefore = 0, consumedAmount = 0) {
+  /* Restock size-based items only when they are nearly empty.
+     Weight items restock at 5 g or less. */
+  window.queueRestockIfDepleted = function queueRestockIfDepletedAutoBuy(ingredient, amountBefore = 0) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing || amountBefore <= 0) return;
     if (!supportsSize(ing.unit)) return;
+    if (!shouldAutoBuyPack(ing)) return;
 
-    const consumedWholePackages = getConsumedWholePackageCount(ing, consumedAmount);
-    if (consumedWholePackages > 0) {
-      const buyItem = buildQuickPackBuyItem(ing, consumedWholePackages);
-      if (buyItem) pushOrMergeBuyPack(buyItem);
-      return;
-    }
-
-    const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
-    if (amountAfter > 0) return;
-
-    const buyItem = createRestockBuyItemFromQuick(ing);
-    if (buyItem) mergeCanonicalItemIntoList(buyItem, 'buy');
+    const buyItem = buildQuickPackBuyItem(ing, 1);
+    if (buyItem) pushOrMergeBuyPack(buyItem);
   };
   queueRestockIfDepleted = window.queueRestockIfDepleted;
 
@@ -6805,7 +6752,7 @@ window.addEventListener('load', () => {
   };
   useRecipeIngredients = window.useRecipeIngredients;
 
-  window.__autoBuyZip = 'v36-paket-exakt';
+  window.__autoBuyZip = 'v23-locked-5g';
 })();
 
 
