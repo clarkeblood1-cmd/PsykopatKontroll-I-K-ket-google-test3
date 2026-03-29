@@ -6495,7 +6495,7 @@ window.addEventListener('load', () => {
 
 
 
-/* === AUTO BUY ZIP: grams at home + add whole quick-template packs to buy on every cook === */
+/* === AUTO BUY ZIP: use quick-list template for restock packs, only when threshold is reached === */
 (function () {
   function safeNum(v) {
     const n = Number(v);
@@ -6694,6 +6694,6 @@ window.addEventListener('load', () => {
   };
   useRecipeIngredients = window.useRecipeIngredients;
 
-  window.__autoBuyZip = 'v21-threshold-5g';
+  window.__autoBuyZip = 'v22-template-restock';
 })();
 
