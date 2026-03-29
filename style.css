@@ -1324,3 +1324,32 @@ button:hover{background:var(--green-dark);color:#fff}
     grid-column:auto;
   }
 }
+
+
+/* ===== HAR HEMMA DISPLAY FIX ===== */
+#homeList .meta{
+  row-gap: 6px;
+}
+
+#homeList .quantity-wrap{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.35;
+}
+
+#homeList .quantity-wrap > span,
+#homeList .quantity-wrap > div{
+  min-width: 0;
+  word-break: break-word;
+}
+
+#homeList .pack-state,
+#homeList .amount-state{
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
