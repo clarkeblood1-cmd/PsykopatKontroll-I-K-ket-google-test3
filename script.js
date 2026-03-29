@@ -6694,6 +6694,6 @@ window.addEventListener('load', () => {
   };
   useRecipeIngredients = window.useRecipeIngredients;
 
-  window.__autoBuyZip = 'v22-template-restock';
+  window.__autoBuyZip = 'v23-locked-5g';
 })();
 
