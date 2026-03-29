@@ -115,14 +115,20 @@
         <div id="mainItemSuggestions" class="suggestion-box"></div>
       </div>
 
-      <div class="quick-field quick-field-quantity" id="itemQuantityWrap">
-        <div class="type-row-label" id="itemQuantityLabel">Antal</div>
+      <div class="quick-field quick-field-quantity">
         <input id="itemQuantity" type="number" min="1" placeholder="Antal">
       </div>
 
       <div class="quick-field quick-field-unit">
-        <select id="itemUnit" onchange="updateSizeSelect('itemSize', this.value); syncMeasureModeVisibility();">
+        <select id="itemType" onchange="syncMeasureModeVisibility();">
           <option value="st">st</option>
+          <option value="pkt">paket</option>
+          <option value="measure">mängd</option>
+        </select>
+      </div>
+
+      <div class="quick-field quick-field-unit" id="itemUnitWrap" style="display:none;">
+        <select id="itemUnit" onchange="syncMeasureModeVisibility();">
           <option value="g">g</option>
           <option value="kg">kg</option>
           <option value="ml">ml</option>
@@ -131,7 +137,6 @@
           <option value="krm">krm</option>
           <option value="tsk">tsk</option>
           <option value="msk">msk</option>
-          <option value="pkt">paket</option>
         </select>
       </div>
 
@@ -150,8 +155,14 @@
 
       <div id="itemSizeWrap" class="quick-hidden-field"><select id="itemSize" style="display:none"></select></div>
       <div id="itemMeasureTextWrap" class="quick-hidden-field" style="display:none;">
-        <div class="type-row-label" id="itemWeightLabel">Mängd</div>
-        <input id="itemMeasureText" type="text" placeholder="Mängd per vara, t.ex. 500 g eller 1,5 l">
+        <input id="itemMeasureText" type="text" placeholder="Mängd per st, t.ex. 500 eller 1,5">
+        <select id="itemPackMeasureUnit" style="display:none; margin-top:8px;">
+          <option value="g">g per paket</option>
+          <option value="kg">kg per paket</option>
+          <option value="ml">ml per paket</option>
+          <option value="dl">dl per paket</option>
+          <option value="l">l per paket</option>
+        </select>
         <div id="itemMeasureSummary" class="measure-summary" style="display:none;"></div>
       </div>
     </div>
@@ -422,19 +433,13 @@
       <div class="modal-grid">
         <input id="editName" placeholder="Namn">
         <input id="editPrice" type="number" min="0" placeholder="Pris">
-        <div id="editQuantityWrap" class="edit-quantity-wrap">
-          <div class="type-row-label" id="editQuantityLabel">Antal</div>
-          <input id="editQuantity" type="number" min="1" placeholder="Antal">
-        </div>
-        <div id="editSizeWrap"><select id="editSize" style="display:none"></select></div>
-        <div id="editMeasureTextWrap" style="display:none;">
-          <div class="type-row-label" id="editWeightLabel">Mängd</div>
-          <input id="editMeasureText" type="text" placeholder="Mängd per vara, t.ex. 500 g eller 1,5 l">
-          <div id="editMeasureSummary" class="measure-summary" style="display:none;"></div>
-        </div>
-
-        <select id="editUnit" onchange="updateSizeSelect('editSize', this.value, document.getElementById('editSize')?.value); syncEditMeasureModeVisibility();">
+        <input id="editQuantity" type="number" min="1" placeholder="Antal">
+        <select id="editType" onchange="syncEditMeasureModeVisibility();">
           <option value="st">st</option>
+          <option value="pkt">paket</option>
+          <option value="measure">mängd</option>
+        </select>
+        <div id="editUnitWrap" style="display:none;"><select id="editUnit" onchange="syncEditMeasureModeVisibility();">
           <option value="g">g</option>
           <option value="kg">kg</option>
           <option value="ml">ml</option>
@@ -443,8 +448,19 @@
           <option value="krm">krm</option>
           <option value="tsk">tsk</option>
           <option value="msk">msk</option>
-          <option value="pkt">paket</option>
-        </select>
+        </select></div>
+        <div id="editSizeWrap"><select id="editSize" style="display:none"></select></div>
+        <div id="editMeasureTextWrap" style="display:none;">
+          <input id="editMeasureText" type="text" placeholder="Mängd totalt, t.ex. 500 eller 1,5">
+          <select id="editPackMeasureUnit" style="display:none; margin-top:8px;">
+            <option value="g">g per paket</option>
+            <option value="kg">kg per paket</option>
+            <option value="ml">ml per paket</option>
+            <option value="dl">dl per paket</option>
+            <option value="l">l per paket</option>
+          </select>
+          <div id="editMeasureSummary" class="measure-summary" style="display:none;"></div>
+        </div>
 
         <select id="editCategory" data-category-select></select>
 
@@ -480,7 +496,7 @@
         </div>
         <div id="ingredientEditSizeWrap"><select id="ingredientEditSize" style="display:none"></select></div>
         <div id="ingredientEditMeasureTextWrap" style="display:none;">
-          <input id="ingredientEditMeasureText" type="text" placeholder="Mängd per vara, t.ex. 500 g eller 1,5 l">
+          <input id="ingredientEditMeasureText" type="text" placeholder="Mängd per st, t.ex. 500 eller 1,5">
           <div id="ingredientEditMeasureSummary" class="measure-summary" style="display:none;"></div>
         </div>
         <div style="display:flex; gap:10px;">
