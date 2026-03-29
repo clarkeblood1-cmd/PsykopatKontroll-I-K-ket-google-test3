@@ -2053,7 +2053,7 @@ window.applyCloudState = function applyCloudState(data) {
   }
 };
 
-function // removed sync to keep quick list static {
+function syncQuickItemFromItem(changedItem) {
   const quick = quickItems.find(q => normalizeText(q.name) === normalizeText(changedItem.name));
   if (!quick) return;
   quick.room = changedItem.room || quick.room || activeRoom;
@@ -2871,10 +2871,10 @@ function addHomeItemFromTemplate(sourceItem, quantity = 1, targetPlace = null) {
     existing.price = Number(copy.price || existing.price || 0);
     existing.category = copy.category;
     if (copy.img) existing.img = copy.img;
-    // removed sync to keep quick list static
+    syncQuickItemFromItem(existing);
   } else {
     items.push(copy);
-    // removed sync to keep quick list static
+    syncQuickItemFromItem(copy);
   }
 }
 
@@ -2957,7 +2957,7 @@ function transferSingleItem(index, targetType, targetPlace = null) {
   if (sourceItem.quantity === 0) {
     items.splice(index, 1);
   } else {
-    // removed sync to keep quick list static
+    syncQuickItemFromItem(sourceItem);
   }
 
   items = mergeItems(items);
@@ -3049,7 +3049,9 @@ function changeQuickPlace(index, newPlace) {
 
   const itemRoom = item.room || activeRoom;
   item.place = ensurePlaceExists(newPlace || 'kyl', itemRoom);
-  // removed sync place
+  items.forEach(entry => {
+    if (normalizeText(entry.name) === normalizeText(item.name)) entry.place = item.place;
+  });
 
   save();
   render();
@@ -3060,7 +3062,9 @@ function changeQuickCategory(index, newCategory) {
   if (!item) return;
 
   item.category = ensureCategoryExists(newCategory || getRoomFallbackCategory(item.room || activeRoom), item.room || activeRoom);
-  // removed sync category
+  items.forEach(entry => {
+    if (normalizeText(entry.name) === normalizeText(item.name)) entry.category = item.category;
+  });
 
   save();
   render();
@@ -3630,7 +3634,7 @@ function saveEditItem() {
     );
     syncRecipeNames(oldName, updated.name);
   } else {
-    // removed sync to keep quick list static
+    syncQuickItemFromItem(targetList[editingIndex]);
   }
 
   items = mergeItems(items);
@@ -3798,7 +3802,7 @@ function saveHomeItem(item) {
     }
     existingHome.packMode = isWeightUnit(existingHome.unit) && (existingHome.quantity > 1 || existingHome.openedAmount > 0 || normalizedItem.packMode === 'bags' || existingHome.packMode === 'bags') ? 'bags' : '';
     if (normalizedItem.img) existingHome.img = normalizedItem.img;
-    // removed sync to keep quick list static
+    syncQuickItemFromItem(existingHome);
   } else {
     items.push({
       ...normalizedItem,
@@ -3806,7 +3810,7 @@ function saveHomeItem(item) {
       openedAmount: Math.max(0, Number(normalizedItem.openedAmount || 0)),
       packMode: isWeightUnit(normalizedItem.unit) && (Number(normalizedItem.quantity || 0) > 1 || Number(normalizedItem.openedAmount || 0) > 0 || normalizedItem.packMode === 'bags') ? 'bags' : ''
     });
-    // removed sync to keep quick list static
+    syncQuickItemFromItem(normalizedItem);
   }
 }
 
@@ -3883,7 +3887,7 @@ function updateQuantity(index, value) {
   if (newQty === 0 && item.type === 'home') {
     items.splice(index, 1);
   } else {
-    // removed sync to keep quick list static
+    syncQuickItemFromItem(item);
   }
 
   save();
