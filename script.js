@@ -6697,3 +6697,51 @@ window.addEventListener('load', () => {
   window.__autoBuyZip = 'v23-locked-5g';
 })();
 
+
+
+
+(function () {
+  'use strict';
+
+  const originalTransferSingleItem = window.transferSingleItem || transferSingleItem;
+
+  function getQuickTemplateForMove(sourceItem) {
+    if (!sourceItem || typeof findQuickItemByName !== 'function') return null;
+    return findQuickItemByName(sourceItem.name || '') || null;
+  }
+
+  window.transferSingleItem = function transferSingleItemQuickTemplateMove(index, targetType, targetPlace = null) {
+    const sourceItem = items[index];
+    if (!sourceItem) return;
+
+    const sourceType = sourceItem.type === 'buy' ? 'buy' : 'home';
+    const normalizedTargetType = targetType === 'buy' ? 'buy' : 'home';
+
+    if (sourceType === 'home' && normalizedTargetType === 'buy') {
+      const transferQuantity = getTransferQuantity(sourceItem, normalizedTargetType);
+      const quickTemplate = getQuickTemplateForMove(sourceItem);
+
+      if (quickTemplate) {
+        addBuyItemFromTemplate(quickTemplate, 1);
+      } else {
+        addBuyItemFromTemplate(sourceItem, transferQuantity);
+      }
+
+      sourceItem.quantity = Math.max(0, Number(sourceItem.quantity || 0) - transferQuantity);
+
+      if (sourceItem.quantity === 0) {
+        items.splice(index, 1);
+      } else {
+        syncQuickItemFromItem(sourceItem);
+      }
+
+      items = mergeItems(items);
+      return;
+    }
+
+    return originalTransferSingleItem(index, targetType, targetPlace);
+  };
+  transferSingleItem = window.transferSingleItem;
+
+  window.__autoBuyZip = 'v24-move-button-template';
+})();
