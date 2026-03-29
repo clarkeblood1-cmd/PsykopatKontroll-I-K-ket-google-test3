@@ -6495,7 +6495,7 @@ window.addEventListener('load', () => {
 
 
 
-/* === AUTO BUY ZIP: use quick-list template for restock packs, only when threshold is reached === */
+/* === AUTO BUY ZIP: grams at home + add whole quick-template packs to buy on every cook === */
 (function () {
   function safeNum(v) {
     const n = Number(v);
@@ -6652,33 +6652,19 @@ window.addEventListener('load', () => {
   };
   createBuyItemFromMissingEntry = window.createBuyItemFromMissingEntry;
 
-  const AUTO_BUY_WEIGHT_THRESHOLD_GRAMS = 5;
-
-  function shouldAutoBuyPack(ingredient) {
-    const ing = normalizeRecipeIngredient(ingredient);
-    if (!ing) return false;
-
-    const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
-    if (isWeightUnit(ing.unit)) return amountAfter <= AUTO_BUY_WEIGHT_THRESHOLD_GRAMS;
-    return amountAfter <= 0;
-  }
-
-  /* Restock size-based items only when they are nearly empty.
-     Weight items restock at 5 g or less. */
+  /* Disable empty-only restock for size-based recipe items.
+     Auto-buy will handle pack replenishment every time you cook. */
   window.queueRestockIfDepleted = function queueRestockIfDepletedAutoBuy(ingredient, amountBefore = 0) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing || amountBefore <= 0) return;
-    if (!supportsSize(ing.unit)) return;
-    if (!shouldAutoBuyPack(ing)) return;
 
-    const buyItem = buildQuickPackBuyItem(ing, 1);
-    if (buyItem) pushOrMergeBuyPack(buyItem);
+    if (supportsSize(ing.unit)) return;
   };
   queueRestockIfDepleted = window.queueRestockIfDepleted;
 
   /* Core behavior:
      - keep original gram consumption in Har hemma
-     - add one new pack to Buy list only when the remaining amount is low enough */
+     - after consuming, add whole quick-template packs to Buy list every time recipe uses that ingredient */
   const originalUseRecipeIngredients = window.useRecipeIngredients || useRecipeIngredients;
   window.useRecipeIngredients = function useRecipeIngredientsAutoBuy() {
     const recipe = getSelectedRecipe();
@@ -6688,60 +6674,28 @@ window.addEventListener('load', () => {
 
     consumeIngredientEntries(combinedEntries);
 
+    combinedEntries.forEach(entry => {
+      const ingredient = normalizeRecipeIngredient(entry?.ingredient || entry);
+      if (!ingredient) return;
+      if (!supportsSize(ingredient.unit)) return;
+
+      const packSize = getQuickPackSizeForIngredient(ingredient);
+      if (packSize <= 0) return;
+
+      const requestedAmount = Math.max(0, Number(recipeIngredientCanonicalAmount(ingredient) || 0));
+      if (requestedAmount <= 0) return;
+
+      const packCount = Math.max(1, Math.ceil(requestedAmount / packSize));
+      const buyItem = buildQuickPackBuyItem(ingredient, packCount);
+      if (buyItem) pushOrMergeBuyPack(buyItem);
+    });
+
     save();
     checkRecipe();
     render();
   };
   useRecipeIngredients = window.useRecipeIngredients;
 
-  window.__autoBuyZip = 'v23-locked-5g';
+  window.__autoBuyZip = 'v20';
 })();
 
-
-
-
-(function () {
-  'use strict';
-
-  const originalTransferSingleItem = window.transferSingleItem || transferSingleItem;
-
-  function getQuickTemplateForMove(sourceItem) {
-    if (!sourceItem || typeof findQuickItemByName !== 'function') return null;
-    return findQuickItemByName(sourceItem.name || '') || null;
-  }
-
-  window.transferSingleItem = function transferSingleItemQuickTemplateMove(index, targetType, targetPlace = null) {
-    const sourceItem = items[index];
-    if (!sourceItem) return;
-
-    const sourceType = sourceItem.type === 'buy' ? 'buy' : 'home';
-    const normalizedTargetType = targetType === 'buy' ? 'buy' : 'home';
-
-    if (sourceType === 'home' && normalizedTargetType === 'buy') {
-      const transferQuantity = getTransferQuantity(sourceItem, normalizedTargetType);
-      const quickTemplate = getQuickTemplateForMove(sourceItem);
-
-      if (quickTemplate) {
-        addBuyItemFromTemplate(quickTemplate, 1);
-      } else {
-        addBuyItemFromTemplate(sourceItem, transferQuantity);
-      }
-
-      sourceItem.quantity = Math.max(0, Number(sourceItem.quantity || 0) - transferQuantity);
-
-      if (sourceItem.quantity === 0) {
-        items.splice(index, 1);
-      } else {
-        syncQuickItemFromItem(sourceItem);
-      }
-
-      items = mergeItems(items);
-      return;
-    }
-
-    return originalTransferSingleItem(index, targetType, targetPlace);
-  };
-  transferSingleItem = window.transferSingleItem;
-
-  window.__autoBuyZip = 'v24-move-button-template';
-})();
