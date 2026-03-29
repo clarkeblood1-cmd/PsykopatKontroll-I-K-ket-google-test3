@@ -6655,9 +6655,6 @@ window.addEventListener('load', () => {
   };
   createBuyItemFromMissingEntry = window.createBuyItemFromMissingEntry;
 
-  const AUTO_BUY_WEIGHT_THRESHOLD_GRAMS = 5;
-  const AUTO_BUY_COUNT_THRESHOLD = 1;
-
   function getAmountAfterRecipeUse(ingredient) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing) return 0;
@@ -6669,7 +6666,6 @@ window.addEventListener('load', () => {
     if (!ing) return false;
 
     const amountAfter = getAmountAfterRecipeUse(ing);
-    if (isWeightUnit(ing.unit)) return amountAfter <= AUTO_BUY_WEIGHT_THRESHOLD_GRAMS;
     return amountAfter <= 0;
   }
 
@@ -6697,8 +6693,7 @@ window.addEventListener('load', () => {
     };
   }
 
-  /* Restock size-based items only when they are nearly empty.
-     Weight items restock at 5 g or less. */
+  /* Restock size-based items only when nothing is left at home. */
   window.queueRestockIfDepleted = function queueRestockIfDepletedAutoBuy(ingredient, amountBefore = 0) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing || amountBefore <= 0) return;
@@ -6710,7 +6705,7 @@ window.addEventListener('load', () => {
   };
   queueRestockIfDepleted = window.queueRestockIfDepleted;
 
-  /* Count items (st) should add +1 from Snabblistan only when nothing is left at home after recipe use. */
+  /* Count items (st) should add +1 from Snabblistan when Har hemma goes down to 1 st or less after recipe use. */
   window.queueConsumedCountToBuy = function queueConsumedCountToBuyAutoBuy(ingredient, consumedAmount = 0) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing) return;
@@ -6719,7 +6714,7 @@ window.addEventListener('load', () => {
     if (supportsSize(unit)) return;
 
     const amountAfter = getAmountAfterRecipeUse(ing);
-    if (amountAfter > 0) return;
+    if (amountAfter > 1) return;
 
     const buyItem = buildQuickCountBuyItem(ing, 1);
     if (buyItem) {
@@ -6747,9 +6742,9 @@ window.addEventListener('load', () => {
   queueConsumedCountToBuy = window.queueConsumedCountToBuy;
 
   /* Core behavior:
-     - keep original gram consumption in Har hemma
-     - add one new pack to Buy list only when the remaining amount is low enough
-     - add +1 st from Snabblistan when count-based items reach 1 st left */
+     - keep original consumption in Har hemma
+     - add one new pack to Buy list only when nothing is left at home
+     - add +1 st from Snabblistan when Har hemma goes down to 1 st or less */
   const originalUseRecipeIngredients = window.useRecipeIngredients || useRecipeIngredients;
   window.useRecipeIngredients = function useRecipeIngredientsAutoBuy() {
     const recipe = getSelectedRecipe();
@@ -6775,6 +6770,9 @@ window.addEventListener('load', () => {
         return;
       }
 
+      const amountAfter = getAmountAfterRecipeUse(ing);
+      if (amountAfter > 1) return;
+
       const buyItem = buildQuickCountBuyItem(ing, 1);
       if (buyItem) {
         mergeCanonicalItemIntoList(buyItem, 'buy');
@@ -6787,7 +6785,7 @@ window.addEventListener('load', () => {
   };
   useRecipeIngredients = window.useRecipeIngredients;
 
-  window.__autoBuyZip = 'v27-recipe-st-always-buy';
+  window.__autoBuyZip = 'v29-st-at-1-g-at-0';
 })();
 
 

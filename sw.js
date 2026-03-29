@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v27-recipe-st-always-buy';
+const CACHE_NAME = 'matlista-app-v29-st-at-1-g-at-0';
 const ASSETS = [
   './',
   './index.html',
