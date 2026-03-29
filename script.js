@@ -6642,6 +6642,9 @@ window.addEventListener('load', () => {
     const missingAmount = Math.max(0, Number(entry.missing || 0));
     if (!missingAmount) return null;
 
+    const alreadyHaveAtHome = Math.max(0, Number(getHomeAmountForIngredient(ingredient) || 0));
+    if (alreadyHaveAtHome > 0) return null;
+
     const packSize = getQuickPackSizeForIngredient(ingredient);
     if (packSize > 0) {
       const packCount = Math.max(1, Math.ceil(missingAmount / packSize));
@@ -6667,7 +6670,7 @@ window.addEventListener('load', () => {
 
     const amountAfter = getAmountAfterRecipeUse(ing);
     if (isWeightUnit(ing.unit)) return amountAfter <= AUTO_BUY_WEIGHT_THRESHOLD_GRAMS;
-    return amountAfter <= AUTO_BUY_COUNT_THRESHOLD;
+    return amountAfter <= 0;
   }
 
   function buildQuickCountBuyItem(ingredient, count = 1) {
@@ -6707,7 +6710,7 @@ window.addEventListener('load', () => {
   };
   queueRestockIfDepleted = window.queueRestockIfDepleted;
 
-  /* Count items (st) should add +1 from Snabblistan when only 1 st is left after recipe use. */
+  /* Count items (st) should add +1 from Snabblistan only when nothing is left at home after recipe use. */
   window.queueConsumedCountToBuy = function queueConsumedCountToBuyAutoBuy(ingredient, consumedAmount = 0) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing) return;
@@ -6716,7 +6719,7 @@ window.addEventListener('load', () => {
     if (supportsSize(unit)) return;
 
     const amountAfter = getAmountAfterRecipeUse(ing);
-    if (amountAfter > AUTO_BUY_COUNT_THRESHOLD) return;
+    if (amountAfter > 0) return;
 
     const buyItem = buildQuickCountBuyItem(ing, 1);
     if (buyItem) {
@@ -6760,10 +6763,17 @@ window.addEventListener('load', () => {
       const ing = normalizeRecipeIngredient(entry?.ingredient || entry);
       if (!ing) return;
       const unit = String(ing.unit || 'st').toLowerCase();
-      if (supportsSize(unit)) return;
 
-      const amountAfter = getAmountAfterRecipeUse(ing);
-      if (amountAfter > AUTO_BUY_COUNT_THRESHOLD) return;
+      if (supportsSize(unit)) {
+        const amountAfter = getAmountAfterRecipeUse(ing);
+        if (amountAfter > 0) return;
+
+        const restockBuyItem = createRestockBuyItemFromQuick(ing);
+        if (restockBuyItem) {
+          mergeCanonicalItemIntoList(restockBuyItem, 'buy');
+        }
+        return;
+      }
 
       const buyItem = buildQuickCountBuyItem(ing, 1);
       if (buyItem) {
@@ -6777,7 +6787,7 @@ window.addEventListener('load', () => {
   };
   useRecipeIngredients = window.useRecipeIngredients;
 
-  window.__autoBuyZip = 'v24-st-threshold-1';
+  window.__autoBuyZip = 'v27-recipe-st-always-buy';
 })();
 
 
