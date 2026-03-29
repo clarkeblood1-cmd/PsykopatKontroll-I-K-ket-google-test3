@@ -115,18 +115,13 @@
         <div id="mainItemSuggestions" class="suggestion-box"></div>
       </div>
 
-      <div class="quick-field quick-field-quantity">
+      <div class="quick-field quick-field-quantity" id="itemQuantityWrap">
+        <div class="type-row-label" id="itemQuantityLabel">Antal</div>
         <input id="itemQuantity" type="number" min="1" placeholder="Antal">
       </div>
 
-      <div class="quick-field quick-field-unit quick-type-field">
-        <div class="type-row-label">Typ</div>
-        <div class="type-toggle-row">
-          <label class="type-chip"><input type="radio" name="itemTypeMode" id="itemTypeSt" value="st" checked onchange="syncUnitUiFromControls('item')"><span>st</span></label>
-          <label class="type-chip"><input type="radio" name="itemTypeMode" id="itemTypePkt" value="pkt" onchange="syncUnitUiFromControls('item')"><span>paket</span></label>
-          <label class="type-chip"><input type="radio" name="itemTypeMode" id="itemTypeGram" value="g" onchange="syncUnitUiFromControls('item')"><span>gram</span></label>
-        </div>
-        <select id="itemUnit" class="legacy-hidden-select" onchange="updateSizeSelect('itemSize', this.value); syncMeasureModeVisibility(); syncTypeControlsFromLegacyUnit('item');">
+      <div class="quick-field quick-field-unit">
+        <select id="itemUnit" onchange="updateSizeSelect('itemSize', this.value); syncMeasureModeVisibility();">
           <option value="st">st</option>
           <option value="g">g</option>
           <option value="kg">kg</option>
@@ -154,22 +149,9 @@
       <button type="button" class="ghost-btn quick-clear-btn" onclick="clearInputs()">🧹 Rensa</button>
 
       <div id="itemSizeWrap" class="quick-hidden-field"><select id="itemSize" style="display:none"></select></div>
-      <div id="itemMeasureTextWrap" class="quick-hidden-field type-weight-wrap" style="display:block;">
-        <div class="type-row-label">Vikt</div>
-        <div class="type-weight-row">
-          <input id="itemWeightValue" type="number" min="0" step="any" placeholder="Hur mycket gram">
-          <select id="itemWeightUnit" onchange="syncUnitUiFromControls('item')">
-            <option value="g">g</option>
-            <option value="kg">kg</option>
-            <option value="ml">ml</option>
-            <option value="dl">dl</option>
-            <option value="l">l</option>
-            <option value="tsk">tsk</option>
-            <option value="msk">msk</option>
-            <option value="krm">krm</option>
-          </select>
-        </div>
-        <input id="itemMeasureText" class="legacy-hidden-input" type="text" placeholder="Mängd per st, t.ex. 500 eller 1,5">
+      <div id="itemMeasureTextWrap" class="quick-hidden-field" style="display:none;">
+        <div class="type-row-label" id="itemWeightLabel">Mängd</div>
+        <input id="itemMeasureText" type="text" placeholder="Mängd per st, t.ex. 500 eller 1,5">
         <div id="itemMeasureSummary" class="measure-summary" style="display:none;"></div>
       </div>
     </div>
@@ -440,53 +422,29 @@
       <div class="modal-grid">
         <input id="editName" placeholder="Namn">
         <input id="editPrice" type="number" min="0" placeholder="Pris">
-        <input id="editQuantity" type="number" min="1" placeholder="Antal">
-        <div class="edit-type-block">
-          <div class="type-row-label">Typ</div>
-          <div class="type-toggle-row">
-            <label class="type-chip"><input type="radio" name="editTypeMode" id="editTypeSt" value="st" checked onchange="syncUnitUiFromControls('edit')"><span>st</span></label>
-            <label class="type-chip"><input type="radio" name="editTypeMode" id="editTypePkt" value="pkt" onchange="syncUnitUiFromControls('edit')"><span>paket</span></label>
-            <label class="type-chip"><input type="radio" name="editTypeMode" id="editTypeGram" value="g" onchange="syncUnitUiFromControls('edit')"><span>gram</span></label>
-          </div>
-          <select id="editUnit" class="legacy-hidden-select" onchange="updateSizeSelect('editSize', this.value, document.getElementById('editSize')?.value); syncEditMeasureModeVisibility(); syncTypeControlsFromLegacyUnit('edit');">
-            <option value="st">st</option>
-            <option value="g">g</option>
-            <option value="kg">kg</option>
-            <option value="ml">ml</option>
-            <option value="dl">dl</option>
-            <option value="l">l</option>
-            <option value="tsk">tsk</option>
-            <option value="msk">msk</option>
-            <option value="krm">krm</option>
-            <option value="ml">ml</option>
-            <option value="dl">dl</option>
-            <option value="l">l</option>
-            <option value="krm">krm</option>
-            <option value="tsk">tsk</option>
-            <option value="msk">msk</option>
-            <option value="pkt">pkt</option>
-          </select>
+        <div id="editQuantityWrap" class="edit-quantity-wrap">
+          <div class="type-row-label" id="editQuantityLabel">Antal</div>
+          <input id="editQuantity" type="number" min="1" placeholder="Antal">
         </div>
-
         <div id="editSizeWrap"><select id="editSize" style="display:none"></select></div>
-        <div id="editMeasureTextWrap" class="type-weight-wrap" style="display:block;">
-          <div class="type-row-label">Vikt</div>
-          <div class="type-weight-row">
-            <input id="editWeightValue" type="number" min="0" step="any" placeholder="Hur mycket gram">
-            <select id="editWeightUnit" onchange="syncUnitUiFromControls('edit')">
-              <option value="g">g</option>
-              <option value="kg">kg</option>
-              <option value="ml">ml</option>
-              <option value="dl">dl</option>
-              <option value="l">l</option>
-              <option value="tsk">tsk</option>
-              <option value="msk">msk</option>
-              <option value="krm">krm</option>
-            </select>
-          </div>
-          <input id="editMeasureText" class="legacy-hidden-input" type="text" placeholder="Mängd per st, t.ex. 500 eller 1,5">
+        <div id="editMeasureTextWrap" style="display:none;">
+          <div class="type-row-label" id="editWeightLabel">Mängd</div>
+          <input id="editMeasureText" type="text" placeholder="Mängd per st, t.ex. 500 eller 1,5">
           <div id="editMeasureSummary" class="measure-summary" style="display:none;"></div>
         </div>
+
+        <select id="editUnit" onchange="updateSizeSelect('editSize', this.value, document.getElementById('editSize')?.value); syncEditMeasureModeVisibility();">
+          <option value="st">st</option>
+          <option value="g">g</option>
+          <option value="kg">kg</option>
+          <option value="ml">ml</option>
+          <option value="dl">dl</option>
+          <option value="l">l</option>
+          <option value="krm">krm</option>
+          <option value="tsk">tsk</option>
+          <option value="msk">msk</option>
+          <option value="pkt">pkt</option>
+        </select>
 
         <select id="editCategory" data-category-select></select>
 
@@ -511,12 +469,6 @@
             <option value="st">st</option>
             <option value="g">g</option>
             <option value="kg">kg</option>
-            <option value="ml">ml</option>
-            <option value="dl">dl</option>
-            <option value="l">l</option>
-            <option value="tsk">tsk</option>
-            <option value="msk">msk</option>
-            <option value="krm">krm</option>
             <option value="ml">ml</option>
             <option value="dl">dl</option>
             <option value="l">l</option>
