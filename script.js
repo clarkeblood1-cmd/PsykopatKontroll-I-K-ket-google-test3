@@ -6653,7 +6653,7 @@ window.addEventListener('load', () => {
   createBuyItemFromMissingEntry = window.createBuyItemFromMissingEntry;
 
   /* Disable empty-only restock for size-based recipe items.
-     Auto-buy will handle pack replenishment every time you cook. */
+     Auto-buy below handles replenishment rules instead. */
   window.queueRestockIfDepleted = function queueRestockIfDepletedAutoBuy(ingredient, amountBefore = 0) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing || amountBefore <= 0) return;
@@ -6662,32 +6662,151 @@ window.addEventListener('load', () => {
   };
   queueRestockIfDepleted = window.queueRestockIfDepleted;
 
+  function getHomeStockSnapshotForIngredient(ingredient) {
+    const ing = normalizeRecipeIngredient(ingredient);
+    if (!ing) return null;
+
+    const matches = getMatchingHomeItemsForIngredient(ing);
+    const normalizedUnit = String(ing.unit || 'st').toLowerCase();
+    const packSize = Math.max(0, Number(getQuickPackSizeForIngredient(ing) || 0));
+
+    const totalAmount = matches.reduce((sum, match) => {
+      const item = match?.item;
+      if (!item) return sum;
+      const amount = Number(convertCanonicalAmountForIngredient(
+        getItemCanonicalAmount(item, item.unit),
+        item.unit,
+        ing.unit,
+        ing.name
+      ) || 0);
+      return sum + Math.max(0, amount);
+    }, 0);
+
+    const totalCount = matches.reduce((sum, match) => sum + Math.max(0, Number(match?.item?.quantity || 0)), 0);
+    const fullPacks = packSize > 0 ? Math.floor(totalAmount / packSize) : 0;
+
+    return {
+      ingredient: ing,
+      unit: normalizedUnit,
+      packSize,
+      totalAmount: Math.max(0, totalAmount),
+      totalCount: Math.max(0, totalCount),
+      fullPacks: Math.max(0, fullPacks),
+      indexes: matches.map(match => Number(match.index)).filter(Number.isInteger)
+    };
+  }
+
+  function removeHomeMatchesForIngredient(ingredient) {
+    const ing = normalizeRecipeIngredient(ingredient);
+    if (!ing) return;
+
+    const indexes = getMatchingHomeItemsForIngredient(ing)
+      .map(match => Number(match.index))
+      .filter(Number.isInteger)
+      .sort((a, b) => b - a);
+
+    indexes.forEach(index => {
+      if (index >= 0 && index < items.length && items[index]?.type === 'home') {
+        items.splice(index, 1);
+      }
+    });
+  }
+
+  function setSingleBuyPack(item) {
+    if (!item) return;
+
+    const existing = items.find(entry =>
+      entry &&
+      entry.type === 'buy' &&
+      normalizeText(entry.name) === normalizeText(item.name) &&
+      String(entry.unit || 'st').toLowerCase() === String(item.unit || 'st').toLowerCase() &&
+      Number(entry.size || 0) === Number(item.size || 0)
+    );
+
+    if (existing) {
+      existing.quantity = 1;
+      if (!existing.img && item.img) existing.img = item.img;
+      if (!safeNum(existing.price || 0) && safeNum(item.price || 0)) existing.price = safeNum(item.price || 0);
+      existing.category = item.category || existing.category;
+      existing.place = item.place || existing.place;
+      existing.room = item.room || existing.room;
+      existing.measureText = item.measureText || existing.measureText || '';
+      existing.weightText = item.weightText || existing.weightText || '';
+      return;
+    }
+
+    items.push({
+      ...item,
+      type: 'buy',
+      quantity: 1
+    });
+  }
+
+  function maybeRestockIngredientAfterCook(ingredient, beforeSnapshot = null) {
+    const ing = normalizeRecipeIngredient(ingredient);
+    if (!ing) return;
+
+    const afterSnapshot = getHomeStockSnapshotForIngredient(ing);
+    const before = beforeSnapshot || getHomeStockSnapshotForIngredient(ing);
+    const normalizedUnit = String(ing.unit || 'st').toLowerCase();
+    const packSize = Math.max(0, Number(before?.packSize || afterSnapshot?.packSize || getQuickPackSizeForIngredient(ing) || 0));
+
+    let shouldQueueOne = false;
+    let shouldRemoveFromHome = false;
+
+    if (supportsSize(normalizedUnit) && packSize > 0) {
+      const beforePacks = Math.max(0, Number(before?.fullPacks || 0));
+      const afterPacks = Math.max(0, Number(afterSnapshot?.fullPacks || 0));
+      const afterTotal = Math.max(0, Number(afterSnapshot?.totalAmount || 0));
+
+      if (afterPacks < beforePacks) shouldQueueOne = true;
+      if (afterTotal <= 30) {
+        shouldQueueOne = true;
+        shouldRemoveFromHome = true;
+      }
+    } else if (normalizedUnit === 'st') {
+      const beforeCount = Math.max(0, Number(before?.totalCount || 0));
+      const afterCount = Math.max(0, Number(afterSnapshot?.totalCount || 0));
+      if (afterCount < beforeCount) shouldQueueOne = true;
+      if (afterCount <= 0) shouldRemoveFromHome = true;
+    }
+
+    if (!shouldQueueOne && !shouldRemoveFromHome) return;
+
+    const buyItem = buildQuickPackBuyItem(ing, 1);
+    if (buyItem) setSingleBuyPack(buyItem);
+
+    if (shouldRemoveFromHome) {
+      removeHomeMatchesForIngredient(ing);
+    }
+  }
+
   /* Core behavior:
-     - keep original gram consumption in Har hemma
-     - after consuming, add whole quick-template packs to Buy list every time recipe uses that ingredient */
+     - cooking no longer adds +1 pack every time
+     - add exactly 1 new pack when one pack/st is consumed
+     - if total stock for a pack-tracked item drops to 30g or less, remove it from home and keep exactly 1 on the buy list */
   const originalUseRecipeIngredients = window.useRecipeIngredients || useRecipeIngredients;
   window.useRecipeIngredients = function useRecipeIngredientsAutoBuy() {
     const recipe = getSelectedRecipe();
     if (!recipe) return;
 
     const combinedEntries = getCombinedRecipeIngredientEntries([{ slot: { label: 'Recept' }, recipe, recipeName: recipe.name }]);
+    const beforeSnapshots = new Map();
+
+    combinedEntries.forEach(entry => {
+      const ingredient = normalizeRecipeIngredient(entry?.ingredient || entry);
+      if (!ingredient) return;
+      const key = `${normalizeText(ingredient.name)}__${String(ingredient.unit || 'st').toLowerCase()}`;
+      beforeSnapshots.set(key, getHomeStockSnapshotForIngredient(ingredient));
+    });
 
     consumeIngredientEntries(combinedEntries);
 
     combinedEntries.forEach(entry => {
       const ingredient = normalizeRecipeIngredient(entry?.ingredient || entry);
       if (!ingredient) return;
-      if (!supportsSize(ingredient.unit)) return;
-
-      const packSize = getQuickPackSizeForIngredient(ingredient);
-      if (packSize <= 0) return;
-
-      const requestedAmount = Math.max(0, Number(recipeIngredientCanonicalAmount(ingredient) || 0));
-      if (requestedAmount <= 0) return;
-
-      const packCount = Math.max(1, Math.ceil(requestedAmount / packSize));
-      const buyItem = buildQuickPackBuyItem(ingredient, packCount);
-      if (buyItem) pushOrMergeBuyPack(buyItem);
+      const key = `${normalizeText(ingredient.name)}__${String(ingredient.unit || 'st').toLowerCase()}`;
+      maybeRestockIngredientAfterCook(ingredient, beforeSnapshots.get(key) || null);
     });
 
     save();
@@ -6696,6 +6815,6 @@ window.addEventListener('load', () => {
   };
   useRecipeIngredients = window.useRecipeIngredients;
 
-  window.__autoBuyZip = 'v20';
+  window.__autoBuyZip = 'v21';
 })();
 
