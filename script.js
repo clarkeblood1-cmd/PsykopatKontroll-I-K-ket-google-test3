@@ -4829,9 +4829,6 @@ function queueConsumedCountToBuy(ingredient, consumedAmount = 0) {
   const countToBuy = Math.max(0, Math.ceil(Number(consumedAmount || 0)));
   if (!ing || countToBuy <= 0) return;
 
-  const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
-  if (amountAfter > 1) return;
-
   const template = cloneTemplateForIngredient(ing) || {
     name: ing.name,
     price: 0,
@@ -4855,7 +4852,7 @@ function queueConsumedCountToBuy(ingredient, consumedAmount = 0) {
     size: null,
     measureText: '',
     weightText: '',
-    quantity: 1
+    quantity: countToBuy
   }, 'buy');
 }
 
@@ -6655,30 +6652,40 @@ window.addEventListener('load', () => {
   };
   createBuyItemFromMissingEntry = window.createBuyItemFromMissingEntry;
 
-  function shouldAutoBuyPack(ingredient, amountBefore = 0) {
+  function shouldAutoBuyPack(ingredient) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing) return false;
 
     const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
-    const quickPackSize = Math.max(0, Number(getQuickPackSizeForIngredient(ing) || 0));
+    const homeMatches = getMatchingHomeItemsForIngredient(ing).map(match => match.item).filter(Boolean);
 
-    if (isWeightUnit(ing.unit)) {
-      const hadMultiplePacksBefore = quickPackSize > 0 && Number(amountBefore || 0) > quickPackSize;
-      if (hadMultiplePacksBefore) return amountAfter <= quickPackSize;
-      return amountAfter <= 0;
+    const hasPackTrackedHomeItem = homeMatches.some(item =>
+      isWeightUnit(item.unit) && Number(item.size || 0) > 0 && (
+        isPackTrackedItem(item) ||
+        String(item.packMode || '') === 'bags' ||
+        Number(item.openedAmount || 0) > 0
+      )
+    );
+
+    if (hasPackTrackedHomeItem) {
+      const packsLeft = homeMatches.reduce((sum, item) => {
+        if (!isWeightUnit(item.unit) || Number(item.size || 0) <= 0) return sum;
+        return sum + Math.max(0, Number(item.quantity || 0));
+      }, 0);
+      return packsLeft <= 1;
     }
 
+    if (isWeightUnit(ing.unit)) return amountAfter <= 0;
     return amountAfter <= 0;
   }
 
-  /* Recipe button:
-     - weight packs (e.g. 2 st × 450 g) add +1 pack when they go down to 1 pack left
-     - loose gram items add only when they are completely empty */
+  /* Restock pack-tracked items when they are down to 1 pack left.
+     Loose gram items restock only when they are fully empty. */
   window.queueRestockIfDepleted = function queueRestockIfDepletedAutoBuy(ingredient, amountBefore = 0) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing || amountBefore <= 0) return;
     if (!supportsSize(ing.unit)) return;
-    if (!shouldAutoBuyPack(ing, amountBefore)) return;
+    if (!shouldAutoBuyPack(ing)) return;
 
     const buyItem = buildQuickPackBuyItem(ing, 1);
     if (buyItem) pushOrMergeBuyPack(buyItem);
@@ -6703,7 +6710,7 @@ window.addEventListener('load', () => {
   };
   useRecipeIngredients = window.useRecipeIngredients;
 
-  window.__autoBuyZip = 'v30-recipe-button-pack-restock';
+  window.__autoBuyZip = 'v23-locked-5g';
 })();
 
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v30-recipe-button-pack-restock';
+const CACHE_NAME = 'matlista-app-v31-st-pack-1-g-0';
 const ASSETS = [
   './',
   './index.html',
