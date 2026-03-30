@@ -1,9 +1,11 @@
-const CACHE_NAME = 'matlista-app-v70-iphone-premium';
+const CACHE_NAME = 'matlista-app-v71-household-shared';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './script.js',
+  './household.js',
+  './cloud-hooks.js',
   './cloud-sync.js',
   './firebase-config.js',
   './manifest.json',

@@ -57,7 +57,14 @@
   function getDocRef() {
     const user = firebase.auth().currentUser;
     if (!user) return null;
-    return firebase.firestore().collection('users').doc(user.uid).collection('appData').doc('main');
+
+    const householdId = window.cloudHousehold && typeof window.cloudHousehold.getHouseholdId === 'function'
+      ? window.cloudHousehold.getHouseholdId()
+      : null;
+
+    if (!householdId) return null;
+
+    return firebase.firestore().collection('households').doc(householdId).collection('appData').doc('main');
   }
 
   function collectState() {
@@ -177,7 +184,11 @@
   function startCloudSync() {
     if (!firebaseReady || !safeCall('render')) return;
     const ref = getDocRef();
-    if (!ref) return;
+    if (!ref) {
+      syncReady = false;
+      setAuthUi(firebase.auth().currentUser, 'Inloggad – välj eller skapa household för delad sync');
+      return;
+    }
 
     if (cloudUnsubscribe) {
       cloudUnsubscribe();
@@ -251,6 +262,18 @@
       console.error('Cloud status UI error:', error);
     }
   };
+
+  window.initCloudSync = function initCloudSync() {
+    if (!firebaseReady) return;
+    stopCloudSync();
+    startCloudSync();
+  };
+
+  window.addEventListener('household-changed', function () {
+    if (!firebaseReady) return;
+    stopCloudSync();
+    startCloudSync();
+  });
 
   function startAuthListener() {
     if (authReady || !initFirebase()) return;

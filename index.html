@@ -53,6 +53,64 @@
       </div>
     </section>
 
+
+
+    <section class="household-panel" id="householdPanel">
+      <div class="household-panel-head">
+        <div>
+          <div class="household-title">👨‍👩‍👧‍👦 Household</div>
+          <div id="householdStatus" class="household-status ok">Logga in och skapa eller gå med i ett household.</div>
+        </div>
+      </div>
+
+      <div class="household-grid">
+        <div class="household-card">
+          <div class="household-card-label">Konto</div>
+          <div id="householdAccountInfo" class="household-card-value">Inte inloggad</div>
+          <div class="household-card-sub">Delad sync använder ditt Google-konto.</div>
+        </div>
+
+        <div class="household-card">
+          <div class="household-card-label">Aktivt household</div>
+          <div id="householdInfo" class="household-card-value">Inget household valt ännu</div>
+          <div id="householdMeta" class="household-card-sub">Skapa eller gå med i ett household för delad sync</div>
+        </div>
+      </div>
+
+      <div class="household-actions-grid">
+        <div class="household-block">
+          <label class="household-field-label" for="householdName">Skapa nytt household</label>
+          <input id="householdName" type="text" placeholder="T.ex. Familjen hemma">
+          <button type="button" id="createHouseholdBtn">✨ Skapa household</button>
+        </div>
+
+        <div class="household-block">
+          <label class="household-field-label" for="joinCode">Gå med via kod</label>
+          <input id="joinCode" type="text" placeholder="ABC123" maxlength="12">
+          <button type="button" id="joinHouseholdBtn" class="ghost-btn">🔗 Gå med</button>
+        </div>
+      </div>
+
+      <div id="householdInviteWrap" class="household-actions-grid" style="display:none;">
+        <div class="household-block">
+          <div class="household-field-label">Invite-kod</div>
+          <div class="household-code-row">
+            <div id="inviteCode" class="household-code">—</div>
+            <button type="button" id="copyInviteBtn" class="ghost-btn">Kopiera</button>
+          </div>
+          <div class="household-inline-actions">
+            <button type="button" id="createInviteBtn">🎟️ Skapa ny kod</button>
+            <button type="button" id="leaveHouseholdBtn" class="ghost-btn">🚪 Lämna household</button>
+          </div>
+        </div>
+
+        <div class="household-block" id="householdMembersWrap">
+          <div class="household-field-label">Medlemmar</div>
+          <div id="householdMembers" class="household-members"></div>
+        </div>
+      </div>
+    </section>
+
     <div class="summary-bar">
       <div class="summary-box"><div>Varor hemma</div><strong id="homeCount">0</strong></div>
       <div class="summary-box"><div>Varor att köpa</div><strong id="buyCount">0</strong></div>
@@ -532,7 +590,9 @@
         <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
         <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
 <script src="firebase-config.js"></script>
+<script src="household.js"></script>
 <script src="cloud-sync.js"></script>
+<script src="cloud-hooks.js"></script>
 <script src="script.js"></script>
   
 </body>
