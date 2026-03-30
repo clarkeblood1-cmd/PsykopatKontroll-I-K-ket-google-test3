@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v47-paket-gram-fix';
+const CACHE_NAME = 'matlista-app-v67-pack-actions-fix';
 const ASSETS = [
   './',
   './index.html',
