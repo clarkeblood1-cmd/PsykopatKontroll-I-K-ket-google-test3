@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v68-ui-fixed-layout';
+const CACHE_NAME = 'matlista-app-v69-ui-theme-speed';
 const ASSETS = [
   './',
   './index.html',

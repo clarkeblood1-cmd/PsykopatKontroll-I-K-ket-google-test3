@@ -16,10 +16,23 @@
     </div>
     <div class="header-title">
      
-      <span>🛒 PsykopatKontroll I Köket 🛒</span>
+      <span>🛒 PsykopatKontroll I Köket</span>
     </div>
-    <div class="header-right">
-      <button id="themeToggleBtn" onclick="toggleTheme()">🎨 Tema</button>
+    <div class="header-right theme-toolbar">
+      <label class="theme-select-wrap" for="themeSelect">
+        <span>🎨 Tema</span>
+        <select id="themeSelect" onchange="setTheme(this.value)">
+          <option value="scifi">Sci‑fi</option>
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+          <option value="matrix">Matrix</option>
+          <option value="sunset">Sunset</option>
+          <option value="ice">Ice</option>
+          <option value="forest">Forest</option>
+          <option value="rose">Rose</option>
+        </select>
+      </label>
+      <button id="themeToggleBtn" onclick="toggleTheme()">🎨 Byt tema</button>
     </div>
   </header>
 
@@ -84,10 +97,11 @@
     <section class="section quick-add-hero" data-page="quick">
       <div class="quick-add-hero-card">
         <div class="quick-add-badge">⚡ Ultimate quick add</div>
+        <div class="quick-add-speed-pill">Ny design • snabbare känsla • levande teman</div>
         <div class="quick-add-head">
           <div>
-            <h2>Lägg till nya varor direkt i Snabblista</h2>
-            <p>Skriv namn, tryck Enter för att spara i snabblistan, eller välj att spara i snabblistan + lägga till i rummet direkt.</p>
+            <h2>Ny design för snabbare matlista</h2>
+            <p>Renare kort, tydligare knappar och ett mjukare tema-system. Du kan fortfarande lägga till varor direkt utan extra steg.</p>
           </div>
           <div class="quick-add-mini-tips">
             <span>↵ Enter = spara</span>
