@@ -58,9 +58,9 @@
     const user = firebase.auth().currentUser;
     if (!user) return null;
 
-    const householdId = window.cloudHousehold && typeof window.cloudHousehold.getHouseholdId === 'function'
-      ? window.cloudHousehold.getHouseholdId()
-      : null;
+    const householdId = typeof window.cloudHousehold?.getHouseholdId === 'function'
+      ? String(window.cloudHousehold.getHouseholdId() || '').trim()
+      : String(window.activeHouseholdId || localStorage.getItem('matlista_household_id') || '').trim();
 
     if (!householdId) return null;
 
@@ -185,8 +185,9 @@
     if (!firebaseReady || !safeCall('render')) return;
     const ref = getDocRef();
     if (!ref) {
-      syncReady = false;
-      setAuthUi(firebase.auth().currentUser, 'Inloggad – välj eller skapa household för delad sync');
+      stopCloudSync();
+      const currentUser = firebase?.auth ? firebase.auth().currentUser : null;
+      if (currentUser) setAuthUi(currentUser, 'Inloggad – välj eller skapa household för molnsynk');
       return;
     }
 
@@ -254,6 +255,18 @@
 
   window.saveToCloud = saveToCloud;
   window.saveToCloudNow = saveToCloudNow;
+  window.initCloudSync = function initCloudSync() {
+    wrapSaveFunction();
+    if (!initFirebase()) return false;
+    const user = firebase.auth().currentUser;
+    if (!user) {
+      stopCloudSync();
+      setAuthUi(null, 'Inte inloggad');
+      return false;
+    }
+    startCloudSync();
+    return true;
+  };
   window.setCloudStatusMessage = function setCloudStatusMessage(message) {
     try {
       const user = firebaseReady && firebase?.auth ? firebase.auth().currentUser : null;
@@ -262,18 +275,6 @@
       console.error('Cloud status UI error:', error);
     }
   };
-
-  window.initCloudSync = function initCloudSync() {
-    if (!firebaseReady) return;
-    stopCloudSync();
-    startCloudSync();
-  };
-
-  window.addEventListener('household-changed', function () {
-    if (!firebaseReady) return;
-    stopCloudSync();
-    startCloudSync();
-  });
 
   function startAuthListener() {
     if (authReady || !initFirebase()) return;
@@ -293,6 +294,14 @@
       }
     });
   }
+
+  window.addEventListener('household-changed', () => {
+    try {
+      window.initCloudSync();
+    } catch (error) {
+      console.error('Household sync reinit error:', error);
+    }
+  });
 
   window.addEventListener('load', () => {
     initFirebase();

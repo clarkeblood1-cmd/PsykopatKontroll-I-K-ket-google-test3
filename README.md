@@ -1,3 +1,1 @@
-# PsykopatKontroll I Hemmet
-
-Household-delning aktiverad i denna version.
+# PsykopatKontroll-I-K-ket-google-test3

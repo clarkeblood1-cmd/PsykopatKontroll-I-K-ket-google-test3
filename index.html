@@ -53,60 +53,56 @@
       </div>
     </section>
 
-
-
-    <section class="household-panel" id="householdPanel">
-      <div class="household-panel-head">
+    <section class="household-panel">
+      <div class="household-panel-top">
         <div>
           <div class="household-title">👨‍👩‍👧‍👦 Household</div>
-          <div id="householdStatus" class="household-status ok">Logga in och skapa eller gå med i ett household.</div>
+          <div id="householdStatus" class="household-status">Logga in med Google för att skapa eller gå med i ett household.</div>
+        </div>
+        <div class="household-account" id="accountInfo">Inte inloggad</div>
+      </div>
+
+      <div class="household-summary-row">
+        <div class="household-summary-card">
+          <span class="household-summary-label">Aktivt household</span>
+          <strong id="householdInfo">Inget household kopplat ännu.</strong>
+        </div>
+        <div class="household-summary-card">
+          <span class="household-summary-label">Invite code</span>
+          <strong id="inviteCode">-</strong>
         </div>
       </div>
 
-      <div class="household-grid">
+      <div class="household-controls-grid">
         <div class="household-card">
-          <div class="household-card-label">Konto</div>
-          <div id="householdAccountInfo" class="household-card-value">Inte inloggad</div>
-          <div class="household-card-sub">Delad sync använder ditt Google-konto.</div>
-        </div>
-
-        <div class="household-card">
-          <div class="household-card-label">Aktivt household</div>
-          <div id="householdInfo" class="household-card-value">Inget household valt ännu</div>
-          <div id="householdMeta" class="household-card-sub">Skapa eller gå med i ett household för delad sync</div>
-        </div>
-      </div>
-
-      <div class="household-actions-grid">
-        <div class="household-block">
-          <label class="household-field-label" for="householdName">Skapa nytt household</label>
-          <input id="householdName" type="text" placeholder="T.ex. Familjen hemma">
-          <button type="button" id="createHouseholdBtn">✨ Skapa household</button>
-        </div>
-
-        <div class="household-block">
-          <label class="household-field-label" for="joinCode">Gå med via kod</label>
-          <input id="joinCode" type="text" placeholder="ABC123" maxlength="12">
-          <button type="button" id="joinHouseholdBtn" class="ghost-btn">🔗 Gå med</button>
-        </div>
-      </div>
-
-      <div id="householdInviteWrap" class="household-actions-grid" style="display:none;">
-        <div class="household-block">
-          <div class="household-field-label">Invite-kod</div>
-          <div class="household-code-row">
-            <div id="inviteCode" class="household-code">—</div>
-            <button type="button" id="copyInviteBtn" class="ghost-btn">Kopiera</button>
-          </div>
-          <div class="household-inline-actions">
-            <button type="button" id="createInviteBtn">🎟️ Skapa ny kod</button>
-            <button type="button" id="leaveHouseholdBtn" class="ghost-btn">🚪 Lämna household</button>
+          <h3>Skapa household</h3>
+          <div class="household-card-body">
+            <input id="householdName" type="text" placeholder="t.ex. Familjen Johansson" maxlength="60">
+            <button type="button" id="createHouseholdBtn">Skapa household</button>
           </div>
         </div>
 
-        <div class="household-block" id="householdMembersWrap">
-          <div class="household-field-label">Medlemmar</div>
-          <div id="householdMembers" class="household-members"></div>
+        <div class="household-card">
+          <h3>Gå med via kod</h3>
+          <div class="household-card-body">
+            <input id="joinCode" type="text" placeholder="Skriv invite code" maxlength="12" autocapitalize="characters">
+            <button type="button" class="ghost-btn" id="joinBtn">Gå med</button>
+          </div>
+        </div>
+
+        <div class="household-card household-card-invite">
+          <h3>Dela household</h3>
+          <div class="household-card-body">
+            <button type="button" class="ghost-btn" id="createInviteBtn">Skapa invite code</button>
+            <button type="button" class="ghost-btn" id="copyInviteBtn">Kopiera kod</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="household-members-wrap">
+        <div class="household-members-title">Medlemmar</div>
+        <div id="householdMembers" class="household-members-list">
+          <span class="household-member-chip is-empty">Inga medlemmar ännu</span>
         </div>
       </div>
     </section>
@@ -590,9 +586,8 @@
         <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
         <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
 <script src="firebase-config.js"></script>
-<script src="household.js"></script>
 <script src="cloud-sync.js"></script>
-<script src="cloud-hooks.js"></script>
+<script src="household.js"></script>
 <script src="script.js"></script>
   
 </body>

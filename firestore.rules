@@ -1,46 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
-      return request.auth != null;
-    }
-
-    function isSelf(userId) {
-      return signedIn() && request.auth.uid == userId;
-    }
-
-    function isHouseholdMember(householdId) {
-      return signedIn() &&
-        request.auth.uid in get(/databases/$(database)/documents/households/$(householdId)).data.memberUids;
-    }
-
-    match /users/{userId} {
-      allow read, write: if isSelf(userId);
-    }
-
     match /users/{userId}/appData/{docId} {
-      allow read, write: if isSelf(userId);
-    }
-
-    match /households/{householdId} {
-      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
-      allow read: if isHouseholdMember(householdId);
-      allow update: if isHouseholdMember(householdId);
-      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
-    }
-
-    match /households/{householdId}/appData/{docId} {
-      allow read, write: if isHouseholdMember(householdId);
-    }
-
-    match /households/{householdId}/items/{itemId} {
-      allow read, write: if isHouseholdMember(householdId);
-    }
-
-    match /inviteCodes/{code} {
-      allow read: if signedIn();
-      allow create: if signedIn();
-      allow update, delete: if signedIn();
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
   }
 }
