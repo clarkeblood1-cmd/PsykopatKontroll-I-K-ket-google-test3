@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v69-ui-theme-speed';
+const CACHE_NAME = 'matlista-app-v70-iphone-premium';
 const ASSETS = [
   './',
   './index.html',

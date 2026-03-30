@@ -3247,7 +3247,7 @@ function createCard(item, source = 'items') {
     const quickRoom = item.room || activeRoom;
     const imageSource = getItemImageSourceMeta(item);
     div.innerHTML = `
-      <img src="${img}" alt="${item.name}" loading="lazy" decoding="async" fetchpriority="low" data-item-name="${item.name}" data-image-source="${imageSource.type}" onerror="handleItemImageError(this)" onclick="showQuickImage(${realIndex})">
+      <img src="${img}" alt="${item.name}" data-item-name="${item.name}" data-image-source="${imageSource.type}" onerror="handleItemImageError(this)" onclick="showQuickImage(${realIndex})">
       <div class="info">
         <div class="top-tags quick-top-tags">
           ${createRoomBadge(quickRoom)}
@@ -3275,7 +3275,7 @@ function createCard(item, source = 'items') {
 
   const imageSource = getItemImageSourceMeta(item);
   div.innerHTML = `
-    <img src="${img}" alt="${item.name}" loading="lazy" decoding="async" fetchpriority="low" data-item-name="${item.name}" data-image-source="${imageSource.type}" onerror="handleItemImageError(this)" onclick="showImage(${realIndex})">
+    <img src="${img}" alt="${item.name}" data-item-name="${item.name}" data-image-source="${imageSource.type}" onerror="handleItemImageError(this)" onclick="showImage(${realIndex})">
     <div class="info">
       <div class="top-tags">
         <div class="category">${item.category || getRoomFallbackCategory(item.room || activeRoom)}</div>
@@ -3418,14 +3418,6 @@ function applyQuickItemToMainForm(index) {
   hideMainItemSuggestions();
   try { syncMeasureModeVisibility(); updateMeasureSummary(); } catch (e) {}
 }
-
-const debounce = (fn, wait = 120) => {
-  let timer = null;
-  return function debounced(...args) {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn.apply(this, args), wait);
-  };
-};
 
 function showMainItemSuggestions() {
   const input = document.getElementById('itemName');
@@ -5791,8 +5783,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const itemPrice = document.getElementById('itemPrice');
   const itemQuantity = document.getElementById('itemQuantity');
   const itemMeasureText = document.getElementById('itemMeasureText');
-  const searchInput = document.getElementById('searchInput');
-  const categoryFilter = document.getElementById('categoryFilter');
 
   const handleQuickAddKeydown = (event) => {
     const targetId = event.target?.id || '';
@@ -5803,20 +5793,9 @@ document.addEventListener('DOMContentLoaded', () => {
     else addItem();
   };
 
-  const debouncedMainSuggestions = debounce(showMainItemSuggestions, 90);
-  const debouncedMainRender = debounce(() => render(), 100);
-
   [itemName, itemPrice, itemQuantity, itemMeasureText].forEach(el => {
     if (el) el.addEventListener('keydown', handleQuickAddKeydown);
   });
-
-  if (itemName) {
-    itemName.removeAttribute('oninput');
-    itemName.addEventListener('input', debouncedMainSuggestions, { passive: true });
-  }
-
-  if (searchInput) searchInput.addEventListener('input', debouncedMainRender, { passive: true });
-  if (categoryFilter) categoryFilter.addEventListener('change', () => render());
 });
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -6442,7 +6421,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ===== THEME SYSTEM =====
-const themes = ["scifi","dark","light","matrix","sunset","ice","forest","rose"];
+const themes = ["scifi","dark","light","matrix","sunset","ice"];
 let currentThemeIndex = 0;
 
 const savedTheme = localStorage.getItem("theme");
@@ -6451,34 +6430,13 @@ if (savedTheme) {
   if (index !== -1) currentThemeIndex = index;
 }
 
-function setTheme(theme) {
-  const safeTheme = themes.includes(theme) ? theme : themes[0];
-  currentThemeIndex = themes.indexOf(safeTheme);
-  applyTheme(safeTheme);
-}
-
 function applyTheme(theme) {
-  const safeTheme = themes.includes(theme) ? theme : themes[0];
-  document.body.className = document.body.className
-    .split(/\s+/)
-    .filter(Boolean)
-    .filter(cls => !cls.startsWith('theme-'))
-    .join(' ');
-  document.body.classList.add("theme-" + safeTheme);
-  localStorage.setItem("theme", safeTheme);
+  document.body.className = "";
+  document.body.classList.add("theme-" + theme);
+  localStorage.setItem("theme", theme);
 
   const btn = document.getElementById("themeToggleBtn");
-  if (btn) btn.innerText = "🎨 " + safeTheme.toUpperCase();
-
-  const select = document.getElementById('themeSelect');
-  if (select && select.value !== safeTheme) select.value = safeTheme;
-
-  const metaTheme = document.querySelector('meta[name="theme-color"]');
-  const map = {
-    scifi: '#020617', dark: '#0f172a', light: '#e2e8f0', matrix: '#001100',
-    sunset: '#2e1065', ice: '#082f49', forest: '#052e16', rose: '#4a044e'
-  };
-  if (metaTheme) metaTheme.setAttribute('content', map[safeTheme] || '#07122a');
+  if (btn) btn.innerText = "🎨 " + theme.toUpperCase();
 }
 
 function toggleTheme() {
@@ -6489,9 +6447,8 @@ function toggleTheme() {
 
 document.addEventListener("DOMContentLoaded", () => {
   applyTheme(themes[currentThemeIndex]);
-  const select = document.getElementById('themeSelect');
-  if (select) select.value = themes[currentThemeIndex];
 });
+
 
 
 // ===== PWA / INSTALL APP =====
