@@ -1328,3 +1328,225 @@ button:hover{background:var(--green-dark);color:#fff}
 
 #itemType,#editType{font-weight:800;}
 #itemUnitWrap,#editUnitWrap{width:100%;}
+
+
+/* ===== UI FIXED / STABLE LAYOUT PATCH ===== */
+:root{
+  --ui-top-gap:12px;
+  --header-sticky-top:0px;
+  --tabs-sticky-top:88px;
+  --quick-sticky-top:156px;
+  --search-sticky-top:252px;
+}
+html{scroll-behavior:smooth}
+body{overflow-x:hidden}
+.app-header{
+  position:sticky;
+  top:var(--header-sticky-top);
+  z-index:60;
+  backdrop-filter:blur(16px);
+}
+.auth-panel{
+  position:relative;
+  z-index:5;
+}
+.summary-bar{
+  align-items:stretch;
+}
+.summary-box{
+  min-height:110px;
+}
+.page-tabs{
+  position:sticky;
+  top:var(--tabs-sticky-top);
+  z-index:55;
+}
+.quick-add-hero{
+  scroll-margin-top:calc(var(--search-sticky-top) + 20px);
+}
+.quick-add-controls{
+  position:sticky !important;
+  top:var(--quick-sticky-top) !important;
+  z-index:54 !important;
+}
+.sticky-search-row,
+[data-page="quick"].page-visible .sticky-search-row{
+  position:sticky;
+  top:var(--search-sticky-top);
+  z-index:40;
+}
+.quick-add-controls[data-page="quick"].page-visible{
+  display:flex !important;
+  flex-wrap:wrap;
+  align-items:stretch;
+  gap:10px;
+  padding:14px;
+  border:1px solid rgba(255,255,255,.10);
+  box-shadow:0 16px 34px rgba(0,0,0,.28);
+}
+.quick-add-controls .quick-field,
+.quick-add-controls > button,
+.quick-add-controls > input[type="file"]{
+  flex:0 0 auto;
+}
+.quick-add-controls .quick-field-room{width:170px}
+.quick-add-controls .quick-field-place{width:150px}
+.quick-add-controls .quick-field-category{width:170px}
+.quick-add-controls .quick-field-search{flex:1 1 320px;min-width:320px}
+.quick-add-controls .quick-field-quantity{width:110px}
+.quick-add-controls .quick-field-unit{width:120px}
+.quick-add-controls .quick-field-price{width:130px}
+.quick-add-controls #itemName,
+.quick-add-controls select,
+.quick-add-controls input[type="number"],
+.quick-add-controls input[type="text"]{
+  width:100%;
+  min-height:48px;
+}
+.quick-add-controls button{
+  min-height:48px;
+}
+.quick-add-controls .quick-gallery-btn,
+.quick-add-controls .quick-camera-btn,
+.quick-add-controls .quick-home-btn,
+.quick-add-controls .quick-save-btn,
+.quick-add-controls .quick-clear-btn{
+  min-width:148px;
+}
+.quick-hidden-field{
+  width:100%;
+}
+#itemMeasureTextWrap{
+  display:grid;
+  gap:8px;
+}
+#quickList .card,
+#buyList .card,
+#homeList .card{
+  align-items:start;
+}
+.card .actions{
+  min-width:170px;
+  justify-content:flex-end;
+}
+.card .name{
+  word-break:break-word;
+}
+@media (max-width:980px){
+  :root{
+    --tabs-sticky-top:82px;
+    --quick-sticky-top:148px;
+    --search-sticky-top:244px;
+  }
+  .quick-add-controls .quick-field-room,
+  .quick-add-controls .quick-field-place,
+  .quick-add-controls .quick-field-category,
+  .quick-add-controls .quick-field-search,
+  .quick-add-controls .quick-field-quantity,
+  .quick-add-controls .quick-field-unit,
+  .quick-add-controls .quick-field-price,
+  .quick-add-controls > button{
+    width:calc(50% - 5px);
+    min-width:0;
+    flex:1 1 calc(50% - 5px);
+  }
+  .quick-add-controls .quick-field-search,
+  .quick-add-controls .quick-hidden-field{
+    width:100%;
+    flex:1 1 100%;
+  }
+}
+@media (max-width:700px){
+  :root{
+    --tabs-sticky-top:120px;
+    --quick-sticky-top:196px;
+    --search-sticky-top:320px;
+  }
+  .summary-box{min-height:auto}
+  .quick-add-controls[data-page="quick"].page-visible{
+    display:grid !important;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+  }
+  .quick-add-controls .quick-field-room,
+  .quick-add-controls .quick-field-place,
+  .quick-add-controls .quick-field-category,
+  .quick-add-controls .quick-field-search,
+  .quick-add-controls .quick-field-quantity,
+  .quick-add-controls .quick-field-unit,
+  .quick-add-controls .quick-field-price,
+  .quick-add-controls > button{
+    width:100%;
+    min-width:0;
+    flex:none;
+  }
+  .quick-add-controls .quick-field-search,
+  .quick-add-controls .quick-hidden-field,
+  .quick-add-controls .quick-clear-btn{
+    grid-column:1 / -1;
+  }
+}
+@media (max-width:560px){
+  :root{
+    --tabs-sticky-top:118px;
+    --quick-sticky-top:184px;
+    --search-sticky-top:308px;
+  }
+}
+@media (max-width:420px){
+  :root{
+    --tabs-sticky-top:118px;
+    --quick-sticky-top:184px;
+    --search-sticky-top:308px;
+  }
+  .quick-add-controls[data-page="quick"].page-visible{
+    grid-template-columns:1fr;
+  }
+}
+
+
+/* ===== MOBILE STATIC UI PATCH ===== */
+@media (max-width:700px){
+  html{scroll-behavior:auto}
+  .app-header,
+  .page-tabs,
+  .quick-add-controls,
+  .sticky-search-row,
+  [data-page="quick"].page-visible .sticky-search-row{
+    position:static !important;
+    top:auto !important;
+  }
+
+  .page-tabs,
+  .quick-add-controls[data-page="quick"].page-visible,
+  .sticky-search-row{
+    transform:none !important;
+  }
+
+  .quick-add-hero{
+    scroll-margin-top:20px;
+  }
+}
+
+
+/* ===== FULL STATIC UI PATCH (ALL DEVICES) ===== */
+html{scroll-behavior:auto !important}
+.app-header,
+.page-tabs,
+.quick-add-controls,
+.sticky-search-row,
+[data-page="quick"].page-visible .sticky-search-row,
+[data-page="quick"].page-visible.quick-add-controls{
+  position:static !important;
+  top:auto !important;
+}
+
+.page-tabs,
+.quick-add-controls[data-page="quick"].page-visible,
+.sticky-search-row{
+  transform:none !important;
+}
+
+.quick-add-hero{
+  scroll-margin-top:20px !important;
+}
