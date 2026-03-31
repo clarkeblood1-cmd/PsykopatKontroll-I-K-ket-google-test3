@@ -1,12 +1,13 @@
-const CACHE_NAME = 'matlista-app-v71-offline-mode';
+const CACHE_NAME = 'matlista-app-v71-household-flow';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './script.js',
   './cloud-sync.js',
+  './cloud-hooks.js',
+  './household.js',
   './firebase-config.js',
-  './offline-mode.js',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png'

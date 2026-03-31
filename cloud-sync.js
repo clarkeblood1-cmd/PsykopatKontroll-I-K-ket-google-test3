@@ -19,20 +19,6 @@
     const loginBtn = byId('googleLoginBtn');
     const logoutBtn = byId('googleLogoutBtn');
     const help = byId('firebaseHelp');
-    const offlineBtn = byId('offlineModeBtn');
-    const exitOfflineBtn = byId('exitOfflineModeBtn');
-    const offlineInfo = byId('offlineInfo');
-
-    if (window.cloudSyncDisabled) {
-      if (status) status.textContent = 'Offline-läge aktivt';
-      if (loginBtn) loginBtn.style.display = 'none';
-      if (logoutBtn) logoutBtn.style.display = 'none';
-      if (offlineBtn) offlineBtn.style.display = 'none';
-      if (exitOfflineBtn) exitOfflineBtn.style.display = '';
-      if (help) help.style.display = 'none';
-      if (offlineInfo) offlineInfo.style.display = '';
-      return;
-    }
 
     if (status) {
       if (message) status.textContent = message;
@@ -49,10 +35,6 @@
   }
 
   function initFirebase() {
-    if (window.cloudSyncDisabled) {
-      setAuthUi(null, 'Offline-läge aktivt');
-      return false;
-    }
     try {
       if (!window.firebase || !window.firebaseConfig) {
         setAuthUi(null, 'Firebase ej redo');
@@ -75,7 +57,9 @@
   function getDocRef() {
     const user = firebase.auth().currentUser;
     if (!user) return null;
-    return firebase.firestore().collection('users').doc(user.uid).collection('appData').doc('main');
+    const householdId = window.cloudHousehold && typeof window.cloudHousehold.getHouseholdId === 'function' ? window.cloudHousehold.getHouseholdId() : null;
+    if (!householdId) return null;
+    return firebase.firestore().collection('households').doc(householdId).collection('appData').doc('main');
   }
 
   function collectState() {
@@ -203,7 +187,7 @@
     }
 
     syncReady = true;
-    setAuthUi(firebase.auth().currentUser, 'Inloggad – startar molnsynk...');
+    setAuthUi(firebase.auth().currentUser, 'Inloggad – startar hushållssynk...');
 
     cloudUnsubscribe = ref.onSnapshot(snapshot => {
       if (!snapshot.exists) {
@@ -211,7 +195,7 @@
           pendingInitialUpload = true;
           saveToCloudNow().finally(() => {
             pendingInitialUpload = false;
-            setAuthUi(firebase.auth().currentUser, 'Inloggad – molnsynk aktiv');
+            setAuthUi(firebase.auth().currentUser, 'Inloggad – hushållssynk aktiv');
           });
         }
         return;
@@ -219,7 +203,7 @@
 
       const data = snapshot.data() || {};
       applyRemoteState(data);
-      setAuthUi(firebase.auth().currentUser, 'Inloggad – molnsynk aktiv');
+      setAuthUi(firebase.auth().currentUser, 'Inloggad – hushållssynk aktiv');
     }, error => {
       console.error('Cloud sync snapshot error:', error);
       setAuthUi(firebase.auth().currentUser, 'Molnsynk-fel: ' + (error && error.message ? error.message : 'okänt fel'));
@@ -252,15 +236,22 @@
   };
 
   window.logoutGoogle = function logoutGoogle() {
-    if (window.cloudSyncDisabled && typeof window.exitOfflineMode === 'function') {
-      window.exitOfflineMode();
-      return;
-    }
     if (!firebaseReady) return;
     firebase.auth().signOut().catch(error => {
       console.error('Logout error:', error);
       alert('Logout misslyckades: ' + (error && error.message ? error.message : 'okänt fel'));
     });
+  };
+
+
+  window.initCloudSync = function initCloudSync() {
+    if (!firebaseReady) initFirebase();
+    stopCloudSync();
+    if (firebaseReady && firebase.auth().currentUser && getDocRef()) {
+      startCloudSync();
+    } else if (firebaseReady && firebase.auth().currentUser) {
+      setAuthUi(firebase.auth().currentUser, 'Inloggad – välj hushåll...');
+    }
   };
 
   window.saveToCloud = saveToCloud;
@@ -282,9 +273,9 @@
       wrapSaveFunction();
 
       if (user) {
-        setAuthUi(user, 'Inloggad – ansluter...');
+        setAuthUi(user, 'Inloggad – välj hushåll...');
         try { window.dispatchEvent(new CustomEvent('cloud-auth-changed', { detail: { loggedIn: true, uid: user.uid || '' } })); } catch (e) {}
-        startCloudSync();
+        if (window.cloudHousehold && typeof window.cloudHousehold.getHouseholdId === 'function' && window.cloudHousehold.getHouseholdId()) startCloudSync();
       } else {
         stopCloudSync();
         try { window.dispatchEvent(new CustomEvent('cloud-auth-changed', { detail: { loggedIn: false, uid: '' } })); } catch (e) {}
@@ -294,12 +285,6 @@
   }
 
   window.addEventListener('load', () => {
-    if (window.cloudSyncDisabled) {
-      setAuthUi(null, 'Offline-läge aktivt');
-      wrapSaveFunction();
-      setTimeout(wrapSaveFunction, 0);
-      return;
-    }
     initFirebase();
     wrapSaveFunction();
     startAuthListener();
