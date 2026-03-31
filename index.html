@@ -197,18 +197,14 @@
       <div class="quick-field quick-field-price">
         <input id="itemPrice" type="number" min="0" placeholder="Pris (kr)">
       </div>
-      <div class="quick-field quick-field-expiry">
-        <input id="itemBestBeforeDays" type="number" min="0" placeholder="Bäst före (dagar)">
+
+      <div class="quick-field quick-field-date">
+        <input id="itemBestBeforeDate" type="date" placeholder="Bäst före">
       </div>
 
-      <div class="quick-field quick-field-expiry">
-        <input id="itemOpenedDays" type="number" min="0" placeholder="Öppnad (dagar)">
+      <div class="quick-field quick-field-open-days">
+        <input id="itemOpenedShelfLifeDays" type="number" min="0" step="1" placeholder="Öppnad hållbarhet (dagar)">
       </div>
-
-      <div class="quick-field quick-field-expiry">
-        <input id="itemWarnBeforeDays" type="number" min="0" placeholder="Varna före (dagar)">
-      </div>
-
 
       <button type="button" class="ghost-btn quick-clear-btn" onclick="clearInputs()">🧹 Rensa</button>
 
@@ -354,7 +350,7 @@
         <button type="button" class="room-arrow" onclick="scrollPlaceTabs(1)">▶</button>
       </div>
       <div class="section-subtitle" id="homeRoomSubtitle">Uppdelat per rum och plats</div>
-      <div id="expiryAlerts" class="expiry-alerts"></div>
+      <div id="expiryAlerts" class="expiry-alerts" style="display:none;"></div>
       <div class="container" id="homeList"></div>
     </section>
 
@@ -569,9 +565,9 @@
 
         <select id="editPlace" data-place-select></select>
 
-        <input id="editBestBeforeDays" type="number" min="0" placeholder="Bäst före oöppnad (dagar)">
-        <input id="editOpenedDays" type="number" min="0" placeholder="Öppnad (dagar)">
-        <input id="editWarnBeforeDays" type="number" min="0" placeholder="Varning före (dagar)">
+        <input id="editBestBeforeDate" type="date" placeholder="Bäst före datum">
+        <input id="editOpenedShelfLifeDays" type="number" min="0" step="1" placeholder="Hållbar efter öppning (dagar)">
+        <input id="editOpenedDate" type="date" placeholder="Öppnad datum">
 
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button type="button" class="ghost-btn" style="flex:1;" onclick="closeEditModal()">Avbryt</button>
