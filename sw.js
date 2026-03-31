@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v72-expiry-tools';
+const CACHE_NAME = 'matlista-app-v72-expiry-integration';
 const ASSETS = [
   './',
   './index.html',
@@ -6,9 +6,11 @@ const ASSETS = [
   './script.js',
   './cloud-sync.js',
   './cloud-hooks.js',
+  './expiry-integration.js',
   './household.js',
   './firebase-config.js',
   './manifest.json',
+  './offline-mode.js',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
@@ -36,27 +38,4 @@ self.addEventListener('fetch', event => {
       return response;
     }).catch(() => cached))
   );
-});
-
-
-self.addEventListener('message', event => {
-  const data = event.data || {};
-  if (data.type !== 'SHOW_NOTIFICATION') return;
-  event.waitUntil(self.registration.showNotification(data.title || 'Matlista', {
-    body: data.body || '',
-    icon: './icons/icon-192.png',
-    badge: './icons/icon-192.png',
-    data: { url: data.url || './index.html' }
-  }));
-});
-
-self.addEventListener('notificationclick', event => {
-  event.notification.close();
-  event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
-    const targetUrl = (event.notification.data && event.notification.data.url) || './index.html';
-    for (const client of windowClients) {
-      if ('focus' in client) return client.focus();
-    }
-    if (clients.openWindow) return clients.openWindow(targetUrl);
-  }));
 });

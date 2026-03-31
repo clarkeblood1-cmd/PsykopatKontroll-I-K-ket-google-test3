@@ -1,0 +1,7 @@
+Full integration version
+- Added expiry-integration.js
+- Injects Bäst före + Öppnad fields into quick add
+- Adds expiry dashboard
+- Sorts home items by soonest expiry
+- Adds browser notifications for soon expiring items
+- Uses uploaded neon icons in /icons
