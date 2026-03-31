@@ -38,123 +38,13 @@ let roomDefs = JSON.parse(localStorage.getItem('matlista_rooms') || 'null');
 let activeRoom = localStorage.getItem('matlista_active_room') || 'koket';
 let activePlaceFilter = localStorage.getItem('matlista_active_place_filter') || '';
 
+let expirySortMode = localStorage.getItem('matlista_expiry_sort_mode') || 'expiry';
+let expiryNotificationPermissionAsked = localStorage.getItem('matlista_expiry_notify_asked') === '1';
+let lastExpiryNotificationSignature = localStorage.getItem('matlista_last_expiry_notification') || '';
+let expiryNotificationCooldown = Number(localStorage.getItem('matlista_expiry_notification_time') || 0);
+const EXPIRY_WARNING_DAYS = 3;
+const EXPIRY_NOTIFICATION_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-const EXPIRY_WARNING_DEFAULT_DAYS = 2;
-
-function toDayStamp(value = new Date()) {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-function addDaysToStamp(baseStamp, days = 0) {
-  if (!baseStamp) return '';
-  const date = new Date(`${baseStamp}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return '';
-  date.setDate(date.getDate() + Math.max(0, Number(days || 0)));
-  return toDayStamp(date);
-}
-
-function diffDaysFromToday(targetStamp) {
-  if (!targetStamp) return null;
-  const today = new Date(`${toDayStamp()}T12:00:00`);
-  const target = new Date(`${targetStamp}T12:00:00`);
-  if (Number.isNaN(today.getTime()) || Number.isNaN(target.getTime())) return null;
-  return Math.round((target - today) / 86400000);
-}
-
-function normalizeExpiryDays(value, fallback = 0) {
-  const n = Math.round(Number(value));
-  if (!Number.isFinite(n)) return Math.max(0, Number(fallback || 0));
-  return Math.max(0, n);
-}
-
-function normalizeQuickExpiryFields(item = {}) {
-  return {
-    bestBeforeDays: normalizeExpiryDays(item.bestBeforeDays, 0),
-    openedDays: normalizeExpiryDays(item.openedDays, 0),
-    warnBeforeDays: normalizeExpiryDays(item.warnBeforeDays, EXPIRY_WARNING_DEFAULT_DAYS)
-  };
-}
-
-function buildExpiryFieldsForHomeItem(sourceItem = {}, existingItem = null) {
-  const today = toDayStamp();
-  const quickExpiry = normalizeQuickExpiryFields(sourceItem);
-  const addedAt = sourceItem.addedAt || existingItem?.addedAt || today;
-  const openedAt = sourceItem.openedAt || existingItem?.openedAt || '';
-  const bestBeforeDate = quickExpiry.bestBeforeDays > 0 ? addDaysToStamp(addedAt, quickExpiry.bestBeforeDays) : '';
-  const openedBestBeforeDate = openedAt && quickExpiry.openedDays > 0 ? addDaysToStamp(openedAt, quickExpiry.openedDays) : '';
-
-  return {
-    ...quickExpiry,
-    addedAt,
-    openedAt,
-    bestBeforeDate,
-    openedBestBeforeDate
-  };
-}
-
-function getExpiryStatus(item = {}) {
-  const bestBeforeDaysLeft = diffDaysFromToday(item.bestBeforeDate || '');
-  const openedDaysLeft = diffDaysFromToday(item.openedBestBeforeDate || '');
-  const warnDays = normalizeExpiryDays(item.warnBeforeDays, EXPIRY_WARNING_DEFAULT_DAYS);
-  const activeDays = openedDaysLeft !== null ? openedDaysLeft : bestBeforeDaysLeft;
-  let level = 'ok';
-  if (activeDays !== null) {
-    if (activeDays < 0) level = 'expired';
-    else if (activeDays <= warnDays) level = 'warning';
-  }
-  return { bestBeforeDaysLeft, openedDaysLeft, warnDays, activeDays, level };
-}
-
-function formatDaysCountdown(days) {
-  if (days === null || days === undefined) return '—';
-  if (days < 0) return `utgången sedan ${Math.abs(days)} dag${Math.abs(days) === 1 ? '' : 'ar'}`;
-  if (days === 0) return 'går ut idag';
-  return `${days} dag${days === 1 ? '' : 'ar'} kvar`;
-}
-
-function formatReadableDate(stamp) {
-  if (!stamp) return '';
-  const date = new Date(`${stamp}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString('sv-SE', { day: 'numeric', month: 'long' });
-}
-
-function createExpiryMeta(item = {}) {
-  if ((item.type || 'home') !== 'home') return '';
-  const status = getExpiryStatus(item);
-  const chips = [];
-  if (status.bestBeforeDaysLeft !== null) {
-    chips.push(`<div class="expiry-chip">Bäst före: <strong>${formatDaysCountdown(status.bestBeforeDaysLeft)}</strong>${item.bestBeforeDate ? `<span>${formatReadableDate(item.bestBeforeDate)}</span>` : ''}</div>`);
-  }
-  if (item.openedAt) {
-    chips.push(`<div class="expiry-chip ${status.openedDaysLeft !== null && status.openedDaysLeft <= status.warnDays ? 'is-warning' : ''}">Öppnad: <strong>${formatDaysCountdown(status.openedDaysLeft)}</strong>${item.openedBestBeforeDate ? `<span>${formatReadableDate(item.openedBestBeforeDate)}</span>` : ''}</div>`);
-  } else if (normalizeExpiryDays(item.openedDays, 0) > 0) {
-    chips.push(`<div class="expiry-chip">Öppnad: <strong>inte öppnad</strong><span>${item.openedDays} dagar efter öppning</span></div>`);
-  }
-  if (status.level === 'expired') {
-    chips.push('<div class="expiry-alert is-expired">⚠️ Har gått ut</div>');
-  } else if (status.level === 'warning') {
-    chips.push(`<div class="expiry-alert is-warning">⚠️ Snart utgången inom ${status.warnDays} dagar</div>`);
-  }
-  return chips.length ? `<div class="expiry-meta">${chips.join('')}</div>` : '';
-}
-
-function normalizeItemExpiryData(item = {}) {
-  if (!item || typeof item !== 'object') return item;
-  const quickExpiry = normalizeQuickExpiryFields(item);
-  if ((item.type || 'home') === 'home') {
-    return { ...item, ...buildExpiryFieldsForHomeItem({ ...item, ...quickExpiry }) };
-  }
-  return { ...item, ...quickExpiry };
-}
-
-items = Array.isArray(items) ? items.map(normalizeItemExpiryData) : [];
-quickItems = Array.isArray(quickItems) ? quickItems.map(normalizeItemExpiryData) : [];
 
 
 function normalizeRoomKey(value) {
@@ -169,6 +59,217 @@ function normalizeRoomKey(value) {
 
 function cleanRoomLabel(value) {
   return String(value || '').replace(/\s+/g, ' ').trim().toUpperCase();
+}
+
+
+function normalizeWholeDays(value, fallback = 0) {
+  const n = Math.round(Number(value || 0));
+  return Number.isFinite(n) ? Math.max(0, n) : fallback;
+}
+
+function parseDateOnly(value) {
+  if (!value) return null;
+  const match = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  return new Date(Number(year), Number(month) - 1, Number(day), 0, 0, 0, 0);
+}
+
+function startOfToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+}
+
+function formatDateOnly(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysToDateString(baseDateString, days) {
+  const base = parseDateOnly(baseDateString) || startOfToday();
+  const result = new Date(base.getFullYear(), base.getMonth(), base.getDate() + normalizeWholeDays(days, 0), 0, 0, 0, 0);
+  return formatDateOnly(result);
+}
+
+function getDiffDaysFromToday(dateString) {
+  const date = parseDateOnly(dateString);
+  if (!date) return null;
+  const today = startOfToday();
+  return Math.round((date.getTime() - today.getTime()) / 86400000);
+}
+
+function formatRemainingDays(days) {
+  if (days == null) return '';
+  if (days > 1) return `${days} dagar kvar`;
+  if (days === 1) return '1 dag kvar';
+  if (days === 0) return 'Går ut idag';
+  if (days === -1) return 'Gick ut igår';
+  return `Gick ut för ${Math.abs(days)} dagar sedan`;
+}
+
+function getExpiryStatus(item) {
+  const bestBeforeDays = getDiffDaysFromToday(item?.bestBefore);
+  const openDaysSetting = normalizeWholeDays(item?.openDays, 0);
+  const openExpiryDate = item?.openedDate && openDaysSetting > 0 ? addDaysToDateString(item.openedDate, openDaysSetting) : '';
+  const openedDaysLeft = openExpiryDate ? getDiffDaysFromToday(openExpiryDate) : null;
+  const effectiveDays = [bestBeforeDays, openedDaysLeft].filter(v => v !== null);
+  const minDays = effectiveDays.length ? Math.min(...effectiveDays) : null;
+  let level = 'muted';
+  if (minDays !== null) {
+    if (minDays < 0) level = 'expired';
+    else if (minDays <= EXPIRY_WARNING_DAYS) level = 'warning';
+    else level = 'good';
+  }
+  return {
+    bestBeforeDays,
+    openedDaysLeft,
+    openExpiryDate,
+    effectiveDaysLeft: minDays,
+    level
+  };
+}
+
+function getExpiryBadges(item) {
+  const status = getExpiryStatus(item);
+  const badges = [];
+  if (status.bestBeforeDays !== null) {
+    badges.push({ label: `Bäst före: ${formatRemainingDays(status.bestBeforeDays)}`, level: status.bestBeforeDays < 0 ? 'expired' : (status.bestBeforeDays <= EXPIRY_WARNING_DAYS ? 'warning' : 'good') });
+  } else if (normalizeWholeDays(item?.shelfLifeDays, 0) > 0) {
+    badges.push({ label: `Bäst före mall: ${normalizeWholeDays(item?.shelfLifeDays, 0)} dagar`, level: 'muted' });
+  }
+  if (item?.openedDate) {
+    const openedForDays = Math.max(0, Math.round((startOfToday().getTime() - parseDateOnly(item.openedDate).getTime()) / 86400000));
+    badges.push({ label: `Öppnad: ${openedForDays} dagar sedan`, level: 'muted' });
+    if (status.openedDaysLeft !== null) {
+      badges.push({ label: `Efter öppning: ${formatRemainingDays(status.openedDaysLeft)}`, level: status.openedDaysLeft < 0 ? 'expired' : (status.openedDaysLeft <= EXPIRY_WARNING_DAYS ? 'warning' : 'good') });
+    }
+  } else if (normalizeWholeDays(item?.openDays, 0) > 0) {
+    badges.push({ label: `Efter öppning mall: ${normalizeWholeDays(item?.openDays, 0)} dagar`, level: 'muted' });
+  }
+  return badges;
+}
+
+function getExpirySortValue(item) {
+  const status = getExpiryStatus(item);
+  if (status.effectiveDaysLeft === null) return Number.MAX_SAFE_INTEGER;
+  return status.effectiveDaysLeft;
+}
+
+function normalizeExpiryFields(item, matchedQuick = null) {
+  const templateShelfLife = normalizeWholeDays(item?.shelfLifeDays ?? matchedQuick?.shelfLifeDays, 0);
+  const templateOpenDays = normalizeWholeDays(item?.openDays ?? matchedQuick?.openDays, 0);
+  const next = { ...item };
+  next.shelfLifeDays = templateShelfLife;
+  next.openDays = templateOpenDays;
+  next.openedDate = item?.openedDate ? formatDateOnly(parseDateOnly(item.openedDate)) : '';
+  next.bestBefore = item?.bestBefore ? formatDateOnly(parseDateOnly(item.bestBefore)) : '';
+  if (!next.bestBefore && templateShelfLife > 0 && item?.type !== 'buy') {
+    next.bestBefore = addDaysToDateString(formatDateOnly(startOfToday()), templateShelfLife);
+  }
+  return next;
+}
+
+function getTodayDateString() {
+  return formatDateOnly(startOfToday());
+}
+
+function collectExpiryAlertItems() {
+  return items
+    .filter(item => item.type === 'home')
+    .map(item => ({ item, status: getExpiryStatus(item) }))
+    .filter(entry => entry.status.effectiveDaysLeft !== null && entry.status.effectiveDaysLeft <= EXPIRY_WARNING_DAYS)
+    .sort((a, b) => a.status.effectiveDaysLeft - b.status.effectiveDaysLeft || String(a.item.name || '').localeCompare(String(b.item.name || ''), 'sv'));
+}
+
+function updateExpiryControls() {
+  const sortSelect = document.getElementById('expirySortMode');
+  if (sortSelect && sortSelect.value !== expirySortMode) sortSelect.value = expirySortMode;
+  const notifyBtn = document.getElementById('expiryNotifyBtn');
+  if (notifyBtn) {
+    const supported = 'Notification' in window;
+    const state = supported ? Notification.permission : 'unsupported';
+    notifyBtn.disabled = !supported;
+    notifyBtn.textContent = !supported ? '🔕 Notiser stöds inte' : (state === 'granted' ? '🔔 Notiser aktiva' : '🔔 Aktivera notiser');
+  }
+}
+
+async function requestExpiryNotifications() {
+  if (!('Notification' in window)) {
+    alert('Den här enheten/webbläsaren stöder inte notiser.');
+    updateExpiryControls();
+    return;
+  }
+  try {
+    const permission = await Notification.requestPermission();
+    expiryNotificationPermissionAsked = true;
+    localStorage.setItem('matlista_expiry_notify_asked', '1');
+    if (permission === 'granted') {
+      maybeSendExpiryNotifications(true);
+    }
+  } catch (error) {
+    console.warn('Kunde inte aktivera notiser:', error);
+  }
+  updateExpiryControls();
+}
+
+function dispatchExpiryNotification(title, body) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.ready.then(reg => {
+      if (reg?.active) {
+        reg.active.postMessage({
+          type: 'SHOW_NOTIFICATION',
+          title,
+          body,
+          url: './index.html'
+        });
+      } else {
+        new Notification(title, { body });
+      }
+    }).catch(() => {
+      new Notification(title, { body });
+    });
+    return;
+  }
+  new Notification(title, { body });
+}
+
+function maybeSendExpiryNotifications(force = false) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const alerts = collectExpiryAlertItems();
+  if (!alerts.length) return;
+  const signature = alerts.slice(0, 8).map(entry => `${entry.item.name}:${entry.status.effectiveDaysLeft}`).join('|');
+  const now = Date.now();
+  if (!force && signature === lastExpiryNotificationSignature && now - expiryNotificationCooldown < EXPIRY_NOTIFICATION_INTERVAL_MS) return;
+  const lines = alerts.slice(0, 4).map(entry => `${entry.item.name}: ${formatRemainingDays(entry.status.effectiveDaysLeft)}`);
+  const body = lines.join(' • ');
+  dispatchExpiryNotification('Matlista – varor som snart går ut', body);
+  lastExpiryNotificationSignature = signature;
+  expiryNotificationCooldown = now;
+  localStorage.setItem('matlista_last_expiry_notification', signature);
+  localStorage.setItem('matlista_expiry_notification_time', String(now));
+}
+
+function setExpirySortMode(value) {
+  expirySortMode = value === 'name' ? 'name' : 'expiry';
+  localStorage.setItem('matlista_expiry_sort_mode', expirySortMode);
+  updateExpiryControls();
+  render();
+}
+
+function markItemOpened(index) {
+  const item = items[index];
+  if (!item || item.type !== 'home') return;
+  item.openedDate = getTodayDateString();
+  if (!item.bestBefore && normalizeWholeDays(item.shelfLifeDays, 0) > 0) {
+    item.bestBefore = addDaysToDateString(getTodayDateString(), item.shelfLifeDays);
+  }
+  save();
+  render();
+  maybeSendExpiryNotifications(true);
 }
 
 
@@ -2162,7 +2263,11 @@ function hydrateData() {
       type: item?.type === 'buy' ? 'buy' : 'home',
       img: item?.img ? String(item.img) : getAutoImagePath(item?.name || ''),
       openedAmount: Math.max(0, Number(item?.openedAmount || 0)),
-      packMode: item?.packMode === 'bags' ? 'bags' : ''
+      packMode: item?.packMode === 'bags' ? 'bags' : '',
+      bestBefore: item?.bestBefore ? formatDateOnly(parseDateOnly(item.bestBefore)) : '',
+      openedDate: item?.openedDate ? formatDateOnly(parseDateOnly(item.openedDate)) : '',
+      shelfLifeDays: normalizeWholeDays(item?.shelfLifeDays, 0),
+      openDays: normalizeWholeDays(item?.openDays, 0)
     };
   }).filter(item => item.name);
 
@@ -2182,7 +2287,11 @@ function hydrateData() {
       place: ensurePlaceExists(item?.place || fallbackPlace, room),
       room,
       type: 'home',
-      img: item?.img ? String(item.img) : getAutoImagePath(item?.name || '')
+      img: item?.img ? String(item.img) : getAutoImagePath(item?.name || ''),
+      bestBefore: '',
+      openedDate: '',
+      shelfLifeDays: normalizeWholeDays(item?.shelfLifeDays, 0),
+      openDays: normalizeWholeDays(item?.openDays, 0)
     };
   }).filter(item => item.name);
 
@@ -2218,6 +2327,7 @@ function save() {
   localStorage.setItem('matlista_rooms', JSON.stringify(getAllRoomDefs()));
   localStorage.setItem('matlista_active_room', activeRoom);
   localStorage.setItem('matlista_active_place_filter', activePlaceFilter);
+  localStorage.setItem('matlista_expiry_sort_mode', expirySortMode);
   localStorage.setItem('homeOpenState', JSON.stringify(homeOpenState));
   localStorage.setItem('matlista_recipe_choices', JSON.stringify(recipeIngredientChoices));
   localStorage.setItem('matlista_household_size', String(householdSize));
@@ -2236,6 +2346,7 @@ function save() {
   window.roomDefs = getAllRoomDefs();
   window.activeRoom = activeRoom;
   window.activePlaceFilter = activePlaceFilter;
+  window.expirySortMode = expirySortMode;
   window.homeOpenState = homeOpenState;
   window.recipeIngredientChoices = recipeIngredientChoices;
   window.householdSize = householdSize;
@@ -2259,6 +2370,7 @@ window.applyCloudState = function applyCloudState(data) {
   if (Array.isArray(data.roomDefs)) roomDefs = data.roomDefs;
   if (typeof data.activeRoom === 'string' && data.activeRoom) activeRoom = data.activeRoom;
   if (typeof data.activePlaceFilter === 'string') activePlaceFilter = data.activePlaceFilter;
+  if (typeof data.expirySortMode === 'string' && data.expirySortMode) expirySortMode = data.expirySortMode;
   if (data.homeOpenState && typeof data.homeOpenState === 'object') homeOpenState = data.homeOpenState;
   if (data.recipeIngredientChoices && typeof data.recipeIngredientChoices === 'object') recipeIngredientChoices = data.recipeIngredientChoices;
   if (typeof data.householdSize !== 'undefined') householdSize = Math.max(1, Math.min(8, Number(data.householdSize || 1)));
@@ -2286,7 +2398,6 @@ window.applyCloudState = function applyCloudState(data) {
 function syncQuickItemFromItem(changedItem) {
   const quick = quickItems.find(q => normalizeText(q.name) === normalizeText(changedItem.name));
   if (!quick) return;
-  const expiryData = normalizeQuickExpiryFields(changedItem);
   quick.room = changedItem.room || quick.room || activeRoom;
   quick.place = ensurePlaceExists(changedItem.place || quick.place || getPlacesForRoom(quick.room)[0]?.key || 'kyl', quick.room);
   quick.category = ensureCategoryExists(changedItem.category || quick.category || getRoomFallbackCategory(quick.room), quick.room);
@@ -2299,9 +2410,6 @@ function syncQuickItemFromItem(changedItem) {
   quick.measureText = supportsMeasureInput(quick.unit) ? getMeasureTextFromSize(quick.size, quickMeasureUnit) : '';
   quick.weightText = isWeightUnit(quick.unit) ? quick.measureText : '';
   quick.quantity = Math.max(1, Number(quick.quantity || 1));
-  quick.bestBeforeDays = expiryData.bestBeforeDays;
-  quick.openedDays = expiryData.openedDays;
-  quick.warnBeforeDays = expiryData.warnBeforeDays;
 }
 
 function updateToggleButtons() {
@@ -3089,8 +3197,7 @@ function addHomeItemFromTemplate(sourceItem, quantity = 1, targetPlace = null) {
     type: 'home',
     img: sourceItem.img ? String(sourceItem.img) : '',
     openedAmount: Math.max(0, Number(sourceItem.openedAmount || 0)),
-    packMode: isWeightUnit(sourceItem.unit || 'st') && (Number(quantity || sourceItem.quantity || 0) > 1 || Number(sourceItem.openedAmount || 0) > 0 || sourceItem.packMode === 'bags') ? 'bags' : '',
-    ...buildExpiryFieldsForHomeItem(sourceItem)
+    packMode: isWeightUnit(sourceItem.unit || 'st') && (Number(quantity || sourceItem.quantity || 0) > 1 || Number(sourceItem.openedAmount || 0) > 0 || sourceItem.packMode === 'bags') ? 'bags' : ''
   };
 
   const existing = items.find(entry =>
@@ -3108,7 +3215,6 @@ function addHomeItemFromTemplate(sourceItem, quantity = 1, targetPlace = null) {
     existing.price = Number(copy.price || existing.price || 0);
     existing.category = copy.category;
     if (copy.img) existing.img = copy.img;
-    Object.assign(existing, buildExpiryFieldsForHomeItem(copy, existing));
     syncQuickItemFromItem(existing);
   } else {
     items.push(copy);
@@ -3132,8 +3238,7 @@ function addBuyItemFromTemplate(sourceItem, quantity = 1) {
     type: 'buy',
     img: sourceItem.img ? String(sourceItem.img) : '',
     openedAmount: 0,
-    packMode: '',
-    ...normalizeQuickExpiryFields(sourceItem)
+    packMode: ''
   };
 
   const existing = items.find(entry =>
@@ -3399,6 +3504,8 @@ function createCard(item, source = 'items') {
   }
 
   const imageSource = getItemImageSourceMeta(item);
+  const expiryBadges = source === 'quick' ? getExpiryBadges(item) : getExpiryBadges(item);
+  const expiryHtml = expiryBadges.length ? `<div class="expiry-stack">${expiryBadges.map(badge => `<div class="expiry-pill expiry-${badge.level}">${badge.label}</div>`).join('')}</div>` : '';
   div.innerHTML = `
     <img src="${img}" alt="${item.name}" data-item-name="${item.name}" data-image-source="${imageSource.type}" onerror="handleItemImageError(this)" onclick="showImage(${realIndex})">
     <div class="info">
@@ -3422,11 +3529,11 @@ function createCard(item, source = 'items') {
             }</div>`
           : ''}
       </div>
-      ${createExpiryMeta(item)}
+      ${item.type === 'home' ? expiryHtml : ''}
     </div>
     <div class="actions">
       <button type="button" class="ghost-btn image-source-badge image-source-${imageSource.type}" title="${imageSource.title}" onclick="showImageSourceInfo('${imageSource.type}')">${imageSource.label}</button>
-      ${item.type === 'home' ? `<button type="button" class="ghost-btn" onclick="toggleOpenedState(${realIndex})">${item.openedAt ? '↺ Nollställ öppnad' : '🥫 Öppna idag'}</button>` : ''}
+      ${item.type === 'home' ? `<button type="button" class="ghost-btn" onclick="markItemOpened(${realIndex})">📂 Öppna idag</button>` : ''}
       <button type="button" class="ghost-btn" onclick="editMainItem(${realIndex})">✏️ Ändra</button>
       <button type="button" class="delete" onclick="removeItem(${realIndex})">🗑️</button>
       <button type="button" onclick="moveItem(${realIndex})">${moveText}</button>
@@ -3455,7 +3562,12 @@ function renderHomeList(searchText, categoryFilter) {
     const filtered = roomItems.filter(item =>
       item.place === place.key &&
       matchesSearch(item, searchText, categoryFilter)
-    );
+    ).sort((a, b) => {
+      if (expirySortMode === 'name') return String(a.name || '').localeCompare(String(b.name || ''), 'sv');
+      const diff = getExpirySortValue(a) - getExpirySortValue(b);
+      if (diff !== 0) return diff;
+      return String(a.name || '').localeCompare(String(b.name || ''), 'sv');
+    });
 
     if (!filtered.length) return;
     hasAny = true;
@@ -3526,9 +3638,6 @@ function applyQuickItemToMainForm(index) {
   const itemSize = document.getElementById('itemSize');
   const itemPlace = document.getElementById('itemPlace');
   const itemMeasureText = document.getElementById('itemMeasureText');
-  const itemBestBeforeDays = document.getElementById('itemBestBeforeDays');
-  const itemOpenedDays = document.getElementById('itemOpenedDays');
-  const itemWarnBeforeDays = document.getElementById('itemWarnBeforeDays');
 
   if (itemName) itemName.value = item.name || '';
   if (itemPrice) itemPrice.value = Number(item.price || 0) || '';
@@ -3547,6 +3656,19 @@ function applyQuickItemToMainForm(index) {
 
   hideMainItemSuggestions();
   try { syncMeasureModeVisibility(); updateMeasureSummary(); } catch (e) {}
+}
+
+
+function applyQuickTemplateDefaults(item) {
+  if (!item) return;
+  const shelfLifeInput = document.getElementById('itemShelfLifeDays');
+  const openDaysInput = document.getElementById('itemOpenDays');
+  const bestBeforeInput = document.getElementById('itemBestBefore');
+  if (shelfLifeInput && !shelfLifeInput.value) shelfLifeInput.value = normalizeWholeDays(item.shelfLifeDays, 0) || '';
+  if (openDaysInput && !openDaysInput.value) openDaysInput.value = normalizeWholeDays(item.openDays, 0) || '';
+  if (bestBeforeInput && !bestBeforeInput.value && normalizeWholeDays(item.shelfLifeDays, 0) > 0) {
+    bestBeforeInput.value = addDaysToDateString(getTodayDateString(), normalizeWholeDays(item.shelfLifeDays, 0));
+  }
 }
 
 function showMainItemSuggestions() {
@@ -3764,6 +3886,9 @@ function openEditModal(item, isQuick, index) {
   const editCategory = document.getElementById('editCategory');
   const editPlace = document.getElementById('editPlace');
   const editMeasureText = document.getElementById('editMeasureText');
+  const editBestBefore = document.getElementById('editBestBefore');
+  const editShelfLifeDays = document.getElementById('editShelfLifeDays');
+  const editOpenDays = document.getElementById('editOpenDays');
 
   if (editName) editName.value = item.name || '';
   if (editPrice) editPrice.value = Number(item.price || 0) || '';
@@ -3773,6 +3898,9 @@ function openEditModal(item, isQuick, index) {
   if (editMeasureText) editMeasureText.value = supportsMeasureInput(item.unit) ? getMeasureTextFromSize(item.size, isPackUnit(item.unit) ? getPackMeasureUnit(item, 'g') : item.unit) : '';
   const editPackMeasureUnit = document.getElementById('editPackMeasureUnit');
   if (editPackMeasureUnit) editPackMeasureUnit.value = getPackMeasureUnit(item, 'g');
+  if (editBestBefore) editBestBefore.value = item.bestBefore || '';
+  if (editShelfLifeDays) editShelfLifeDays.value = normalizeWholeDays(item.shelfLifeDays, 0) || '';
+  if (editOpenDays) editOpenDays.value = normalizeWholeDays(item.openDays, 0) || '';
   if (editCategory) {
     editCategory.dataset.currentValue = item.category || getRoomFallbackCategory(item.room || activeRoom);
     renderCategoryOptions();
@@ -3783,12 +3911,6 @@ function openEditModal(item, isQuick, index) {
     renderPlaceOptions();
     editPlace.value = item.place || 'kyl';
   }
-  const editBestBeforeDays = document.getElementById('editBestBeforeDays');
-  const editOpenedDays = document.getElementById('editOpenedDays');
-  const editWarnBeforeDays = document.getElementById('editWarnBeforeDays');
-  if (editBestBeforeDays) editBestBeforeDays.value = normalizeExpiryDays(item.bestBeforeDays, 0);
-  if (editOpenedDays) editOpenedDays.value = normalizeExpiryDays(item.openedDays, 0);
-  if (editWarnBeforeDays) editWarnBeforeDays.value = normalizeExpiryDays(item.warnBeforeDays, EXPIRY_WARNING_DEFAULT_DAYS);
   if (editModal) editModal.style.display = 'flex';
   try { syncEditMeasureModeVisibility(); updateEditMeasureSummary(); } catch (e) {}
 }
@@ -3860,6 +3982,8 @@ function saveEditItem() {
   }
 
   const updatedRoom = currentItem.room || activeRoom;
+  const updatedShelfLifeDays = normalizeWholeDays(document.getElementById('editShelfLifeDays')?.value || currentItem.shelfLifeDays, 0);
+  const updatedOpenDays = normalizeWholeDays(document.getElementById('editOpenDays')?.value || currentItem.openDays, 0);
   const updated = {
     name: updatedName,
     price: Number(document.getElementById('editPrice')?.value || 0),
@@ -3877,28 +4001,23 @@ function saveEditItem() {
     img: currentItem?.img && String(currentItem.img).startsWith('data:')
       ? String(currentItem.img)
       : getAutoImagePath(updatedName),
-    ...normalizeQuickExpiryFields({
-      bestBeforeDays: document.getElementById('editBestBeforeDays')?.value || currentItem.bestBeforeDays || 0,
-      openedDays: document.getElementById('editOpenedDays')?.value || currentItem.openedDays || 0,
-      warnBeforeDays: document.getElementById('editWarnBeforeDays')?.value || currentItem.warnBeforeDays || EXPIRY_WARNING_DEFAULT_DAYS
-    })
+    bestBefore: String(document.getElementById('editBestBefore')?.value || '').trim(),
+    openedDate: currentItem?.openedDate || '',
+    shelfLifeDays: updatedShelfLifeDays,
+    openDays: updatedOpenDays
   };
 
   if (!updated.name) return;
 
   const oldName = currentItem.name;
-  targetList[editingIndex] = editingQuick
-    ? { ...currentItem, ...updated }
-    : { ...currentItem, ...updated, ...buildExpiryFieldsForHomeItem({ ...currentItem, ...updated }, currentItem) };
+  targetList[editingIndex] = normalizeExpiryFields({ ...currentItem, ...updated });
 
   if (editingQuick) {
-    items = items.map(item => {
-      if (normalizeText(item.name) !== normalizeText(oldName)) return item;
-      const mergedItem = { ...item, ...updated, type: item.type };
-      return item.type === 'home'
-        ? { ...mergedItem, ...buildExpiryFieldsForHomeItem(mergedItem, item) }
-        : mergedItem;
-    });
+    items = items.map(item =>
+      normalizeText(item.name) === normalizeText(oldName)
+        ? { ...item, ...updated, type: item.type }
+        : item
+    );
     syncRecipeNames(oldName, updated.name);
   } else {
     syncQuickItemFromItem(targetList[editingIndex]);
@@ -3909,26 +4028,6 @@ function saveEditItem() {
   closeEditModal();
   render();
 }
-
-function toggleOpenedState(index) {
-  const item = items[index];
-  if (!item || item.type !== 'home') return;
-  if (item.openedAt) {
-    item.openedAt = '';
-    item.openedBestBeforeDate = '';
-  } else {
-    item.openedAt = toDayStamp();
-    item.openedBestBeforeDate = normalizeExpiryDays(item.openedDays, 0) > 0 ? addDaysToStamp(item.openedAt, item.openedDays) : '';
-  }
-  syncQuickItemFromItem(item);
-  save();
-  render();
-}
-
-window.toggleOpenedState = toggleOpenedState;
-window.saveEditItem = saveEditItem;
-window.editMainItem = editMainItem;
-window.editQuickItem = editQuickItem;
 
 function suggestUnit() {
   const category = document.getElementById('itemCategory')?.value;
@@ -3977,9 +4076,6 @@ function clearInputs(focusName = false) {
   const itemSize = document.getElementById('itemSize');
   const itemPlace = document.getElementById('itemPlace');
   const itemMeasureText = document.getElementById('itemMeasureText');
-  const itemBestBeforeDays = document.getElementById('itemBestBeforeDays');
-  const itemOpenedDays = document.getElementById('itemOpenedDays');
-  const itemWarnBeforeDays = document.getElementById('itemWarnBeforeDays');
 
   if (itemName) itemName.value = '';
   if (itemPrice) itemPrice.value = '';
@@ -3991,6 +4087,9 @@ function clearInputs(focusName = false) {
   setUiForUnit('item', 'st');
   if (itemSize) updateSizeSelect('itemSize', 'st');
   if (itemMeasureText) itemMeasureText.value = '';
+  if (itemBestBefore) itemBestBefore.value = '';
+  if (itemShelfLifeDays) itemShelfLifeDays.value = '';
+  if (itemOpenDays) itemOpenDays.value = '';
   const itemPackMeasureUnit = document.getElementById('itemPackMeasureUnit');
   if (itemPackMeasureUnit) itemPackMeasureUnit.value = 'g';
   renderQuickAddRoomOptions(selectedQuickRoom, false);
@@ -4011,6 +4110,9 @@ function buildItemFromForm() {
   const sizeInput = document.getElementById('itemSize');
   const placeInput = document.getElementById('itemPlace');
   const itemMeasureTextInput = document.getElementById('itemMeasureText');
+  const itemBestBeforeInput = document.getElementById('itemBestBefore');
+  const itemShelfLifeInput = document.getElementById('itemShelfLifeDays');
+  const itemOpenDaysInput = document.getElementById('itemOpenDays');
 
   const name = nameInput?.value.trim() || '';
   if (!name) return null;
@@ -4038,6 +4140,10 @@ function buildItemFromForm() {
 
   const itemRoom = getQuickRoomSelection() || matchedQuick?.room || activeRoom;
   const fallbackPlace = getPlacesForRoom(itemRoom)[0]?.key || 'kyl';
+  const shelfLifeDays = normalizeWholeDays(itemShelfLifeInput?.value || matchedQuick?.shelfLifeDays, 0);
+  const openDays = normalizeWholeDays(itemOpenDaysInput?.value || matchedQuick?.openDays, 0);
+  const bestBeforeValue = String(itemBestBeforeInput?.value || '').trim();
+
   const item = {
     name: matchedQuick ? matchedQuick.name : name,
     price: Number(priceInput?.value || (matchedQuick ? matchedQuick.price : 0) || 0),
@@ -4054,14 +4160,13 @@ function buildItemFromForm() {
     place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : fallbackPlace), itemRoom),
     type: 'home',
     img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name),
-    ...normalizeQuickExpiryFields({
-      bestBeforeDays: document.getElementById('itemBestBeforeDays')?.value || matchedQuick?.bestBeforeDays || 0,
-      openedDays: document.getElementById('itemOpenedDays')?.value || matchedQuick?.openedDays || 0,
-      warnBeforeDays: document.getElementById('itemWarnBeforeDays')?.value || matchedQuick?.warnBeforeDays || EXPIRY_WARNING_DEFAULT_DAYS
-    })
+    bestBefore: bestBeforeValue,
+    openedDate: '',
+    shelfLifeDays,
+    openDays
   };
 
-  return { item, file: fileInput?.files?.[0] || null, matchedQuick };
+  return { item: normalizeExpiryFields(item, matchedQuick), file: fileInput?.files?.[0] || null, matchedQuick };
 }
 
 function saveQuickTemplate(item) {
@@ -4079,15 +4184,16 @@ function saveQuickTemplate(item) {
     existingQuick.room = normalized.room || existingQuick.room || activeRoom;
     existingQuick.category = normalized.category || existingQuick.category || getRoomFallbackCategory(existingQuick.room || activeRoom);
     existingQuick.place = normalized.place || existingQuick.place || getPlacesForRoom(existingQuick.room)[0]?.key || 'kyl';
+    existingQuick.shelfLifeDays = normalizeWholeDays(normalized.shelfLifeDays || existingQuick.shelfLifeDays, 0);
+    existingQuick.openDays = normalizeWholeDays(normalized.openDays || existingQuick.openDays, 0);
     if (normalized.img) existingQuick.img = normalized.img;
-    Object.assign(existingQuick, normalizeQuickExpiryFields(normalized));
   } else {
-    quickItems.unshift({ ...normalized, ...normalizeQuickExpiryFields(normalized) });
+    quickItems.unshift({ ...normalized, bestBefore: '', openedDate: '' });
   }
 }
 
 function saveHomeItem(item) {
-  const normalizedItem = normalizeMeasureItemData(item);
+  const normalizedItem = normalizeExpiryFields(normalizeMeasureItemData(item));
   const existingHome = items.find(i => i.type === 'home' && sameVariant(i, normalizedItem));
 
   if (existingHome) {
@@ -4104,19 +4210,20 @@ function saveHomeItem(item) {
       existingHome.openedAmount -= Number(existingHome.size || 0);
     }
     existingHome.packMode = isWeightUnit(existingHome.unit) && (existingHome.quantity > 1 || existingHome.openedAmount > 0 || normalizedItem.packMode === 'bags' || existingHome.packMode === 'bags') ? 'bags' : '';
+    existingHome.bestBefore = [existingHome.bestBefore, normalizedItem.bestBefore].filter(Boolean).sort()[0] || '';
+    existingHome.shelfLifeDays = Math.max(normalizeWholeDays(existingHome.shelfLifeDays, 0), normalizeWholeDays(normalizedItem.shelfLifeDays, 0));
+    existingHome.openDays = Math.max(normalizeWholeDays(existingHome.openDays, 0), normalizeWholeDays(normalizedItem.openDays, 0));
+    if (!existingHome.openedDate && normalizedItem.openedDate) existingHome.openedDate = normalizedItem.openedDate;
     if (normalizedItem.img) existingHome.img = normalizedItem.img;
-    Object.assign(existingHome, buildExpiryFieldsForHomeItem(normalizedItem, existingHome));
     syncQuickItemFromItem(existingHome);
   } else {
-    const homeItem = {
+    items.push({
       ...normalizedItem,
       room: normalizedItem.room || activeRoom,
       openedAmount: Math.max(0, Number(normalizedItem.openedAmount || 0)),
-      packMode: isWeightUnit(normalizedItem.unit) && (Number(normalizedItem.quantity || 0) > 1 || Number(normalizedItem.openedAmount || 0) > 0 || normalizedItem.packMode === 'bags') ? 'bags' : '',
-      ...buildExpiryFieldsForHomeItem(normalizedItem)
-    };
-    items.push(homeItem);
-    syncQuickItemFromItem(homeItem);
+      packMode: isWeightUnit(normalizedItem.unit) && (Number(normalizedItem.quantity || 0) > 1 || Number(normalizedItem.openedAmount || 0) > 0 || normalizedItem.packMode === 'bags') ? 'bags' : ''
+    });
+    syncQuickItemFromItem(normalizedItem);
   }
 }
 
@@ -5960,9 +6067,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const itemPrice = document.getElementById('itemPrice');
   const itemQuantity = document.getElementById('itemQuantity');
   const itemMeasureText = document.getElementById('itemMeasureText');
-  const itemBestBeforeDays = document.getElementById('itemBestBeforeDays');
-  const itemOpenedDays = document.getElementById('itemOpenedDays');
-  const itemWarnBeforeDays = document.getElementById('itemWarnBeforeDays');
 
   const handleQuickAddKeydown = (event) => {
     const targetId = event.target?.id || '';
@@ -6682,9 +6786,21 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   updateInstallButtonVisibility();
+  updateExpiryControls();
+  setTimeout(() => {
+    if ('Notification' in window && Notification.permission === 'granted') maybeSendExpiryNotifications();
+  }, 1200);
+  setInterval(() => {
+    if ('Notification' in window && Notification.permission === 'granted') maybeSendExpiryNotifications();
+  }, 15 * 60 * 1000);
 });
 
 
+
+
+window.requestExpiryNotifications = requestExpiryNotifications;
+window.setExpirySortMode = setExpirySortMode;
+window.markItemOpened = markItemOpened;
 
 document.addEventListener('input', (e) => {
   if (!e.target) return;
@@ -6723,7 +6839,7 @@ document.addEventListener('blur', (e) => {
   }
 }, true);
 
-window.addEventListener('load', () => { try { syncMeasureModeVisibility(); syncEditMeasureModeVisibility(); syncIngredientEditMeasureModeVisibility(); updateMeasureSummary(); updateEditMeasureSummary(); updateIngredientEditMeasureSummary(); const warnInput=document.getElementById('itemWarnBeforeDays'); if (warnInput && !warnInput.value) warnInput.value = EXPIRY_WARNING_DEFAULT_DAYS; } catch (e) {} });
+window.addEventListener('load', () => { try { syncMeasureModeVisibility(); syncEditMeasureModeVisibility(); syncIngredientEditMeasureModeVisibility(); updateMeasureSummary(); updateEditMeasureSummary(); updateIngredientEditMeasureSummary(); } catch (e) {} });
 
 
 // Drag & Drop meals
