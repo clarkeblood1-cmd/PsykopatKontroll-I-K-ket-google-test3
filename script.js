@@ -83,12 +83,10 @@ function normalizeQuickExpiryFields(item = {}) {
 function buildExpiryFieldsForHomeItem(sourceItem = {}, existingItem = null) {
   const today = toDayStamp();
   const quickExpiry = normalizeQuickExpiryFields(sourceItem);
-  const addedAt = existingItem?.addedAt || sourceItem.addedAt || today;
-  const openedAt = existingItem?.openedAt || sourceItem.openedAt || '';
-  const bestBeforeDate = sourceItem.bestBeforeDate || existingItem?.bestBeforeDate || (quickExpiry.bestBeforeDays > 0 ? addDaysToStamp(addedAt, quickExpiry.bestBeforeDays) : '');
-  const openedBestBeforeDate = openedAt
-    ? (sourceItem.openedBestBeforeDate || existingItem?.openedBestBeforeDate || (quickExpiry.openedDays > 0 ? addDaysToStamp(openedAt, quickExpiry.openedDays) : ''))
-    : '';
+  const addedAt = sourceItem.addedAt || existingItem?.addedAt || today;
+  const openedAt = sourceItem.openedAt || existingItem?.openedAt || '';
+  const bestBeforeDate = quickExpiry.bestBeforeDays > 0 ? addDaysToStamp(addedAt, quickExpiry.bestBeforeDays) : '';
+  const openedBestBeforeDate = openedAt && quickExpiry.openedDays > 0 ? addDaysToStamp(openedAt, quickExpiry.openedDays) : '';
 
   return {
     ...quickExpiry,
@@ -3894,11 +3892,13 @@ function saveEditItem() {
     : { ...currentItem, ...updated, ...buildExpiryFieldsForHomeItem({ ...currentItem, ...updated }, currentItem) };
 
   if (editingQuick) {
-    items = items.map(item =>
-      normalizeText(item.name) === normalizeText(oldName)
-        ? { ...item, ...updated, type: item.type }
-        : item
-    );
+    items = items.map(item => {
+      if (normalizeText(item.name) !== normalizeText(oldName)) return item;
+      const mergedItem = { ...item, ...updated, type: item.type };
+      return item.type === 'home'
+        ? { ...mergedItem, ...buildExpiryFieldsForHomeItem(mergedItem, item) }
+        : mergedItem;
+    });
     syncRecipeNames(oldName, updated.name);
   } else {
     syncQuickItemFromItem(targetList[editingIndex]);
@@ -3924,6 +3924,11 @@ function toggleOpenedState(index) {
   save();
   render();
 }
+
+window.toggleOpenedState = toggleOpenedState;
+window.saveEditItem = saveEditItem;
+window.editMainItem = editMainItem;
+window.editQuickItem = editQuickItem;
 
 function suggestUnit() {
   const category = document.getElementById('itemCategory')?.value;
