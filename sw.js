@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v71-household-flow';
+const CACHE_NAME = 'matlista-app-v72-smooth-ui';
 const ASSETS = [
   './',
   './index.html',

@@ -42,14 +42,19 @@
     const gate = $('flowGate');
     if (!gate) return;
     gate.dataset.view = view;
+    gate.classList.add('is-transitioning');
     const sections = gate.querySelectorAll('[data-flow-view]');
     sections.forEach((section) => {
-      section.style.display = section.getAttribute('data-flow-view') === view ? '' : 'none';
+      const active = section.getAttribute('data-flow-view') === view;
+      section.style.display = active ? '' : 'none';
+      section.classList.toggle('is-active', active);
     });
     const appShell = $('mainAppShell');
     if (appShell) appShell.classList.toggle('app-shell-locked', view !== 'app');
     gate.style.display = view === 'app' ? 'none' : 'flex';
     document.body.classList.toggle('flow-gate-open', view !== 'app');
+    window.clearTimeout(setFlowView._timer);
+    setFlowView._timer = window.setTimeout(() => gate.classList.remove('is-transitioning'), 220);
   }
 
   function randomCode(length = 6) {
@@ -437,8 +442,13 @@
       return;
     }
     if (continueBtn) continueBtn.style.display = state.profile?.householdId ? '' : 'none';
+    if (state.profile?.householdId) {
+      setFlowView('app');
+      setStatus('Öppnar ditt valda hushåll.');
+      return;
+    }
     setFlowView('choice');
-    setStatus(state.profile?.householdId ? 'Välj om du vill fortsätta i nuvarande hushåll, gå med i ett nytt eller gå till ditt eget.' : 'Välj hur du vill fortsätta.');
+    setStatus('Välj hur du vill fortsätta.');
   }
 
   function bindUi() {
@@ -447,6 +457,9 @@
     });
     $('flowGoToMineBtn')?.addEventListener('click', goToMyHousehold);
     $('flowContinueBtn')?.addEventListener('click', () => { setFlowView('app'); setStatus('Öppnar ditt valda hushåll.'); });
+    $('flowLogoutBtn')?.addEventListener('click', () => {
+      if (typeof window.logoutGoogle === 'function') window.logoutGoogle();
+    });
     $('flowGoToJoinBtn')?.addEventListener('click', () => {
       setStatus('Skriv in en inbjudningskod för att gå med i ett hushåll.');
       setFlowView('join');
@@ -460,6 +473,10 @@
     $('leaveHouseholdBtn')?.addEventListener('click', leaveCurrentHousehold);
     $('createInviteBtn')?.addEventListener('click', createInviteCode);
     $('copyInviteBtn')?.addEventListener('click', copyInviteCode);
+    $('switchHouseholdBtn')?.addEventListener('click', () => {
+      setFlowView('choice');
+      setStatus(state.profile?.householdId ? 'Välj om du vill fortsätta i nuvarande hushåll, gå med i ett nytt eller gå till ditt eget.' : 'Välj hur du vill fortsätta.');
+    });
   }
 
   async function handleAuthChanged(user) {
@@ -522,6 +539,10 @@
     uploadDataUrlImage,
     goToMyHousehold,
     joinHouseholdByCode,
+    showChoiceScreen() {
+      setFlowView('choice');
+      setStatus(state.profile?.householdId ? 'Välj om du vill fortsätta i nuvarande hushåll, gå med i ett nytt eller gå till ditt eget.' : 'Välj hur du vill fortsätta.');
+    },
   };
 
   window.addEventListener('load', () => {

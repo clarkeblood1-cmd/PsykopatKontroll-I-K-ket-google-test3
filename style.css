@@ -2377,3 +2377,36 @@ input:focus,select:focus,textarea:focus{
   .household-panel-head,.household-invite-tools,.household-member-row{flex-direction:column;align-items:stretch}
   .household-panel-actions,.household-member-actions{justify-content:flex-start}
 }
+
+
+/* ===== Smooth flow polish ===== */
+.flow-gate{transition:opacity .22s ease,visibility .22s ease;background:
+  radial-gradient(circle at 50% -10%, rgba(56,189,248,.22), transparent 34%),
+  radial-gradient(circle at 100% 0%, rgba(34,197,94,.16), transparent 28%),
+  radial-gradient(circle at 0% 100%, rgba(167,139,250,.16), transparent 30%),
+  radial-gradient(circle at top,#132552 0%,rgba(7,18,42,.96) 45%,rgba(3,10,35,.98) 100%);
+}
+.flow-gate::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.04),transparent 38%,rgba(255,255,255,.03));pointer-events:none}
+.flow-card{position:relative;overflow:hidden;transform:translateY(0) scale(1);transition:transform .24s ease,opacity .24s ease,box-shadow .24s ease;border-color:rgba(255,255,255,.14)}
+.flow-card::after{content:'';position:absolute;inset:auto -20% -40% auto;width:240px;height:240px;background:radial-gradient(circle,rgba(96,165,250,.16),transparent 68%);pointer-events:none}
+.flow-gate.is-transitioning .flow-card.is-active{transform:translateY(8px) scale(.985);opacity:.82}
+.flow-stepper{display:flex;justify-content:center;gap:8px;margin-bottom:16px}
+.flow-stepper span{width:46px;height:6px;border-radius:999px;background:rgba(255,255,255,.12);box-shadow:inset 0 0 0 1px rgba(255,255,255,.04)}
+.flow-stepper span.is-active{background:linear-gradient(90deg,#38bdf8,#22c55e);box-shadow:0 0 18px rgba(56,189,248,.35)}
+.flow-choice-grid{gap:14px}
+.flow-choice-btn,.flow-primary-btn,.flow-logout-btn{transition:transform .16s ease,box-shadow .16s ease,filter .16s ease}
+.flow-choice-btn:hover,.flow-primary-btn:hover,.flow-logout-btn:hover{transform:translateY(-1px);box-shadow:0 14px 28px rgba(0,0,0,.22);filter:brightness(1.04)}
+.flow-inline-actions-stack{margin-top:12px;grid-template-columns:1fr}
+.flow-logout-btn{background:rgba(255,255,255,.06);color:#e2e8f0;border:1px solid rgba(255,255,255,.1)}
+.main-app-shell{transition:filter .22s ease,transform .22s ease,opacity .22s ease}
+.main-app-shell.app-shell-locked{pointer-events:none;user-select:none;filter:blur(10px) saturate(.8);transform:scale(.985);opacity:.55}
+.household-panel{position:relative;overflow:hidden}
+.household-panel::before{content:'';position:absolute;inset:0 auto auto 0;width:100%;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent)}
+.household-panel-actions{display:flex;gap:10px;flex-wrap:wrap}
+#switchHouseholdBtn{display:none}
+@media (max-width:700px){
+  .flow-gate{padding:18px}
+  .flow-card{padding:22px 18px 20px}
+  .flow-stepper span{width:34px}
+  .household-panel-actions{width:100%}
+}

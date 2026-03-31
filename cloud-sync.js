@@ -25,8 +25,10 @@
       else status.textContent = user ? `Inloggad: ${user.displayName || user.email || 'Google-konto'}` : 'Inte inloggad';
     }
 
-    if (loginBtn) loginBtn.style.display = user ? 'none' : '';
+    if (loginBtn) loginBtn.style.display = 'none';
     if (logoutBtn) logoutBtn.style.display = user ? '' : 'none';
+    const switchBtn = byId('switchHouseholdBtn');
+    if (switchBtn) switchBtn.style.display = user ? '' : 'none';
     if (help) help.style.display = firebaseReady ? 'none' : '';
   }
 

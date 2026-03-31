@@ -12,7 +12,8 @@
 <body>
 
   <div id="flowGate" class="flow-gate" data-view="loading">
-    <section class="flow-card" data-flow-view="loading">
+    <section class="flow-card flow-card-loading" data-flow-view="loading">
+      <div class="flow-stepper"><span class="is-active"></span><span></span><span></span></div>
       <div class="flow-badge">🔄 Laddar</div>
       <h1>Startar appen</h1>
       <p>Kontrollerar konto och hushåll...</p>
@@ -20,6 +21,7 @@
     </section>
 
     <section class="flow-card" data-flow-view="login" style="display:none;">
+      <div class="flow-stepper"><span class="is-active"></span><span></span><span></span></div>
       <div class="flow-badge">🔐 Steg 1</div>
       <h1>Logga in med Google</h1>
       <p>Logga in först. Efter det får du välja om du vill gå med i ett hushåll eller gå till ditt eget hushåll.</p>
@@ -30,6 +32,7 @@
     </section>
 
     <section class="flow-card" data-flow-view="choice" style="display:none;">
+      <div class="flow-stepper"><span></span><span class="is-active"></span><span></span></div>
       <div class="flow-badge">🏠 Steg 2</div>
       <h1>Välj hushåll</h1>
       <p>Vill du gå med i ett hushåll med kod eller öppna ditt eget hushåll?</p>
@@ -38,12 +41,16 @@
         <button type="button" id="flowGoToJoinBtn" class="flow-choice-btn">🤝 Gå med i hushåll</button>
         <button type="button" id="flowGoToMineBtn" class="flow-choice-btn flow-choice-btn-primary">👤 Gå till ditt hushåll</button>
       </div>
+      <div class="flow-inline-actions flow-inline-actions-stack">
+        <button type="button" id="flowLogoutBtn" class="ghost-btn flow-logout-btn">🚪 Logga ut från Google</button>
+      </div>
       <div id="flowAccountInfo" class="flow-account-info"></div>
       <div id="personalHouseholdBadge" class="flow-subtle-pill">Kontrollerar ditt hushåll...</div>
       <div id="hhStatus" class="flow-status">Välj hur du vill fortsätta.</div>
     </section>
 
     <section class="flow-card" data-flow-view="join" style="display:none;">
+      <div class="flow-stepper"><span></span><span class="is-active"></span><span></span></div>
       <div class="flow-badge">🤝 Gå med</div>
       <h1>Gå med i hushåll</h1>
       <p>Skriv in inbjudningskoden du fått.</p>
@@ -96,7 +103,7 @@
       </div>
       <div class="auth-actions">
         <button type="button" id="googleLoginBtn" onclick="loginWithGoogle()">Logga in med Google</button>
-        <button type="button" id="googleLogoutBtn" class="ghost-btn" onclick="logoutGoogle()" style="display:none;">Logga ut</button>
+        <button type="button" id="switchHouseholdBtn" class="ghost-btn" style="display:none;">🔁 Byt hushåll</button>
       </div>
     </section>
 
