@@ -399,7 +399,7 @@
     if (!state.household) {
       if (nameEl) nameEl.textContent = 'Inget hushåll valt';
       if (metaEl) metaEl.textContent = 'Logga in och välj hushåll för att öppna appen.';
-      if (membersEl) membersEl.innerHTML = '<div class="household-empty">Inga medlemmar att visa ännu.</div>';
+      if (membersEl) membersEl.innerHTML = '<div class="household-empty">Inga medlemmar att  ännu.</div>';
       if (leaveBtn) leaveBtn.style.display = 'none';
       if (myBtn) myBtn.style.display = '';
       if (inviteTools) inviteTools.style.display = 'none';

@@ -266,7 +266,7 @@
           </div>
         </div>
         <div id="householdMembers" class="household-members">
-          <div class="household-empty">Inga medlemmar att visa ännu.</div>
+          <div class="household-empty">Inga medlemmar att  ännu.</div>
         </div>
       </div>
     </section>
@@ -319,7 +319,7 @@
           <input class="search section-search" id="quickItemName" placeholder="Sök i snabblistan..." oninput="filterQuickList()" autocomplete="off">
           <div id="quickSuggestions" class="suggestion-box"></div>
         </div>
-        <button type="button" id="quickToggleBtn" class="ghost-btn" onclick="toggleQuickList()">Dölj</button>
+        
       </div>
       <div class="section-subtitle">Sorterad på vara A-Ö – sök, redigera och se RUM • KATEGORI • PLATS direkt på varje vara</div>
       <div class="container" id="quickList" ondragover="allowDrop(event)" ondragleave="removeDropHover(event)" ondrop="dropToQuickList()"></div>
@@ -329,7 +329,7 @@
       <div class="section-top-row sticky-search-row">
         <div class="section-title">🏠 Har hemma</div>
         <input class="search section-search" id="searchInput" placeholder="🔍 Sök vara, kategori eller plats..." oninput="render()">
-        <button type="button" id="homeToggleBtn" class="ghost-btn" onclick="toggleHomeList()">Dölj</button>
+        
       </div>
       <div class="room-tabs-wrap">
         <button type="button" class="room-arrow" onclick="scrollRoomTabs(-1)">◀</button>
@@ -349,7 +349,7 @@
       <div class="section-top-row">
         <div class="section-title">🛒 Behöver köpa</div>
         <div class="section-search-spacer"></div>
-        <button type="button" id="buyToggleBtn" class="ghost-btn" onclick="toggleBuyList()">Dölj</button>
+        
       </div>
       <div class="section-subtitle">Saker att fylla på</div>
       <div class="container" id="buyList" ondragover="allowDrop(event)" ondragleave="removeDropHover(event)" ondrop="dropToList('buy')"></div>
@@ -445,7 +445,7 @@
       <div class="section-top-row">
         <div class="section-title">🍽️ Recept</div>
         <div class="section-search-spacer"></div>
-        <button type="button" id="recipeToggleBtn" class="ghost-btn" onclick="toggleRecipeSection()">Dölj</button>
+        
       </div>
       <div class="section-subtitle">Skapa recept, ändra ingredienser och kolla vad som saknas</div>
 
@@ -460,7 +460,7 @@
                   <input id="newRecipeCategoryName" placeholder="Ny receptkategori" onkeydown="if(event.key==='Enter'){event.preventDefault(); addRecipeCategory();}">
                   <button type="button" class="ghost-btn" onclick="addRecipeCategory()">Lägg till kategori</button>
                 </div>
-                <div class="section-subtitle">Alla kategorier visar alla recept. Matlagning och Bakverk är fallback.</div>
+                <div class="section-subtitle">Alla kategorier r alla recept. Matlagning och Bakverk är fallback.</div>
                 <div id="recipeCategoryChips" class="category-chips"></div>
               </div>
               <input id="recipeName" placeholder="Receptnamn, t.ex. Tacos">

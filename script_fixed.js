@@ -1582,7 +1582,7 @@ function showImageSourceInfo(sourceType = 'default') {
     images: 'Bilden kommer från images-mappen.',
     inline: 'Bilden är sparad lokalt i appens data.',
     external: 'Bilden kommer från en extern bildlänk.',
-    default: 'Ingen egen bild hittades. Standardikonen visas.'
+    default: 'Ingen egen bild hittades. Standardikonen s.'
   };
   alert(messages[sourceType] || messages.default);
 }
@@ -2188,10 +2188,10 @@ function updateToggleButtons() {
   const buyBtn = document.getElementById('buyToggleBtn');
   const recipeBtn = document.getElementById('recipeToggleBtn');
 
-  if (quickBtn) quickBtn.textContent = showQuick ? 'Dölj' : 'Visa';
-  if (homeBtn) homeBtn.textContent = showHome ? 'Dölj' : 'Visa';
-  if (buyBtn) buyBtn.textContent = showBuy ? 'Dölj' : 'Visa';
-  if (recipeBtn) recipeBtn.textContent = showRecipes ? 'Dölj' : 'Visa';
+  if (quickBtn) quickBtn.textContent = showQuick ? '' : '';
+  if (homeBtn) homeBtn.textContent = showHome ? '' : '';
+  if (buyBtn) buyBtn.textContent = showBuy ? '' : '';
+  if (recipeBtn) recipeBtn.textContent = showRecipes ? '' : '';
 }
 
 function renderPlaceOptions() {
@@ -3544,7 +3544,7 @@ function renderQuickList() {
     hideQuickSuggestions();
   }
 
-  if (quickSubtitle) quickSubtitle.textContent = 'Sorterad på vara A-Ö • visar också RUM • KATEGORI • PLATS';
+  if (quickSubtitle) quickSubtitle.textContent = 'Sorterad på vara A-Ö • r också RUM • KATEGORI • PLATS';
 
   if (!list.length) {
     target.innerHTML = '<div class="empty">Inga träffar</div>';
