@@ -3887,6 +3887,12 @@ function syncRecipeNames(oldName, newName) {
   });
 }
 
+function getWholeDaysFromInput(id) {
+  const el = document.getElementById(id);
+  if (!el) return 0;
+  return toPositiveWholeDays(el.value);
+}
+
 function saveEditItem() {
   if (editingIndex === null) return;
 
@@ -3931,9 +3937,9 @@ function saveEditItem() {
     room: updatedRoom,
     category: ensureCategoryExists(document.getElementById('editCategory')?.value || currentItem.category || getRoomFallbackCategory(updatedRoom), updatedRoom),
     place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || getPlacesForRoom(updatedRoom)[0]?.key || 'kyl', updatedRoom),
-    bestBeforeDays: toPositiveWholeDays(document.getElementById('editBestBeforeDays')?.value || 0),
-    openedDays: toPositiveWholeDays(document.getElementById('editOpenedDays')?.value || 0),
-    warnBeforeDays: toPositiveWholeDays(document.getElementById('editWarnBeforeDays')?.value || 0),
+    bestBeforeDays: getWholeDaysFromInput('editBestBeforeDays'),
+    openedDays: getWholeDaysFromInput('editOpenedDays'),
+    warnBeforeDays: getWholeDaysFromInput('editWarnBeforeDays'),
     img: currentItem?.img && String(currentItem.img).startsWith('data:')
       ? String(currentItem.img)
       : getAutoImagePath(updatedName)
@@ -3942,20 +3948,51 @@ function saveEditItem() {
   if (!updated.name) return;
 
   const oldName = currentItem.name;
-  targetList[editingIndex] = { ...currentItem, ...updated };
+  const savedItem = { ...currentItem, ...updated };
+  sanitizeExpiryFields(savedItem);
+  targetList[editingIndex] = savedItem;
 
   if (editingQuick) {
+    quickItems = quickItems.map((item, index) => index === editingIndex ? { ...savedItem } : item);
     items = items.map(item =>
       normalizeText(item.name) === normalizeText(oldName)
-        ? { ...item, ...updated, type: item.type }
+        ? { ...item, ...updated, bestBeforeDays: savedItem.bestBeforeDays, openedDays: savedItem.openedDays, warnBeforeDays: savedItem.warnBeforeDays, type: item.type }
         : item
     );
     syncRecipeNames(oldName, updated.name);
   } else {
-    syncQuickItemFromItem(targetList[editingIndex]);
+    items = items.map((item, index) => index === editingIndex ? { ...savedItem } : item);
+    const matchingQuick = quickItems.findIndex(item => normalizeText(item.name) === normalizeText(oldName));
+    if (matchingQuick >= 0) {
+      quickItems[matchingQuick] = {
+        ...quickItems[matchingQuick],
+        ...updated,
+        bestBeforeDays: savedItem.bestBeforeDays,
+        openedDays: savedItem.openedDays,
+        warnBeforeDays: savedItem.warnBeforeDays
+      };
+      sanitizeExpiryFields(quickItems[matchingQuick]);
+    } else {
+      syncQuickItemFromItem(savedItem);
+    }
   }
 
-  items = mergeItems(items);
+  items = mergeItems(items).map(item => {
+    sanitizeExpiryFields(item);
+    return item;
+  });
+  quickItems = quickItems.map(item => {
+    sanitizeExpiryFields(item);
+    return item;
+  });
+
+  try {
+    localStorage.setItem('matlista', JSON.stringify(items));
+    localStorage.setItem('matlista_snabb', JSON.stringify(quickItems));
+  } catch (error) {
+    console.error('Kunde inte spara ändringen i localStorage:', error);
+  }
+
   save();
   closeEditModal();
   render();
