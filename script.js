@@ -8187,3 +8187,180 @@ window.addEventListener('load', () => {
     try { window.render(); } catch (error) {}
   }
 })();
+
+(function () {
+  function toInt(value, fallback = 0) {
+    if (value === '' || value === null || typeof value === 'undefined') return fallback;
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(0, Math.round(n)) : fallback;
+  }
+
+  function todayYMD() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+
+  function readExpiry(prefix, fallbackItem = {}) {
+    return {
+      bestBeforeDays: toInt(document.getElementById(`${prefix}BestBeforeDays`)?.value, toInt(fallbackItem.bestBeforeDays, 0)),
+      openedDays: toInt(document.getElementById(`${prefix}OpenedDays`)?.value, toInt(fallbackItem.openedDays, 0)),
+      warnBeforeDays: toInt(document.getElementById(`${prefix}WarnBeforeDays`)?.value, toInt(fallbackItem.warnBeforeDays, 0))
+    };
+  }
+
+  function applyExpiry(item, expiry, keepDates = true) {
+    if (!item) return item;
+    item.bestBeforeDays = toInt(expiry?.bestBeforeDays, toInt(item.bestBeforeDays, 0));
+    item.openedDays = toInt(expiry?.openedDays, toInt(item.openedDays, 0));
+    item.warnBeforeDays = toInt(expiry?.warnBeforeDays, toInt(item.warnBeforeDays, 0));
+    if (item.type === 'home' && !item.addedDate) item.addedDate = todayYMD();
+    if (!keepDates || typeof item.openedDate === 'undefined') item.openedDate = item.openedDate || null;
+    return item;
+  }
+
+  function syncExpiryByName(name, expiry) {
+    const norm = normalizeText(name || '');
+    quickItems.forEach(entry => {
+      if (normalizeText(entry.name) === norm) applyExpiry(entry, expiry);
+    });
+    items.forEach(entry => {
+      if (normalizeText(entry.name) === norm) applyExpiry(entry, expiry);
+    });
+  }
+
+  const originalBuild = window.buildItemFromForm;
+  window.buildItemFromForm = function () {
+    const out = originalBuild.apply(this, arguments);
+    if (!out?.item) return out;
+    const base = out.matchedQuick || out.item || {};
+    applyExpiry(out.item, readExpiry('item', base), false);
+    if (!out.item.openedDate) out.item.openedDate = null;
+    return out;
+  };
+  buildItemFromForm = window.buildItemFromForm;
+
+  const originalOpenEdit = window.openEditModal;
+  window.openEditModal = function (item) {
+    const out = originalOpenEdit.apply(this, arguments);
+    const best = document.getElementById('editBestBeforeDays');
+    const opened = document.getElementById('editOpenedDays');
+    const warn = document.getElementById('editWarnBeforeDays');
+    if (best) best.value = toInt(item?.bestBeforeDays, 0);
+    if (opened) opened.value = toInt(item?.openedDays, 0);
+    if (warn) warn.value = toInt(item?.warnBeforeDays, 0);
+    return out;
+  };
+  openEditModal = window.openEditModal;
+
+  const originalClear = window.clearInputs;
+  window.clearInputs = function () {
+    const out = originalClear.apply(this, arguments);
+    const best = document.getElementById('itemBestBeforeDays');
+    const opened = document.getElementById('itemOpenedDays');
+    const warn = document.getElementById('itemWarnBeforeDays');
+    if (best) best.value = '';
+    if (opened) opened.value = '';
+    if (warn) warn.value = '';
+    return out;
+  };
+  clearInputs = window.clearInputs;
+
+  const originalSaveQuickTemplate = window.saveQuickTemplate;
+  window.saveQuickTemplate = function (item) {
+    applyExpiry(item, item);
+    const out = originalSaveQuickTemplate.apply(this, arguments);
+    syncExpiryByName(item?.name, item);
+    return out;
+  };
+  saveQuickTemplate = window.saveQuickTemplate;
+
+  const originalSaveHomeItem = window.saveHomeItem;
+  window.saveHomeItem = function (item) {
+    applyExpiry(item, item);
+    const out = originalSaveHomeItem.apply(this, arguments);
+    syncExpiryByName(item?.name, item);
+    return out;
+  };
+  saveHomeItem = window.saveHomeItem;
+
+  window.saveEditItem = function () {
+    if (editingIndex === null) return;
+
+    const targetList = editingQuick ? quickItems : items;
+    const currentItem = targetList[editingIndex];
+    if (!currentItem) return;
+
+    const oldName = currentItem.name || '';
+    const expiry = readExpiry('edit', currentItem);
+
+    const updatedUnit = getSelectedActualUnit('edit', currentItem.unit || 'st');
+    const updatedName = document.getElementById('editName')?.value.trim() || '';
+    const updatedQuantity = Math.max(1, Number(document.getElementById('editQuantity')?.value || 1));
+    const editMeasureUnit = getMeasureInputUnit(updatedUnit, 'edit', currentItem.packMeasureUnit || 'g');
+    const parsedMeasure = supportsMeasureInput(updatedUnit)
+      ? parseSmartMeasureInput(document.getElementById('editMeasureText')?.value || currentItem.measureText || currentItem.weightText || currentItem.size, editMeasureUnit)
+      : null;
+
+    if (supportsMeasureInput(updatedUnit)) {
+      if (!parsedMeasure) {
+        alert(getMeasureInputError(updatedUnit));
+        return;
+      }
+      const measureWarning = getMeasureValidationMessage(parsedMeasure, updatedQuantity, editMeasureUnit);
+      if (measureWarning) {
+        alert(measureWarning);
+        return;
+      }
+      const editMeasureInput = document.getElementById('editMeasureText');
+      if (editMeasureInput) editMeasureInput.value = formatSmartMeasureDisplay(parsedMeasure, editMeasureUnit);
+    }
+
+    const updatedRoom = currentItem.room || activeRoom;
+    const updated = {
+      ...currentItem,
+      name: updatedName,
+      price: Number(document.getElementById('editPrice')?.value || 0),
+      quantity: updatedQuantity,
+      unit: updatedUnit,
+      size: supportsMeasureInput(updatedUnit)
+        ? parsedMeasure
+        : normalizeSize(updatedUnit, document.getElementById('editSize')?.value || currentItem.size, document.getElementById('editCategory')?.value || currentItem.category),
+      packMeasureUnit: isPackUnit(updatedUnit) ? editMeasureUnit : '',
+      measureText: supportsMeasureInput(updatedUnit) && parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, editMeasureUnit) : '',
+      weightText: isWeightUnit(editMeasureUnit) && parsedMeasure ? formatSmartMeasureDisplay(parsedMeasure, editMeasureUnit) : '',
+      room: updatedRoom,
+      category: ensureCategoryExists(document.getElementById('editCategory')?.value || currentItem.category || getRoomFallbackCategory(updatedRoom), updatedRoom),
+      place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || getPlacesForRoom(updatedRoom)[0]?.key || 'kyl', updatedRoom),
+      img: currentItem?.img && String(currentItem.img).startsWith('data:')
+        ? String(currentItem.img)
+        : getAutoImagePath(updatedName || currentItem.name || '')
+    };
+
+    if (!updated.name) return;
+    applyExpiry(updated, expiry);
+
+    targetList[editingIndex] = updated;
+
+    if (editingQuick) {
+      items = items.map(item => normalizeText(item.name) === normalizeText(oldName)
+        ? applyExpiry({ ...item, ...updated, type: item.type, addedDate: item.addedDate || updated.addedDate, openedDate: item.openedDate ?? updated.openedDate ?? null }, expiry)
+        : item
+      );
+      syncRecipeNames(oldName, updated.name);
+    } else {
+      quickItems = quickItems.map(item => normalizeText(item.name) === normalizeText(oldName)
+        ? applyExpiry({ ...item, ...updated, type: item.type || 'home' }, expiry)
+        : item
+      );
+    }
+
+    items = mergeItems(items);
+    save();
+    closeEditModal();
+    render();
+  };
+  saveEditItem = window.saveEditItem;
+
+  quickItems.forEach(item => applyExpiry(item, item));
+  items.forEach(item => applyExpiry(item, item));
+})();
