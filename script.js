@@ -2090,7 +2090,7 @@ function hydrateData() {
 
 function save() {
   refreshLegacyCollections();
-  localStorage.setItem('matlista', JSON.stringify(items));
+  localStorage.setItem('matlista', JSON.stringify(items)); console.log('SAVED', items);
   localStorage.setItem('matlista_snabb', JSON.stringify(quickItems));
   localStorage.setItem('matlista_recept', JSON.stringify(recipes));
   localStorage.setItem('matlista_categories', JSON.stringify(categories));
@@ -7917,14 +7917,14 @@ window.addEventListener('load', () => {
   function readExpiryInputs(prefix, source = {}) {
     return {
       bestBeforeDays: toNonNegativeInt(document.getElementById(`${prefix}BestBeforeDays`)?.value, toNonNegativeInt(source.bestBeforeDays, 0)),
-      openedDays: toNonNegativeInt(document.getElementById(`${prefix}OpenedDays`)?.value, toNonNegativeInt(source.openedDays, 0)),
+      openedDays: toNonNegativeInt(document.getElementById(`${prefix}OpenedDays`) || document.getElementById('openedDays')?.value, toNonNegativeInt(source.openedDays, 0)),
       warnBeforeDays: toNonNegativeInt(document.getElementById(`${prefix}WarnBeforeDays`)?.value, toNonNegativeInt(source.warnBeforeDays, 0))
     };
   }
 
   function writeExpiryInputs(prefix, source = {}) {
     const best = document.getElementById(`${prefix}BestBeforeDays`);
-    const opened = document.getElementById(`${prefix}OpenedDays`);
+    const opened = document.getElementById(`${prefix}OpenedDays`) || document.getElementById('openedDays');
     const warn = document.getElementById(`${prefix}WarnBeforeDays`);
     if (best) best.value = toNonNegativeInt(source.bestBeforeDays, 0);
     if (opened) opened.value = toNonNegativeInt(source.openedDays, 0);
@@ -8203,7 +8203,7 @@ window.addEventListener('load', () => {
   function readExpiry(prefix, fallbackItem = {}) {
     return {
       bestBeforeDays: toInt(document.getElementById(`${prefix}BestBeforeDays`)?.value, toInt(fallbackItem.bestBeforeDays, 0)),
-      openedDays: toInt(document.getElementById(`${prefix}OpenedDays`)?.value, toInt(fallbackItem.openedDays, 0)),
+      openedDays: toInt(document.getElementById(`${prefix}OpenedDays`) || document.getElementById('openedDays')?.value, toInt(fallbackItem.openedDays, 0)),
       warnBeforeDays: toInt(document.getElementById(`${prefix}WarnBeforeDays`)?.value, toInt(fallbackItem.warnBeforeDays, 0))
     };
   }
@@ -8243,7 +8243,7 @@ window.addEventListener('load', () => {
   window.openEditModal = function (item) {
     const out = originalOpenEdit.apply(this, arguments);
     const best = document.getElementById('editBestBeforeDays');
-    const opened = document.getElementById('editOpenedDays');
+    const opened = document.getElementById('editOpenedDays') || document.getElementById('openedDays');
     const warn = document.getElementById('editWarnBeforeDays');
     if (best) best.value = toInt(item?.bestBeforeDays, 0);
     if (opened) opened.value = toInt(item?.openedDays, 0);
