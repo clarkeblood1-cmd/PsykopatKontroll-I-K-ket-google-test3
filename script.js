@@ -8193,3 +8193,47 @@ window.addEventListener('load', () => {
 
   window.__autoBuyZip = 'v67-pack-actions-fix';
 })();
+
+
+/* === CLEAN MINIMAL UI PATCH === */
+(function () {
+  function shortenText(root) {
+    if (!root) return;
+    root.querySelectorAll('.expiry-badge, .badge, .chip, .meta-badge').forEach(function (el) {
+      const txt = (el.textContent || '').trim();
+      if (!txt) return;
+      el.textContent = txt
+        .replace('Bäst före: ', '⏳ ')
+        .replace('Efter öppning: ', '📂 ')
+        .replace('Öppnad: ', 'Öppnad ')
+        .replace(' dagar kvar', 'd')
+        .replace(' dag kvar', 'd')
+        .replace(' dagar sedan', 'd sedan')
+        .replace('Går ut idag', 'Idag')
+        .replace('Gick ut igår', 'Igår')
+        .replace('Gick ut för ', '-')
+        .replace('Bäst före mall: ', 'Mall ')
+        .replace('Efter öppning mall: ', 'Öppnad ');
+    });
+  }
+
+  function runCleanPatch() {
+    shortenText(document);
+  }
+
+  const origRender = window.render;
+  if (typeof origRender === 'function' && !window.__cleanPatchWrapped) {
+    window.__cleanPatchWrapped = true;
+    window.render = function () {
+      const result = origRender.apply(this, arguments);
+      try { runCleanPatch(); } catch (e) {}
+      return result;
+    };
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', runCleanPatch);
+  } else {
+    runCleanPatch();
+  }
+})();

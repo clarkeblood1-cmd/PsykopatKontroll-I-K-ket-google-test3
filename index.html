@@ -8,6 +8,89 @@
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#07122a">
   <link rel="icon" href="icons/icon-192.png">
+<style>
+/* Clean minimal UI patch */
+#appStoreHero,
+.summary-mini-label,
+.section-subtitle,
+.app-store-hero,
+.app-store-hero-card,
+.app-store-kicker,
+.app-store-hero-copy p,
+.app-store-hero-chips,
+#firebaseHelp,
+#offlineInfo .small-text,
+.flow-account-info,
+.flow-subtle-pill{
+  display:none !important;
+}
+header{
+  padding:14px 12px !important;
+  font-size:22px !important;
+}
+.page{
+  padding:14px !important;
+}
+.summary-bar{
+  gap:10px !important;
+  margin-bottom:14px !important;
+}
+.summary-box{
+  padding:12px !important;
+}
+.summary-box div:first-child{
+  font-size:13px !important;
+}
+.summary-box strong{
+  font-size:20px !important;
+}
+.controls{
+  gap:8px !important;
+  padding:12px !important;
+  margin-bottom:12px !important;
+}
+.section{
+  margin-top:16px !important;
+}
+.section-top-row{
+  gap:10px !important;
+  margin-bottom:8px !important;
+}
+.section-title{
+  font-size:22px !important;
+}
+.card{
+  padding:8px !important;
+  gap:8px !important;
+  border-radius:16px !important;
+}
+.card img{
+  width:72px !important;
+  height:72px !important;
+}
+.info{
+  gap:4px !important;
+}
+.info, .info *{
+  line-height:1.2 !important;
+}
+.top-tags{
+  gap:5px !important;
+}
+.category, .place-label{
+  padding:4px 8px !important;
+  font-size:10px !important;
+}
+.item-meta, .item-subtext, .muted, .small-text{
+  font-size:12px !important;
+}
+button{
+  min-height:42px !important;
+}
+body{
+  overscroll-behavior-x:none;
+}
+</style>
 </head>
 <body>
 
@@ -628,6 +711,6 @@
 <script src="script.js"></script>
 <script src="cloud-hooks.js"></script>
 <script src="household.js"></script>
-<script src="appstore-ui.js"></script>
+
 </body>
 </html>
