@@ -2338,24 +2338,42 @@ input:focus,select:focus,textarea:focus{
   .card img{width:84px;height:84px;border-radius:18px}
 }
 
-/* ===== Household panel ===== */
-.household-panel{display:grid;gap:16px;margin:0 0 18px;padding:18px 20px;border-radius:28px;background:linear-gradient(180deg, rgba(255,255,255,.11), rgba(255,255,255,.05));border:1px solid var(--border-soft);backdrop-filter:blur(18px);box-shadow:var(--shadow-soft)}
-.household-panel-top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
-.household-title{font-size:20px;font-weight:900}
-.household-status{margin-top:6px;color:#bfdbfe;font-weight:700}
-.household-account{padding:10px 14px;border-radius:16px;background:rgba(255,255,255,.06);border:1px solid var(--border-soft);color:var(--muted);font-size:13px;font-weight:700;word-break:break-word}
-.household-summary-row{display:grid;grid-template-columns:1fr 220px;gap:14px}
-.household-summary-card,.household-card,.household-members-wrap{background:rgba(255,255,255,.06);border:1px solid var(--border-soft);border-radius:22px;padding:16px;box-shadow:var(--shadow-soft)}
-.household-summary-label{display:block;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
-.household-summary-card strong{font-size:18px;line-height:1.3;display:block;word-break:break-word}
-.household-controls-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-.household-card h3,.household-members-title{margin:0 0 12px;font-size:16px;font-weight:900}
-.household-card-body{display:grid;gap:10px}
-.household-card button{width:100%}
-.household-members-list{display:flex;flex-wrap:wrap;gap:10px}
-.household-member-chip{display:inline-flex;align-items:center;min-height:36px;padding:0 12px;border-radius:999px;background:rgba(96,165,250,.16);border:1px solid rgba(96,165,250,.22);color:#dbeafe;font-size:13px;font-weight:800}
-.household-member-chip.is-owner{background:rgba(52,199,89,.16);border-color:rgba(52,199,89,.22);color:#dcfce7}
-.household-member-chip.is-me{box-shadow:0 0 0 1px rgba(255,255,255,.12) inset}
-.household-member-chip.is-empty{background:rgba(148,163,184,.14);border-color:rgba(148,163,184,.18);color:#e2e8f0}
-@media (max-width:980px){.household-controls-grid,.household-summary-row{grid-template-columns:1fr}}
-@media (max-width:640px){.household-panel{padding:16px 14px;border-radius:22px}.household-summary-card strong{font-size:16px}}
+
+.flow-gate{position:fixed;inset:0;z-index:12000;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(circle at top,#132552 0%,rgba(7,18,42,.96) 45%,rgba(3,10,35,.98) 100%);backdrop-filter:blur(16px)}
+.flow-card{width:min(100%,520px);background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.04));border:1px solid rgba(255,255,255,.12);border-radius:28px;box-shadow:0 30px 80px rgba(0,0,0,.35);padding:28px;color:var(--text);text-align:center}
+.flow-card h1{margin:10px 0 10px;font-size:32px;line-height:1.1}
+.flow-card p{margin:0 0 18px;color:var(--muted);font-size:15px;line-height:1.5}
+.flow-badge,.flow-subtle-pill{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:8px 14px;border-radius:999px;background:rgba(96,165,250,.16);color:#bfdbfe;font-weight:700;font-size:13px}
+.flow-subtle-pill{margin-top:12px;background:rgba(255,255,255,.06);color:var(--muted)}
+.flow-account-info{margin-top:14px;color:#e2e8f0;font-weight:700}
+.flow-primary-btn,.flow-choice-btn{min-height:50px;border-radius:18px;padding:12px 18px;font-size:15px;font-weight:800}
+.flow-primary-btn{background:linear-gradient(180deg,#22c55e,#16a34a);color:#04140b;width:100%}
+.flow-choice-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:18px}
+.flow-choice-btn{background:#22304f;color:#fff}
+.flow-choice-btn-primary{background:linear-gradient(180deg,#38bdf8,#2563eb)}
+.flow-input{width:100%;min-height:48px;border:none;border-radius:16px;padding:12px 14px;font-size:15px;background:#f8fafc;color:#111827;margin:8px 0 14px}
+.flow-inline-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.flow-status{margin-top:14px;padding:12px 14px;border-radius:16px;background:rgba(34,197,94,.12);color:#bbf7d0;font-size:14px}
+.flow-status.is-error{background:rgba(239,68,68,.12);color:#fecaca}
+.main-app-shell.app-shell-locked{filter:blur(6px);pointer-events:none;user-select:none}
+.flow-gate-open{overflow:hidden}
+.household-panel{margin:0 0 18px;background:var(--panel);border:1px solid rgba(255,255,255,.08);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
+.household-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.household-title{font-size:22px;font-weight:800;margin-top:4px}
+.household-meta{margin-top:6px;color:var(--muted);font-size:14px}
+.household-panel-actions,.household-invite-tools,.household-invite-code-wrap,.household-member-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.household-invite-tools{margin-top:14px;justify-content:space-between}
+.household-invite-code{display:inline-flex;align-items:center;justify-content:center;min-width:108px;padding:10px 14px;border-radius:14px;background:rgba(255,255,255,.06);font-weight:900;letter-spacing:.16em}
+.household-members{display:grid;gap:10px;margin-top:14px}
+.household-member-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border-radius:18px;background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid rgba(255,255,255,.05)}
+.household-member-main strong{display:block;font-size:15px}
+.household-member-meta{color:var(--muted);font-size:12px;word-break:break-all}
+.household-chip{display:inline-flex;padding:5px 10px;border-radius:999px;background:rgba(56,189,248,.16);color:#bae6fd;font-size:12px;font-weight:800}
+.household-chip-soft{background:rgba(255,255,255,.06);color:#e2e8f0}
+.household-empty{padding:16px;border-radius:18px;border:1px dashed rgba(255,255,255,.12);color:var(--muted);text-align:center}
+@media (max-width: 720px){
+  .flow-card{padding:22px;border-radius:24px}
+  .flow-card h1{font-size:28px}
+  .household-panel-head,.household-invite-tools,.household-member-row{flex-direction:column;align-items:stretch}
+  .household-panel-actions,.household-member-actions{justify-content:flex-start}
+}

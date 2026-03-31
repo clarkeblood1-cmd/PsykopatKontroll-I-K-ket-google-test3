@@ -1,10 +1,12 @@
-const CACHE_NAME = 'matlista-app-v71-household';
+const CACHE_NAME = 'matlista-app-v71-household-flow';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './script.js',
-  './cloud-sync.js',  './household.js',
+  './cloud-sync.js',
+  './cloud-hooks.js',
+  './household.js',
   './firebase-config.js',
   './manifest.json',
   './icons/icon-192.png',
