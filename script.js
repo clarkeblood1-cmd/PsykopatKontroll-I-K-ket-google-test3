@@ -969,6 +969,96 @@ function formatBuyCostLabel(item) {
   };
 }
 
+function normalizeDateInput(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return '';
+  const date = new Date(`${match[1]}-${match[2]}-${match[3]}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${match[1]}-${match[2]}-${match[3]}`;
+}
+
+function getTodayLocalDateString() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function diffDaysFromToday(targetDate) {
+  const normalized = normalizeDateInput(targetDate);
+  if (!normalized) return null;
+  const today = normalizeDateInput(getTodayLocalDateString());
+  const target = new Date(`${normalized}T12:00:00`);
+  const current = new Date(`${today}T12:00:00`);
+  return Math.round((target - current) / 86400000);
+}
+
+function getBestBeforeInfo(item) {
+  const normalized = normalizeDateInput(item?.bestBeforeDate);
+  if (!normalized) return null;
+  const days = diffDaysFromToday(normalized);
+  if (days === null) return null;
+  let label = `Bäst före: ${normalized}`;
+  let cls = 'fresh';
+  if (days < 0) {
+    label += ` • gått ut för ${Math.abs(days)} d sedan`;
+    cls = 'expired';
+  } else if (days === 0) {
+    label += ' • sista dagen idag';
+    cls = 'soon';
+  } else if (days <= 3) {
+    label += ` • ${days} d kvar`;
+    cls = 'soon';
+  } else {
+    label += ` • ${days} d kvar`;
+  }
+  return { label, cls, days };
+}
+
+function getOpenedCountdownInfo(item) {
+  const daysTotal = Math.max(0, Number(item?.openedShelfLifeDays || 0));
+  const openedDate = normalizeDateInput(item?.openedDate);
+  if (!daysTotal) return null;
+  if (!openedDate) {
+    return { label: `Efter öppning: ${daysTotal} dagar`, cls: 'fresh', daysLeft: null, inactive: true };
+  }
+  const elapsed = Math.max(0, -diffDaysFromToday(openedDate));
+  const daysLeft = daysTotal - elapsed;
+  let label = `Öppnad hållbarhet: ${daysLeft} d kvar`;
+  let cls = 'fresh';
+  if (daysLeft < 0) {
+    label = `Öppnad hållbarhet: gått ut för ${Math.abs(daysLeft)} d sedan`;
+    cls = 'expired';
+  } else if (daysLeft === 0) {
+    label = 'Öppnad hållbarhet: sista dagen idag';
+    cls = 'soon';
+  } else if (daysLeft <= 2) {
+    cls = 'soon';
+  }
+  return { label, cls, daysLeft, inactive: false };
+}
+
+function renderShelfLifeBadges(item) {
+  if (!item || item.type !== 'home') return '';
+  const parts = [];
+  const bestBefore = getBestBeforeInfo(item);
+  const opened = getOpenedCountdownInfo(item);
+  if (bestBefore) parts.push(`<div class="shelf-life-chip shelf-life-${bestBefore.cls}">${bestBefore.label}</div>`);
+  if (opened) parts.push(`<div class="shelf-life-chip shelf-life-${opened.cls}${opened.inactive ? ' shelf-life-inactive' : ''}">${opened.label}</div>`);
+  return parts.length ? `<div class="shelf-life-wrap">${parts.join('')}</div>` : '';
+}
+
+function markItemOpened(index) {
+  const item = items[index];
+  if (!item) return;
+  item.openedDate = getTodayLocalDateString();
+  save();
+  render();
+}
+
 function sameVariant(a, b, includeType = true) {
   if (!a || !b) return false;
   return normalizeText(a.name) === normalizeText(b.name)
@@ -976,7 +1066,10 @@ function sameVariant(a, b, includeType = true) {
     && (a.room || 'koket') === (b.room || 'koket')
     && (a.place || 'kyl') === (b.place || 'kyl')
     && (a.unit || 'st') === (b.unit || 'st')
-    && Number(a.size || 0) === Number(b.size || 0);
+    && Number(a.size || 0) === Number(b.size || 0)
+    && normalizeDateInput(a.bestBeforeDate) === normalizeDateInput(b.bestBeforeDate)
+    && Number(a.openedShelfLifeDays || 0) === Number(b.openedShelfLifeDays || 0)
+    && normalizeDateInput(a.openedDate) === normalizeDateInput(b.openedDate);
 }
 
 function getCategoryForSelect(selectId) {
@@ -2088,6 +2181,19 @@ function hydrateData() {
   if (!getAllRoomDefs().some(room => room.key === activeRoom)) activeRoom = getAllRoomDefs()[0]?.key || 'koket';
 }
 
+items = Array.isArray(items) ? items.map(item => ({
+  ...item,
+  bestBeforeDate: normalizeDateInput(item?.bestBeforeDate || ''),
+  openedShelfLifeDays: Math.max(0, Number(item?.openedShelfLifeDays || 0)),
+  openedDate: normalizeDateInput(item?.openedDate || '')
+})) : [];
+quickItems = Array.isArray(quickItems) ? quickItems.map(item => ({
+  ...item,
+  bestBeforeDate: '',
+  openedShelfLifeDays: Math.max(0, Number(item?.openedShelfLifeDays || 0)),
+  openedDate: ''
+})) : [];
+
 function save() {
   refreshLegacyCollections();
   localStorage.setItem('matlista', JSON.stringify(items));
@@ -2967,7 +3073,10 @@ function addHomeItemFromTemplate(sourceItem, quantity = 1, targetPlace = null) {
     type: 'home',
     img: sourceItem.img ? String(sourceItem.img) : '',
     openedAmount: Math.max(0, Number(sourceItem.openedAmount || 0)),
-    packMode: isWeightUnit(sourceItem.unit || 'st') && (Number(quantity || sourceItem.quantity || 0) > 1 || Number(sourceItem.openedAmount || 0) > 0 || sourceItem.packMode === 'bags') ? 'bags' : ''
+    packMode: isWeightUnit(sourceItem.unit || 'st') && (Number(quantity || sourceItem.quantity || 0) > 1 || Number(sourceItem.openedAmount || 0) > 0 || sourceItem.packMode === 'bags') ? 'bags' : '',
+    bestBeforeDate: normalizeDateInput(sourceItem.bestBeforeDate || ''),
+    openedShelfLifeDays: Math.max(0, Number(sourceItem.openedShelfLifeDays || 0)),
+    openedDate: normalizeDateInput(sourceItem.openedDate || '')
   };
 
   const existing = items.find(entry =>
@@ -3008,7 +3117,10 @@ function addBuyItemFromTemplate(sourceItem, quantity = 1) {
     type: 'buy',
     img: sourceItem.img ? String(sourceItem.img) : '',
     openedAmount: 0,
-    packMode: ''
+    packMode: '',
+    bestBeforeDate: '',
+    openedShelfLifeDays: Math.max(0, Number(sourceItem.openedShelfLifeDays || 0)),
+    openedDate: ''
   };
 
   const existing = items.find(entry =>
@@ -3297,9 +3409,11 @@ function createCard(item, source = 'items') {
             }</div>`
           : ''}
       </div>
+      ${renderShelfLifeBadges(item)}
     </div>
     <div class="actions">
       <button type="button" class="ghost-btn image-source-badge image-source-${imageSource.type}" title="${imageSource.title}" onclick="showImageSourceInfo('${imageSource.type}')">${imageSource.label}</button>
+      ${item.type === 'home' && Number(item.openedShelfLifeDays || 0) > 0 ? `<button type="button" class="ghost-btn" onclick="markItemOpened(${realIndex})">${item.openedDate ? '🔄 Öppnad idag' : '🔓 Öppna'}</button>` : ''}
       <button type="button" class="ghost-btn" onclick="editMainItem(${realIndex})">✏️ Ändra</button>
       <button type="button" class="delete" onclick="removeItem(${realIndex})">🗑️</button>
       <button type="button" onclick="moveItem(${realIndex})">${moveText}</button>
@@ -3399,6 +3513,8 @@ function applyQuickItemToMainForm(index) {
   const itemSize = document.getElementById('itemSize');
   const itemPlace = document.getElementById('itemPlace');
   const itemMeasureText = document.getElementById('itemMeasureText');
+  const itemBestBeforeDate = document.getElementById('itemBestBeforeDate');
+  const itemOpenedShelfLifeDays = document.getElementById('itemOpenedShelfLifeDays');
 
   if (itemName) itemName.value = item.name || '';
   if (itemPrice) itemPrice.value = Number(item.price || 0) || '';
@@ -3634,6 +3750,9 @@ function openEditModal(item, isQuick, index) {
   const editCategory = document.getElementById('editCategory');
   const editPlace = document.getElementById('editPlace');
   const editMeasureText = document.getElementById('editMeasureText');
+  const editBestBeforeDate = document.getElementById('editBestBeforeDate');
+  const editOpenedShelfLifeDays = document.getElementById('editOpenedShelfLifeDays');
+  const editOpenedDate = document.getElementById('editOpenedDate');
 
   if (editName) editName.value = item.name || '';
   if (editPrice) editPrice.value = Number(item.price || 0) || '';
@@ -3653,6 +3772,9 @@ function openEditModal(item, isQuick, index) {
     renderPlaceOptions();
     editPlace.value = item.place || 'kyl';
   }
+  if (editBestBeforeDate) editBestBeforeDate.value = normalizeDateInput(item.bestBeforeDate || '');
+  if (editOpenedShelfLifeDays) editOpenedShelfLifeDays.value = Math.max(0, Number(item.openedShelfLifeDays || 0)) || '';
+  if (editOpenedDate) editOpenedDate.value = normalizeDateInput(item.openedDate || '');
   if (editModal) editModal.style.display = 'flex';
   try { syncEditMeasureModeVisibility(); updateEditMeasureSummary(); } catch (e) {}
 }
@@ -3812,6 +3934,8 @@ function clearInputs(focusName = false) {
   const itemSize = document.getElementById('itemSize');
   const itemPlace = document.getElementById('itemPlace');
   const itemMeasureText = document.getElementById('itemMeasureText');
+  const itemBestBeforeDate = document.getElementById('itemBestBeforeDate');
+  const itemOpenedShelfLifeDays = document.getElementById('itemOpenedShelfLifeDays');
 
   if (itemName) itemName.value = '';
   if (itemPrice) itemPrice.value = '';
@@ -3823,6 +3947,8 @@ function clearInputs(focusName = false) {
   setUiForUnit('item', 'st');
   if (itemSize) updateSizeSelect('itemSize', 'st');
   if (itemMeasureText) itemMeasureText.value = '';
+  if (itemBestBeforeDate) itemBestBeforeDate.value = '';
+  if (itemOpenedShelfLifeDays) itemOpenedShelfLifeDays.value = '';
   const itemPackMeasureUnit = document.getElementById('itemPackMeasureUnit');
   if (itemPackMeasureUnit) itemPackMeasureUnit.value = 'g';
   renderQuickAddRoomOptions(selectedQuickRoom, false);
@@ -3843,6 +3969,8 @@ function buildItemFromForm() {
   const sizeInput = document.getElementById('itemSize');
   const placeInput = document.getElementById('itemPlace');
   const itemMeasureTextInput = document.getElementById('itemMeasureText');
+  const bestBeforeInput = document.getElementById('itemBestBeforeDate');
+  const openedShelfLifeInput = document.getElementById('itemOpenedShelfLifeDays');
 
   const name = nameInput?.value.trim() || '';
   if (!name) return null;
@@ -3885,7 +4013,10 @@ function buildItemFromForm() {
     category: ensureCategoryExists(categoryInput?.value || (matchedQuick ? matchedQuick.category : getRoomFallbackCategory(itemRoom)), itemRoom),
     place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : fallbackPlace), itemRoom),
     type: 'home',
-    img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name)
+    img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name),
+    bestBeforeDate: normalizeDateInput(bestBeforeInput?.value || ''),
+    openedShelfLifeDays: Math.max(0, Number(openedShelfLifeInput?.value || matchedQuick?.openedShelfLifeDays || 0)),
+    openedDate: ''
   };
 
   return { item, file: fileInput?.files?.[0] || null, matchedQuick };
@@ -3907,8 +4038,14 @@ function saveQuickTemplate(item) {
     existingQuick.category = normalized.category || existingQuick.category || getRoomFallbackCategory(existingQuick.room || activeRoom);
     existingQuick.place = normalized.place || existingQuick.place || getPlacesForRoom(existingQuick.room)[0]?.key || 'kyl';
     if (normalized.img) existingQuick.img = normalized.img;
+    existingQuick.openedShelfLifeDays = Math.max(0, Number(normalized.openedShelfLifeDays || existingQuick.openedShelfLifeDays || 0));
   } else {
-    quickItems.unshift(normalized);
+    quickItems.unshift({
+      ...normalized,
+      bestBeforeDate: '',
+      openedDate: '',
+      openedShelfLifeDays: Math.max(0, Number(normalized.openedShelfLifeDays || 0))
+    });
   }
 }
 
@@ -3930,6 +4067,9 @@ function saveHomeItem(item) {
       existingHome.openedAmount -= Number(existingHome.size || 0);
     }
     existingHome.packMode = isWeightUnit(existingHome.unit) && (existingHome.quantity > 1 || existingHome.openedAmount > 0 || normalizedItem.packMode === 'bags' || existingHome.packMode === 'bags') ? 'bags' : '';
+    existingHome.bestBeforeDate = normalizeDateInput(normalizedItem.bestBeforeDate || existingHome.bestBeforeDate || '');
+    existingHome.openedShelfLifeDays = Math.max(0, Number(normalizedItem.openedShelfLifeDays || existingHome.openedShelfLifeDays || 0));
+    existingHome.openedDate = normalizeDateInput(normalizedItem.openedDate || existingHome.openedDate || '');
     if (normalizedItem.img) existingHome.img = normalizedItem.img;
     syncQuickItemFromItem(existingHome);
   } else {
@@ -3937,7 +4077,10 @@ function saveHomeItem(item) {
       ...normalizedItem,
       room: normalizedItem.room || activeRoom,
       openedAmount: Math.max(0, Number(normalizedItem.openedAmount || 0)),
-      packMode: isWeightUnit(normalizedItem.unit) && (Number(normalizedItem.quantity || 0) > 1 || Number(normalizedItem.openedAmount || 0) > 0 || normalizedItem.packMode === 'bags') ? 'bags' : ''
+      packMode: isWeightUnit(normalizedItem.unit) && (Number(normalizedItem.quantity || 0) > 1 || Number(normalizedItem.openedAmount || 0) > 0 || normalizedItem.packMode === 'bags') ? 'bags' : '',
+      bestBeforeDate: normalizeDateInput(normalizedItem.bestBeforeDate || ''),
+      openedShelfLifeDays: Math.max(0, Number(normalizedItem.openedShelfLifeDays || 0)),
+      openedDate: normalizeDateInput(normalizedItem.openedDate || '')
     });
     syncQuickItemFromItem(normalizedItem);
   }

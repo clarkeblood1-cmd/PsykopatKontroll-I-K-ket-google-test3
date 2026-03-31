@@ -2377,3 +2377,6 @@ input:focus,select:focus,textarea:focus{
   .household-panel-head,.household-invite-tools,.household-member-row{flex-direction:column;align-items:stretch}
   .household-panel-actions,.household-member-actions{justify-content:flex-start}
 }
+
+
+.shelf-life-wrap{display:flex;flex-direction:column;gap:6px;margin-top:8px}.shelf-life-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:12px;line-height:1.2;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);width:max-content;max-width:100%}.shelf-life-fresh{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.35)}.shelf-life-soon{background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.45)}.shelf-life-expired{background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.45)}.shelf-life-inactive{opacity:.9}.quick-field-date,.quick-field-open-days{min-width:200px}

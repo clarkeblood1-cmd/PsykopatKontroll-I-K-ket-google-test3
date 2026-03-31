@@ -198,6 +198,14 @@
         <input id="itemPrice" type="number" min="0" placeholder="Pris (kr)">
       </div>
 
+      <div class="quick-field quick-field-date">
+        <input id="itemBestBeforeDate" type="date" placeholder="Bäst före">
+      </div>
+
+      <div class="quick-field quick-field-open-days">
+        <input id="itemOpenedShelfLifeDays" type="number" min="0" step="1" placeholder="Öppnad hållbarhet (dagar)">
+      </div>
+
       <button type="button" class="ghost-btn quick-clear-btn" onclick="clearInputs()">🧹 Rensa</button>
 
       <div id="itemSizeWrap" class="quick-hidden-field"><select id="itemSize" style="display:none"></select></div>
@@ -555,6 +563,10 @@
         <select id="editCategory" data-category-select></select>
 
         <select id="editPlace" data-place-select></select>
+
+        <input id="editBestBeforeDate" type="date" placeholder="Bäst före datum">
+        <input id="editOpenedShelfLifeDays" type="number" min="0" step="1" placeholder="Hållbar efter öppning (dagar)">
+        <input id="editOpenedDate" type="date" placeholder="Öppnad datum">
 
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button type="button" class="ghost-btn" style="flex:1;" onclick="closeEditModal()">Avbryt</button>
