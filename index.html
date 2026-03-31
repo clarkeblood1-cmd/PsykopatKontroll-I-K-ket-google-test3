@@ -85,6 +85,45 @@
 
   <div class="page">
     
+    <section class="auth-panel">
+      <div class="auth-panel-left">
+        <div class="auth-title">🔐 Konto & molnsynk</div>
+        <div id="authStatus" class="auth-status">Inte inloggad</div>
+        <div id="firebaseHelp" class="auth-help">
+          Lägg till <strong>firebase-config.js</strong>, aktivera <strong>Google</strong> i Firebase Authentication
+          och skapa <strong>Firestore Database</strong> + <strong>Firebase Storage</strong> för att slå på molnsynk och bilduppladdning.
+        </div>
+      </div>
+      <div class="auth-actions">
+        <button type="button" id="googleLoginBtn" onclick="loginWithGoogle()">Logga in med Google</button>
+        <button type="button" id="googleLogoutBtn" class="ghost-btn" onclick="logoutGoogle()" style="display:none;">Logga ut</button>
+      </div>
+    </section>
+
+
+    <section class="household-panel" aria-label="Hushåll">
+      <div class="household-panel-head">
+        <div>
+          <div class="auth-title">🏠 Household</div>
+          <div id="currentHouseholdName" class="household-title">Inget hushåll valt</div>
+          <div id="currentHouseholdMeta" class="household-meta">Logga in och välj hushåll för att öppna appen.</div>
+        </div>
+        <div class="household-panel-actions">
+          <button type="button" id="myHouseholdBtn" class="ghost-btn">👤 Mitt hushåll</button>
+          <button type="button" id="leaveHouseholdBtn" class="ghost-btn" style="display:none;">🚪 Lämna hushåll</button>
+        </div>
+      </div>
+      <div id="inviteTools" class="household-invite-tools" style="display:none;">
+        <button type="button" id="createInviteBtn" class="ghost-btn">➕ Skapa kod</button>
+        <div class="household-invite-code-wrap">
+          <span id="inviteCodeOutput" class="household-invite-code">—</span>
+          <button type="button" id="copyInviteBtn" class="ghost-btn" disabled>Kopiera</button>
+        </div>
+      </div>
+      <div id="householdMembers" class="household-members">
+        <div class="household-empty">Inga medlemmar att visa ännu.</div>
+      </div>
+    </section>
 
     <div class="summary-bar">
       <div class="summary-box"><div>Varor hemma</div><strong id="homeCount">0</strong></div>
@@ -226,47 +265,6 @@
           <div class="manage-stat-pill"><span>📍</span><strong id="managePlaceCount">0 platser</strong></div>
         </div>
       </div>
-    </section>
-
-    <section class="section manage-card" data-page="manage">
-      <div class="auth-panel">
-        <div class="auth-panel-left">
-          <div class="auth-title">🔐 Konto & molnsynk</div>
-          <div id="authStatus" class="auth-status">Inte inloggad</div>
-          <div id="firebaseHelp" class="auth-help">
-            Lägg till <strong>firebase-config.js</strong>, aktivera <strong>Google</strong> i Firebase Authentication
-            och skapa <strong>Firestore Database</strong> + <strong>Firebase Storage</strong> för att slå på molnsynk och bilduppladdning.
-          </div>
-        </div>
-        <div class="auth-actions">
-          <button type="button" id="googleLoginBtn" onclick="loginWithGoogle()">Logga in med Google</button>
-          <button type="button" id="googleLogoutBtn" class="ghost-btn" onclick="logoutGoogle()" style="display:none;">Logga ut</button>
-        </div>
-      </div>
-
-      <section class="household-panel" aria-label="Hushåll">
-        <div class="household-panel-head">
-          <div>
-            <div class="auth-title">🏠 Household</div>
-            <div id="currentHouseholdName" class="household-title">Inget hushåll valt</div>
-            <div id="currentHouseholdMeta" class="household-meta">Logga in och välj hushåll för att öppna appen.</div>
-          </div>
-          <div class="household-panel-actions">
-            <button type="button" id="myHouseholdBtn" class="ghost-btn">👤 Mitt hushåll</button>
-            <button type="button" id="leaveHouseholdBtn" class="ghost-btn" style="display:none;">🚪 Lämna hushåll</button>
-          </div>
-        </div>
-        <div id="inviteTools" class="household-invite-tools" style="display:none;">
-          <button type="button" id="createInviteBtn" class="ghost-btn">➕ Skapa kod</button>
-          <div class="household-invite-code-wrap">
-            <span id="inviteCodeOutput" class="household-invite-code">—</span>
-            <button type="button" id="copyInviteBtn" class="ghost-btn" disabled>Kopiera</button>
-          </div>
-        </div>
-        <div id="householdMembers" class="household-members">
-          <div class="household-empty">Inga medlemmar att visa ännu.</div>
-        </div>
-      </section>
     </section>
 
     <section class="section category-manager-section manage-card" data-page="manage">
