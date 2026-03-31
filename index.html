@@ -62,7 +62,7 @@
       <button id="installBtn" class="install-btn" style="display:none;">📲 Installera app</button>
     </div>
     <div class="header-title">
-      <img src="icons/icon-192.png" alt="Appikon" class="app-icon">
+     
       <span>🏠 PsykopatKontroll I Hemmet 🏠</span>
     </div>
     <div class="header-right theme-toolbar">
@@ -197,6 +197,18 @@
       <div class="quick-field quick-field-price">
         <input id="itemPrice" type="number" min="0" placeholder="Pris (kr)">
       </div>
+
+<div class="quick-field quick-field-date">
+  <input id="itemBestBefore" type="date" placeholder="Bäst före">
+</div>
+
+<div class="quick-field quick-field-days">
+  <input id="itemShelfLifeDays" type="number" min="0" placeholder="Bäst före dagar">
+</div>
+
+<div class="quick-field quick-field-days">
+  <input id="itemOpenDays" type="number" min="0" placeholder="Efter öppning dagar">
+</div>
 
       <button type="button" class="ghost-btn quick-clear-btn" onclick="clearInputs()">🧹 Rensa</button>
 
@@ -555,6 +567,9 @@
         <select id="editCategory" data-category-select></select>
 
         <select id="editPlace" data-place-select></select>
+        <input id="editBestBefore" type="date" placeholder="Bäst före">
+        <input id="editShelfLifeDays" type="number" min="0" placeholder="Bäst före dagar">
+        <input id="editOpenDays" type="number" min="0" placeholder="Efter öppning dagar">
 
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button type="button" class="ghost-btn" style="flex:1;" onclick="closeEditModal()">Avbryt</button>
@@ -613,6 +628,5 @@
 <script src="script.js"></script>
 <script src="cloud-hooks.js"></script>
 <script src="household.js"></script>
-<script src="expiry-integration.js"></script>
 </body>
 </html>
