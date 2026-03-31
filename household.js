@@ -435,18 +435,26 @@
   function updateScreenFromState() {
     const user = firebase.auth().currentUser;
     const continueBtn = $('flowContinueBtn');
+    const switchBtn = $('switchHouseholdBtn');
+    const hasHousehold = !!state.profile?.householdId;
+
     if (!user) {
       if (continueBtn) continueBtn.style.display = 'none';
+      if (switchBtn) switchBtn.style.display = 'none';
       setFlowView('login');
       setStatus('Logga in med Google för att fortsätta.');
       return;
     }
-    if (continueBtn) continueBtn.style.display = state.profile?.householdId ? '' : 'none';
-    if (state.profile?.householdId) {
+
+    if (continueBtn) continueBtn.style.display = hasHousehold ? '' : 'none';
+    if (switchBtn) switchBtn.style.display = hasHousehold ? '' : 'none';
+
+    if (hasHousehold) {
       setFlowView('app');
       setStatus('Öppnar ditt valda hushåll.');
       return;
     }
+
     setFlowView('choice');
     setStatus('Välj hur du vill fortsätta.');
   }
