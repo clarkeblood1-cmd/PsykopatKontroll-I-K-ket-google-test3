@@ -2180,10 +2180,6 @@ function syncQuickItemFromItem(changedItem) {
   quick.measureText = supportsMeasureInput(quick.unit) ? getMeasureTextFromSize(quick.size, quickMeasureUnit) : '';
   quick.weightText = isWeightUnit(quick.unit) ? quick.measureText : '';
   quick.quantity = Math.max(1, Number(quick.quantity || 1));
-  quick.bestBeforeDays = toPositiveWholeDays((changedItem?.bestBeforeDays ?? quick.bestBeforeDays) ?? 0);
-  quick.openedDays = toPositiveWholeDays((changedItem?.openedDays ?? quick.openedDays) ?? 0);
-  quick.warnBeforeDays = toPositiveWholeDays((changedItem?.warnBeforeDays ?? quick.warnBeforeDays) ?? 0);
-  sanitizeExpiryFields(quick);
 }
 
 function updateToggleButtons() {
@@ -2970,11 +2966,6 @@ function addHomeItemFromTemplate(sourceItem, quantity = 1, targetPlace = null) {
     place: ensurePlaceExists(targetPlace || sourceItem.place || 'kyl'),
     type: 'home',
     img: sourceItem.img ? String(sourceItem.img) : '',
-    bestBeforeDays: toPositiveWholeDays(sourceItem.bestBeforeDays || 0),
-    openedDays: toPositiveWholeDays(sourceItem.openedDays || 0),
-    warnBeforeDays: toPositiveWholeDays(sourceItem.warnBeforeDays || 0),
-    addedDate: todayIsoLocal(),
-    openedDate: '',
     openedAmount: Math.max(0, Number(sourceItem.openedAmount || 0)),
     packMode: isWeightUnit(sourceItem.unit || 'st') && (Number(quantity || sourceItem.quantity || 0) > 1 || Number(sourceItem.openedAmount || 0) > 0 || sourceItem.packMode === 'bags') ? 'bags' : ''
   };
@@ -2994,18 +2985,12 @@ function addHomeItemFromTemplate(sourceItem, quantity = 1, targetPlace = null) {
     existing.price = Number(copy.price || existing.price || 0);
     existing.category = copy.category;
     if (copy.img) existing.img = copy.img;
-    existing.bestBeforeDays = toPositiveWholeDays((copy.bestBeforeDays ?? existing.bestBeforeDays) ?? 0);
-    existing.openedDays = toPositiveWholeDays((copy.openedDays ?? existing.openedDays) ?? 0);
-    existing.warnBeforeDays = toPositiveWholeDays((copy.warnBeforeDays ?? existing.warnBeforeDays) ?? 0);
-    sanitizeExpiryFields(existing);
     syncQuickItemFromItem(existing);
   } else {
-    sanitizeExpiryFields(copy);
     items.push(copy);
     syncQuickItemFromItem(copy);
   }
 }
-
 
 function addBuyItemFromTemplate(sourceItem, quantity = 1) {
   if (!sourceItem) return;
@@ -3247,167 +3232,7 @@ function createPlaceSelect(current, onchangeCode, roomKey = activeRoom) {
   `;
 }
 
-
-function toPositiveWholeDays(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) return 0;
-  return Math.round(n);
-}
-
-function todayIsoLocal() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function parseIsoLocalDate(iso) {
-  if (!iso || typeof iso !== 'string') return null;
-  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
-  const [, y, m, d] = match;
-  return new Date(Number(y), Number(m) - 1, Number(d));
-}
-
-function daysSinceIso(dateIso) {
-  const start = parseIsoLocalDate(dateIso);
-  if (!start) return 0;
-  const today = parseIsoLocalDate(todayIsoLocal());
-  const diff = today - start;
-  return Math.max(0, Math.floor(diff / 86400000));
-}
-
-function sanitizeExpiryFields(item) {
-  if (!item || typeof item !== 'object') return item;
-  item.bestBeforeDays = toPositiveWholeDays(item.bestBeforeDays || 0);
-  item.openedDays = toPositiveWholeDays(item.openedDays || 0);
-  item.warnBeforeDays = toPositiveWholeDays(item.warnBeforeDays || 0);
-  item.addedDate = item.addedDate || todayIsoLocal();
-  item.openedDate = item.openedDate || '';
-  item.lastExpiryWarningKey = item.lastExpiryWarningKey || '';
-  return item;
-}
-
-function getExpiryInfo(item) {
-  sanitizeExpiryFields(item);
-  const warnBeforeDays = toPositiveWholeDays(item.warnBeforeDays || 0);
-  const isOpened = !!item.openedDate;
-  const totalDays = isOpened && toPositiveWholeDays(item.openedDays || 0) > 0
-    ? toPositiveWholeDays(item.openedDays || 0)
-    : toPositiveWholeDays(item.bestBeforeDays || 0);
-  const baseDate = isOpened ? item.openedDate : item.addedDate;
-  const daysUsed = totalDays > 0 ? daysSinceIso(baseDate) : 0;
-  const daysLeft = totalDays > 0 ? totalDays - daysUsed : null;
-  const expired = daysLeft !== null && daysLeft <= 0;
-  const warning = daysLeft !== null && !expired && daysLeft <= warnBeforeDays;
-  const status = expired ? 'danger' : warning ? 'warning' : 'ok';
-  const scopeLabel = isOpened ? 'Öppnad' : 'Oöppnad';
-  let text = '';
-  if (daysLeft === null) {
-    text = isOpened ? 'Öppnad utan nedräkning' : 'Ingen bäst före‑nedräkning';
-  } else if (daysLeft > 1) {
-    text = `${daysLeft} dagar kvar`;
-  } else if (daysLeft === 1) {
-    text = '1 dag kvar';
-  } else if (daysLeft === 0) {
-    text = 'Går ut idag';
-  } else {
-    const overdue = Math.abs(daysLeft);
-    text = overdue === 1 ? 'Gick ut för 1 dag sedan' : `Gick ut för ${overdue} dagar sedan`;
-  }
-  let detail = '';
-  if (isOpened && item.openedDate) {
-    const openedAgo = daysSinceIso(item.openedDate);
-    detail = openedAgo === 0 ? 'Öppnad idag' : openedAgo === 1 ? 'Öppnad igår' : `Öppnad för ${openedAgo} dagar sedan`;
-  } else if (!isOpened && item.addedDate) {
-    const addedAgo = daysSinceIso(item.addedDate);
-    detail = addedAgo === 0 ? 'Inlagd idag' : addedAgo === 1 ? 'Inlagd igår' : `Inlagd för ${addedAgo} dagar sedan`;
-  }
-  return { isOpened, totalDays, daysLeft, expired, warning, status, scopeLabel, text, detail, warnBeforeDays };
-}
-
-function getExpiryBadgeMarkup(item) {
-  const info = getExpiryInfo(item);
-  const badges = [];
-  if (info.daysLeft !== null) {
-    badges.push(`<span class="expiry-badge expiry-${info.status}">${info.scopeLabel}: ${info.text}</span>`);
-  }
-  if (info.detail) {
-    badges.push(`<span class="expiry-badge ${info.isOpened ? 'expiry-opened' : 'expiry-ok'}">${info.detail}</span>`);
-  }
-  if (toPositiveWholeDays(item.warnBeforeDays || 0) > 0) {
-    badges.push(`<span class="expiry-badge">Varnar ${toPositiveWholeDays(item.warnBeforeDays || 0)} dagar före</span>`);
-  }
-  return badges.length ? `<div class="expiry-badges">${badges.join('')}</div>` : '';
-}
-
-function renderExpiryAlerts() {
-  const target = document.getElementById('expiryAlerts');
-  if (!target) return;
-  const roomItems = (Array.isArray(items) ? items : []).filter(item => item && item.type === 'home' && (item.room || 'koket') === activeRoom);
-  const alerts = roomItems.map(item => ({ item, info: getExpiryInfo(item) }))
-    .filter(entry => entry.info.expired || entry.info.warning)
-    .sort((a, b) => {
-      const aLeft = a.info.daysLeft ?? 999999;
-      const bLeft = b.info.daysLeft ?? 999999;
-      return aLeft - bLeft || String(a.item.name || '').localeCompare(String(b.item.name || ''), 'sv');
-    });
-
-  if (!alerts.length) {
-    target.innerHTML = '';
-    target.style.display = 'none';
-    return;
-  }
-
-  target.style.display = 'grid';
-  target.innerHTML = alerts.slice(0, 8).map(({ item, info }) => {
-    const levelClass = info.expired ? 'expiry-alert-danger' : 'expiry-alert-warning';
-    const icon = info.expired ? '🔴' : '🟡';
-    const place = typeof getPlaceMeta === 'function' ? getPlaceMeta(item.place, item.room || activeRoom).label : (item.place || '');
-    const room = typeof getRoomLabel === 'function' ? getRoomLabel(item.room || activeRoom) : (item.room || '');
-    return `
-      <div class="expiry-alert-card ${levelClass}">
-        <div class="expiry-alert-title">${icon} ${item.name}</div>
-        <div class="expiry-alert-text">${info.scopeLabel}: ${info.text} • ${room} • ${place}</div>
-      </div>
-    `;
-  }).join('');
-}
-
-function openHomeItem(index) {
-  const item = Array.isArray(items) ? items[index] : null;
-  if (!item || item.type !== 'home') return;
-  sanitizeExpiryFields(item);
-  item.openedDate = todayIsoLocal();
-  item.lastExpiryWarningKey = '';
-  if (!item.openedDays && item.bestBeforeDays && !item.warnBeforeDays) {
-    item.warnBeforeDays = 1;
-  }
-  if (typeof save === 'function') save();
-  if (typeof render === 'function') render();
-}
-
-function maybeNotifyExpiryWarnings() {
-  if (!Array.isArray(items)) return;
-  const messages = [];
-  items.forEach(item => {
-    if (!item || item.type !== 'home') return;
-    sanitizeExpiryFields(item);
-    const info = getExpiryInfo(item);
-    if (info.daysLeft === null) return;
-    if (!(info.expired || info.warning)) return;
-    const key = `${item.name}|${item.openedDate || item.addedDate}|${info.daysLeft}`;
-    if (item.lastExpiryWarningKey === key) return;
-    item.lastExpiryWarningKey = key;
-    messages.push(`${item.name}: ${info.scopeLabel.toLowerCase()} ${info.text.toLowerCase()}`);
-  });
-  if (messages.length && typeof save === 'function') save();
-  if (messages.length && typeof console !== 'undefined') console.info('Utgångsvarning', messages.join(' | '));
-}
-
 function createCard(item, source = 'items') {
-  sanitizeExpiryFields(item);
   const realIndex = source === 'quick' ? quickItems.indexOf(item) : items.indexOf(item);
   const img = getItemImage(item) || 'https://via.placeholder.com/100?text=Bild';
   const moveText = item.type === 'home' ? '↔ Flytta 1 till köp' : (String(item.unit || 'st').toLowerCase() === 'st' ? '↔ Flytta alla till hemma' : '↔ Flytta 1 till hemma');
@@ -3436,7 +3261,6 @@ function createCard(item, source = 'items') {
           </div>
         </div>
         <div class="quick-path">${getRoomLabel(quickRoom)} • ${item.category || getRoomFallbackCategory(quickRoom)} • ${getPlaceMeta(item.place, quickRoom).label}</div>
-        ${getExpiryBadgeMarkup(item)}
       </div>
       <div class="actions">
         <button type="button" class="ghost-btn image-source-badge image-source-${imageSource.type}" title="${imageSource.title}" onclick="showImageSourceInfo('${imageSource.type}')">${imageSource.label}</button>
@@ -3473,12 +3297,10 @@ function createCard(item, source = 'items') {
             }</div>`
           : ''}
       </div>
-      ${item.type === 'home' ? getExpiryBadgeMarkup(item) : ''}
     </div>
     <div class="actions">
       <button type="button" class="ghost-btn image-source-badge image-source-${imageSource.type}" title="${imageSource.title}" onclick="showImageSourceInfo('${imageSource.type}')">${imageSource.label}</button>
       <button type="button" class="ghost-btn" onclick="editMainItem(${realIndex})">✏️ Ändra</button>
-      ${item.type === 'home' ? `<button type="button" class="ghost-btn expiry-open-btn" onclick="openHomeItem(${realIndex})">🔓 Öppna</button>` : ''}
       <button type="button" class="delete" onclick="removeItem(${realIndex})">🗑️</button>
       <button type="button" onclick="moveItem(${realIndex})">${moveText}</button>
     </div>
@@ -3542,10 +3364,7 @@ function renderHomeList(searchText, categoryFilter) {
   if (!hasAny) {
     target.innerHTML = `<div class="empty">Inga varor hemma i ${getRoomLabel(activeRoom)} ännu.</div>`;
   }
-
-  renderExpiryAlerts();
 }
-
 
 function renderBuyList(searchText, categoryFilter) {
   const target = document.getElementById('buyList');
@@ -3580,9 +3399,6 @@ function applyQuickItemToMainForm(index) {
   const itemSize = document.getElementById('itemSize');
   const itemPlace = document.getElementById('itemPlace');
   const itemMeasureText = document.getElementById('itemMeasureText');
-  const itemBestBeforeDays = document.getElementById('itemBestBeforeDays');
-  const itemOpenedDays = document.getElementById('itemOpenedDays');
-  const itemWarnBeforeDays = document.getElementById('itemWarnBeforeDays');
 
   if (itemName) itemName.value = item.name || '';
   if (itemPrice) itemPrice.value = Number(item.price || 0) || '';
@@ -3598,9 +3414,6 @@ function applyQuickItemToMainForm(index) {
     renderPlaceOptions();
     itemPlace.value = item.place || 'kyl';
   }
-  if (itemBestBeforeDays) itemBestBeforeDays.value = toPositiveWholeDays(item.bestBeforeDays || 0) || '';
-  if (itemOpenedDays) itemOpenedDays.value = toPositiveWholeDays(item.openedDays || 0) || '';
-  if (itemWarnBeforeDays) itemWarnBeforeDays.value = toPositiveWholeDays(item.warnBeforeDays || 0) || '';
 
   hideMainItemSuggestions();
   try { syncMeasureModeVisibility(); updateMeasureSummary(); } catch (e) {}
@@ -3821,9 +3634,6 @@ function openEditModal(item, isQuick, index) {
   const editCategory = document.getElementById('editCategory');
   const editPlace = document.getElementById('editPlace');
   const editMeasureText = document.getElementById('editMeasureText');
-  const editBestBeforeDays = document.getElementById('editBestBeforeDays');
-  const editOpenedDays = document.getElementById('editOpenedDays');
-  const editWarnBeforeDays = document.getElementById('editWarnBeforeDays');
 
   if (editName) editName.value = item.name || '';
   if (editPrice) editPrice.value = Number(item.price || 0) || '';
@@ -3843,9 +3653,6 @@ function openEditModal(item, isQuick, index) {
     renderPlaceOptions();
     editPlace.value = item.place || 'kyl';
   }
-  if (editBestBeforeDays) editBestBeforeDays.value = toPositiveWholeDays(item.bestBeforeDays || 0) || '';
-  if (editOpenedDays) editOpenedDays.value = toPositiveWholeDays(item.openedDays || 0) || '';
-  if (editWarnBeforeDays) editWarnBeforeDays.value = toPositiveWholeDays(item.warnBeforeDays || 0) || '';
   if (editModal) editModal.style.display = 'flex';
   try { syncEditMeasureModeVisibility(); updateEditMeasureSummary(); } catch (e) {}
 }
@@ -3885,12 +3692,6 @@ function syncRecipeNames(oldName, newName) {
       return normalizeText(ingredient) === normalizeText(oldName) ? newName : ingredient;
     });
   });
-}
-
-function getWholeDaysFromInput(id) {
-  const el = document.getElementById(id);
-  if (!el) return 0;
-  return toPositiveWholeDays(el.value);
 }
 
 function saveEditItem() {
@@ -3937,9 +3738,6 @@ function saveEditItem() {
     room: updatedRoom,
     category: ensureCategoryExists(document.getElementById('editCategory')?.value || currentItem.category || getRoomFallbackCategory(updatedRoom), updatedRoom),
     place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || getPlacesForRoom(updatedRoom)[0]?.key || 'kyl', updatedRoom),
-    bestBeforeDays: getWholeDaysFromInput('editBestBeforeDays'),
-    openedDays: getWholeDaysFromInput('editOpenedDays'),
-    warnBeforeDays: getWholeDaysFromInput('editWarnBeforeDays'),
     img: currentItem?.img && String(currentItem.img).startsWith('data:')
       ? String(currentItem.img)
       : getAutoImagePath(updatedName)
@@ -3948,51 +3746,20 @@ function saveEditItem() {
   if (!updated.name) return;
 
   const oldName = currentItem.name;
-  const savedItem = { ...currentItem, ...updated };
-  sanitizeExpiryFields(savedItem);
-  targetList[editingIndex] = savedItem;
+  targetList[editingIndex] = { ...currentItem, ...updated };
 
   if (editingQuick) {
-    quickItems = quickItems.map((item, index) => index === editingIndex ? { ...savedItem } : item);
     items = items.map(item =>
       normalizeText(item.name) === normalizeText(oldName)
-        ? { ...item, ...updated, bestBeforeDays: savedItem.bestBeforeDays, openedDays: savedItem.openedDays, warnBeforeDays: savedItem.warnBeforeDays, type: item.type }
+        ? { ...item, ...updated, type: item.type }
         : item
     );
     syncRecipeNames(oldName, updated.name);
   } else {
-    items = items.map((item, index) => index === editingIndex ? { ...savedItem } : item);
-    const matchingQuick = quickItems.findIndex(item => normalizeText(item.name) === normalizeText(oldName));
-    if (matchingQuick >= 0) {
-      quickItems[matchingQuick] = {
-        ...quickItems[matchingQuick],
-        ...updated,
-        bestBeforeDays: savedItem.bestBeforeDays,
-        openedDays: savedItem.openedDays,
-        warnBeforeDays: savedItem.warnBeforeDays
-      };
-      sanitizeExpiryFields(quickItems[matchingQuick]);
-    } else {
-      syncQuickItemFromItem(savedItem);
-    }
+    syncQuickItemFromItem(targetList[editingIndex]);
   }
 
-  items = mergeItems(items).map(item => {
-    sanitizeExpiryFields(item);
-    return item;
-  });
-  quickItems = quickItems.map(item => {
-    sanitizeExpiryFields(item);
-    return item;
-  });
-
-  try {
-    localStorage.setItem('matlista', JSON.stringify(items));
-    localStorage.setItem('matlista_snabb', JSON.stringify(quickItems));
-  } catch (error) {
-    console.error('Kunde inte spara ändringen i localStorage:', error);
-  }
-
+  items = mergeItems(items);
   save();
   closeEditModal();
   render();
@@ -4045,9 +3812,6 @@ function clearInputs(focusName = false) {
   const itemSize = document.getElementById('itemSize');
   const itemPlace = document.getElementById('itemPlace');
   const itemMeasureText = document.getElementById('itemMeasureText');
-  const itemBestBeforeDays = document.getElementById('itemBestBeforeDays');
-  const itemOpenedDays = document.getElementById('itemOpenedDays');
-  const itemWarnBeforeDays = document.getElementById('itemWarnBeforeDays');
 
   if (itemName) itemName.value = '';
   if (itemPrice) itemPrice.value = '';
@@ -4059,9 +3823,6 @@ function clearInputs(focusName = false) {
   setUiForUnit('item', 'st');
   if (itemSize) updateSizeSelect('itemSize', 'st');
   if (itemMeasureText) itemMeasureText.value = '';
-  if (itemBestBeforeDays) itemBestBeforeDays.value = '';
-  if (itemOpenedDays) itemOpenedDays.value = '';
-  if (itemWarnBeforeDays) itemWarnBeforeDays.value = '';
   const itemPackMeasureUnit = document.getElementById('itemPackMeasureUnit');
   if (itemPackMeasureUnit) itemPackMeasureUnit.value = 'g';
   renderQuickAddRoomOptions(selectedQuickRoom, false);
@@ -4082,9 +3843,6 @@ function buildItemFromForm() {
   const sizeInput = document.getElementById('itemSize');
   const placeInput = document.getElementById('itemPlace');
   const itemMeasureTextInput = document.getElementById('itemMeasureText');
-  const itemBestBeforeDaysInput = document.getElementById('itemBestBeforeDays');
-  const itemOpenedDaysInput = document.getElementById('itemOpenedDays');
-  const itemWarnBeforeDaysInput = document.getElementById('itemWarnBeforeDays');
 
   const name = nameInput?.value.trim() || '';
   if (!name) return null;
@@ -4126,16 +3884,9 @@ function buildItemFromForm() {
     room: itemRoom,
     category: ensureCategoryExists(categoryInput?.value || (matchedQuick ? matchedQuick.category : getRoomFallbackCategory(itemRoom)), itemRoom),
     place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : fallbackPlace), itemRoom),
-    bestBeforeDays: toPositiveWholeDays(itemBestBeforeDaysInput?.value || matchedQuick?.bestBeforeDays || 0),
-    openedDays: toPositiveWholeDays(itemOpenedDaysInput?.value || matchedQuick?.openedDays || 0),
-    warnBeforeDays: toPositiveWholeDays(itemWarnBeforeDaysInput?.value || matchedQuick?.warnBeforeDays || 0),
-    addedDate: todayIsoLocal(),
-    openedDate: '',
     type: 'home',
     img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name)
   };
-
-  sanitizeExpiryFields(item);
 
   return { item, file: fileInput?.files?.[0] || null, matchedQuick };
 }
@@ -4155,17 +3906,11 @@ function saveQuickTemplate(item) {
     existingQuick.room = normalized.room || existingQuick.room || activeRoom;
     existingQuick.category = normalized.category || existingQuick.category || getRoomFallbackCategory(existingQuick.room || activeRoom);
     existingQuick.place = normalized.place || existingQuick.place || getPlacesForRoom(existingQuick.room)[0]?.key || 'kyl';
-    existingQuick.bestBeforeDays = toPositiveWholeDays((normalized.bestBeforeDays ?? existingQuick.bestBeforeDays) ?? 0);
-    existingQuick.openedDays = toPositiveWholeDays((normalized.openedDays ?? existingQuick.openedDays) ?? 0);
-    existingQuick.warnBeforeDays = toPositiveWholeDays((normalized.warnBeforeDays ?? existingQuick.warnBeforeDays) ?? 0);
     if (normalized.img) existingQuick.img = normalized.img;
-    sanitizeExpiryFields(existingQuick);
   } else {
-    sanitizeExpiryFields(normalized);
     quickItems.unshift(normalized);
   }
 }
-
 
 function saveHomeItem(item) {
   const normalizedItem = normalizeMeasureItemData(item);
@@ -4179,11 +3924,6 @@ function saveHomeItem(item) {
     existingHome.size = normalizedItem.size;
     existingHome.measureText = normalizedItem.measureText || '';
     existingHome.weightText = normalizedItem.weightText || '';
-    existingHome.bestBeforeDays = toPositiveWholeDays((normalizedItem.bestBeforeDays ?? existingHome.bestBeforeDays) ?? 0);
-    existingHome.openedDays = toPositiveWholeDays((normalizedItem.openedDays ?? existingHome.openedDays) ?? 0);
-    existingHome.warnBeforeDays = toPositiveWholeDays((normalizedItem.warnBeforeDays ?? existingHome.warnBeforeDays) ?? 0);
-    if (!existingHome.addedDate) existingHome.addedDate = normalizedItem.addedDate || todayIsoLocal();
-    if (normalizedItem.openedDate) existingHome.openedDate = normalizedItem.openedDate;
     existingHome.openedAmount = Math.max(0, Number(existingHome.openedAmount || 0)) + Math.max(0, Number(normalizedItem.openedAmount || 0));
     while (Number(existingHome.size || 0) > 0 && existingHome.openedAmount >= Number(existingHome.size || 0)) {
       existingHome.quantity += 1;
@@ -4191,18 +3931,15 @@ function saveHomeItem(item) {
     }
     existingHome.packMode = isWeightUnit(existingHome.unit) && (existingHome.quantity > 1 || existingHome.openedAmount > 0 || normalizedItem.packMode === 'bags' || existingHome.packMode === 'bags') ? 'bags' : '';
     if (normalizedItem.img) existingHome.img = normalizedItem.img;
-    sanitizeExpiryFields(existingHome);
     syncQuickItemFromItem(existingHome);
   } else {
-    const freshItem = {
+    items.push({
       ...normalizedItem,
       room: normalizedItem.room || activeRoom,
       openedAmount: Math.max(0, Number(normalizedItem.openedAmount || 0)),
       packMode: isWeightUnit(normalizedItem.unit) && (Number(normalizedItem.quantity || 0) > 1 || Number(normalizedItem.openedAmount || 0) > 0 || normalizedItem.packMode === 'bags') ? 'bags' : ''
-    };
-    sanitizeExpiryFields(freshItem);
-    items.push(freshItem);
-    syncQuickItemFromItem(freshItem);
+    });
+    syncQuickItemFromItem(normalizedItem);
   }
 }
 
@@ -6046,9 +5783,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const itemPrice = document.getElementById('itemPrice');
   const itemQuantity = document.getElementById('itemQuantity');
   const itemMeasureText = document.getElementById('itemMeasureText');
-  const itemBestBeforeDays = document.getElementById('itemBestBeforeDays');
-  const itemOpenedDays = document.getElementById('itemOpenedDays');
-  const itemWarnBeforeDays = document.getElementById('itemWarnBeforeDays');
 
   const handleQuickAddKeydown = (event) => {
     const targetId = event.target?.id || '';
@@ -7917,10 +7651,6 @@ window.addEventListener('load', () => {
       quick.measureText = (typeof getMeasureTextFromSize === 'function' && Number(quick.size || 0) > 0) ? getMeasureTextFromSize(quick.size, packUnit) : (quick.measureText || '');
       quick.weightText = (typeof isWeightUnit === 'function' && isWeightUnit(packUnit)) ? quick.measureText : '';
       quick.quantity = Math.max(1, Number(quick.quantity || 1));
-      quick.bestBeforeDays = (typeof toPositiveWholeDays === 'function') ? toPositiveWholeDays((changedItem?.bestBeforeDays ?? quick.bestBeforeDays) ?? 0) : Number(changedItem?.bestBeforeDays ?? quick.bestBeforeDays ?? 0);
-      quick.openedDays = (typeof toPositiveWholeDays === 'function') ? toPositiveWholeDays((changedItem?.openedDays ?? quick.openedDays) ?? 0) : Number(changedItem?.openedDays ?? quick.openedDays ?? 0);
-      quick.warnBeforeDays = (typeof toPositiveWholeDays === 'function') ? toPositiveWholeDays((changedItem?.warnBeforeDays ?? quick.warnBeforeDays) ?? 0) : Number(changedItem?.warnBeforeDays ?? quick.warnBeforeDays ?? 0);
-      if (typeof sanitizeExpiryFields === 'function') sanitizeExpiryFields(quick);
       return;
     }
 
@@ -8168,10 +7898,292 @@ window.addEventListener('load', () => {
   window.__autoBuyZip = 'v67-pack-actions-fix';
 })();
 
-window.openHomeItem = openHomeItem;
-const originalRenderWithExpiry = render;
-render = function renderWithExpiry() {
-  const result = originalRenderWithExpiry.apply(this, arguments);
-  try { maybeNotifyExpiryWarnings(); } catch (e) { console.warn('Expiry warning error', e); }
-  return result;
-};
+
+(function () {
+  function localYMD(date = new Date()) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function toNonNegativeInt(value, fallback = 0) {
+    if (value === '' || value === null || typeof value === 'undefined') return fallback;
+    const num = Number(value);
+    if (!Number.isFinite(num)) return fallback;
+    return Math.max(0, Math.round(num));
+  }
+
+  function readExpiryInputs(prefix, source = {}) {
+    return {
+      bestBeforeDays: toNonNegativeInt(document.getElementById(`${prefix}BestBeforeDays`)?.value, toNonNegativeInt(source.bestBeforeDays, 0)),
+      openedDays: toNonNegativeInt(document.getElementById(`${prefix}OpenedDays`)?.value, toNonNegativeInt(source.openedDays, 0)),
+      warnBeforeDays: toNonNegativeInt(document.getElementById(`${prefix}WarnBeforeDays`)?.value, toNonNegativeInt(source.warnBeforeDays, 0))
+    };
+  }
+
+  function writeExpiryInputs(prefix, source = {}) {
+    const best = document.getElementById(`${prefix}BestBeforeDays`);
+    const opened = document.getElementById(`${prefix}OpenedDays`);
+    const warn = document.getElementById(`${prefix}WarnBeforeDays`);
+    if (best) best.value = toNonNegativeInt(source.bestBeforeDays, 0);
+    if (opened) opened.value = toNonNegativeInt(source.openedDays, 0);
+    if (warn) warn.value = toNonNegativeInt(source.warnBeforeDays, 0);
+  }
+
+  function copyExpiryFields(target, source = {}) {
+    if (!target) return target;
+    target.bestBeforeDays = toNonNegativeInt(source.bestBeforeDays, toNonNegativeInt(target.bestBeforeDays, 0));
+    target.openedDays = toNonNegativeInt(source.openedDays, toNonNegativeInt(target.openedDays, 0));
+    target.warnBeforeDays = toNonNegativeInt(source.warnBeforeDays, toNonNegativeInt(target.warnBeforeDays, 0));
+    if (!target.addedDate && target.type === 'home') target.addedDate = localYMD();
+    if (typeof target.openedDate === 'undefined') target.openedDate = null;
+    return target;
+  }
+
+  function daysBetween(dateText) {
+    if (!dateText) return 0;
+    const start = new Date(`${dateText}T00:00:00`);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.floor((today - start) / 86400000);
+  }
+
+  function getExpiryInfo(item) {
+    if (!item || item.type !== 'home') return null;
+    const warnDays = toNonNegativeInt(item.warnBeforeDays, 0);
+    const openedDays = toNonNegativeInt(item.openedDays, 0);
+    const bestBeforeDays = toNonNegativeInt(item.bestBeforeDays, 0);
+
+    if (item.openedDate && openedDays > 0) {
+      const left = openedDays - daysBetween(item.openedDate);
+      return {
+        mode: 'opened',
+        daysLeft: left,
+        warnDays,
+        text: left < 0 ? `Öppnad: gick ut för ${Math.abs(left)} dagar sedan` : left === 0 ? 'Öppnad: går ut idag' : `Öppnad: ${left} dagar kvar`
+      };
+    }
+
+    if (bestBeforeDays > 0) {
+      const baseDate = item.addedDate || localYMD();
+      const left = bestBeforeDays - daysBetween(baseDate);
+      return {
+        mode: 'unopened',
+        daysLeft: left,
+        warnDays,
+        text: left < 0 ? `Oöppnad: gick ut för ${Math.abs(left)} dagar sedan` : left === 0 ? 'Oöppnad: går ut idag' : `Oöppnad: ${left} dagar kvar`
+      };
+    }
+
+    if (openedDays > 0 && item.openedDate) {
+      const left = openedDays - daysBetween(item.openedDate);
+      return {
+        mode: 'opened',
+        daysLeft: left,
+        warnDays,
+        text: left < 0 ? `Öppnad: gick ut för ${Math.abs(left)} dagar sedan` : left === 0 ? 'Öppnad: går ut idag' : `Öppnad: ${left} dagar kvar`
+      };
+    }
+
+    return null;
+  }
+
+  function getExpiryClass(info) {
+    if (!info) return '';
+    if (info.daysLeft <= 0) return 'expiry-bad';
+    if (info.daysLeft <= info.warnDays) return 'expiry-warn';
+    return 'expiry-good';
+  }
+
+  const originalBuildItemFromForm = window.buildItemFromForm;
+  window.buildItemFromForm = function patchedBuildItemFromForm() {
+    const result = originalBuildItemFromForm.apply(this, arguments);
+    if (!result || !result.item) return result;
+    const template = result.matchedQuick || {};
+    copyExpiryFields(result.item, readExpiryInputs('item', template));
+    result.item.openedDate = null;
+    return result;
+  };
+  buildItemFromForm = window.buildItemFromForm;
+
+  const originalClearInputs = window.clearInputs;
+  window.clearInputs = function patchedClearInputs() {
+    const out = originalClearInputs.apply(this, arguments);
+    writeExpiryInputs('item', { bestBeforeDays: 0, openedDays: 0, warnBeforeDays: 0 });
+    return out;
+  };
+  clearInputs = window.clearInputs;
+
+  const originalApplyQuickItemToMainForm = window.applyQuickItemToMainForm;
+  window.applyQuickItemToMainForm = function patchedApplyQuickItemToMainForm(index) {
+    const out = originalApplyQuickItemToMainForm.apply(this, arguments);
+    const item = Array.isArray(quickItems) ? quickItems[index] : null;
+    writeExpiryInputs('item', item || {});
+    return out;
+  };
+  applyQuickItemToMainForm = window.applyQuickItemToMainForm;
+
+  const originalOpenEditModal = window.openEditModal;
+  window.openEditModal = function patchedOpenEditModal(item) {
+    const out = originalOpenEditModal.apply(this, arguments);
+    writeExpiryInputs('edit', item || {});
+    return out;
+  };
+  openEditModal = window.openEditModal;
+
+  const originalSaveQuickTemplate = window.saveQuickTemplate;
+  window.saveQuickTemplate = function patchedSaveQuickTemplate(item) {
+    copyExpiryFields(item, item || {});
+    const out = originalSaveQuickTemplate.apply(this, arguments);
+    const quick = Array.isArray(quickItems) ? quickItems.find(q => normalizeText(q.name) === normalizeText(item?.name)) : null;
+    if (quick) copyExpiryFields(quick, item || {});
+    return out;
+  };
+  saveQuickTemplate = window.saveQuickTemplate;
+
+  const originalSyncQuickItemFromItem = window.syncQuickItemFromItem;
+  window.syncQuickItemFromItem = function patchedSyncQuickItemFromItem(changedItem) {
+    const out = originalSyncQuickItemFromItem.apply(this, arguments);
+    const quick = Array.isArray(quickItems) ? quickItems.find(q => normalizeText(q.name) === normalizeText(changedItem?.name)) : null;
+    if (quick) copyExpiryFields(quick, changedItem || {});
+    return out;
+  };
+  syncQuickItemFromItem = window.syncQuickItemFromItem;
+
+  function syncExpiryToHome(item) {
+    if (!item) return;
+    const home = Array.isArray(items) ? items.find(entry => entry.type === 'home' && sameVariant(entry, item)) : null;
+    if (home) {
+      copyExpiryFields(home, item);
+      if (!home.addedDate) home.addedDate = localYMD();
+      if (typeof home.openedDate === 'undefined') home.openedDate = null;
+      if (typeof syncQuickItemFromItem === 'function') syncQuickItemFromItem(home);
+    }
+  }
+
+  const originalSaveHomeItem = window.saveHomeItem;
+  window.saveHomeItem = function patchedSaveHomeItem(item) {
+    copyExpiryFields(item, item || {});
+    if (!item.addedDate) item.addedDate = localYMD();
+    const out = originalSaveHomeItem.apply(this, arguments);
+    syncExpiryToHome(item);
+    return out;
+  };
+  saveHomeItem = window.saveHomeItem;
+
+  const originalAddHomeItemFromTemplate = window.addHomeItemFromTemplate;
+  window.addHomeItemFromTemplate = function patchedAddHomeItemFromTemplate(sourceItem, quantity, targetPlace) {
+    const out = originalAddHomeItemFromTemplate.apply(this, arguments);
+    const probe = { ...(sourceItem || {}), type: 'home', place: targetPlace || sourceItem?.place || 'kyl' };
+    syncExpiryToHome(probe);
+    return out;
+  };
+  addHomeItemFromTemplate = window.addHomeItemFromTemplate;
+
+  const originalSaveEditItem = window.saveEditItem;
+  window.saveEditItem = function patchedSaveEditItem() {
+    const wasQuick = editingQuick;
+    const editIndex = editingIndex;
+    const oldItem = wasQuick ? quickItems[editIndex] : items[editIndex];
+    const oldName = oldItem?.name || '';
+    const newName = document.getElementById('editName')?.value.trim() || oldName;
+    const expiry = readExpiryInputs('edit', oldItem || {});
+    const out = originalSaveEditItem.apply(this, arguments);
+
+    if (wasQuick) {
+      const quick = Array.isArray(quickItems) ? quickItems.find(q => normalizeText(q.name) === normalizeText(newName)) || quickItems.find(q => normalizeText(q.name) === normalizeText(oldName)) : null;
+      if (quick) {
+        copyExpiryFields(quick, expiry);
+        items.forEach(entry => {
+          if (normalizeText(entry.name) === normalizeText(quick.name)) copyExpiryFields(entry, quick);
+        });
+      }
+    } else {
+      const home = Array.isArray(items) ? items.find(entry => entry.type !== 'buy' && normalizeText(entry.name) === normalizeText(newName)) || items.find(entry => entry.type !== 'buy' && normalizeText(entry.name) === normalizeText(oldName)) : null;
+      if (home) {
+        copyExpiryFields(home, expiry);
+        if (home.type === 'home' && !home.addedDate) home.addedDate = localYMD();
+        const quick = Array.isArray(quickItems) ? quickItems.find(q => normalizeText(q.name) === normalizeText(home.name)) : null;
+        if (quick) copyExpiryFields(quick, home);
+      }
+    }
+
+    try { if (typeof save === 'function') save(); } catch (error) {}
+    try { if (typeof render === 'function') render(); } catch (error) {}
+    return out;
+  };
+  saveEditItem = window.saveEditItem;
+
+  window.markItemOpened = function markItemOpened(index) {
+    const item = Array.isArray(items) ? items[index] : null;
+    if (!item || item.type !== 'home') return;
+    item.openedDate = localYMD();
+    if (!item.addedDate) item.addedDate = localYMD();
+    try { if (typeof syncQuickItemFromItem === 'function') syncQuickItemFromItem(item); } catch (error) {}
+    try { if (typeof save === 'function') save(); } catch (error) {}
+    try { if (typeof render === 'function') render(); } catch (error) {}
+  };
+
+  window.resetOpenedDate = function resetOpenedDate(index) {
+    const item = Array.isArray(items) ? items[index] : null;
+    if (!item || item.type !== 'home') return;
+    item.openedDate = null;
+    try { if (typeof syncQuickItemFromItem === 'function') syncQuickItemFromItem(item); } catch (error) {}
+    try { if (typeof save === 'function') save(); } catch (error) {}
+    try { if (typeof render === 'function') render(); } catch (error) {}
+  };
+
+  const originalCreateCard = window.createCard;
+  window.createCard = function patchedCreateCard(item, source = 'items') {
+    const card = originalCreateCard.apply(this, arguments);
+    if (!card || !(card instanceof HTMLElement)) return card;
+
+    if (source === 'quick') {
+      const info = card.querySelector('.info');
+      if (info) {
+        const templateMeta = document.createElement('div');
+        templateMeta.className = 'quick-path';
+        templateMeta.textContent = `Mall • Oöppnad ${toNonNegativeInt(item.bestBeforeDays, 0)} d • Öppnad ${toNonNegativeInt(item.openedDays, 0)} d • Varning ${toNonNegativeInt(item.warnBeforeDays, 0)} d`;
+        info.appendChild(templateMeta);
+      }
+      return card;
+    }
+
+    if (item?.type === 'home') {
+      const info = card.querySelector('.info');
+      const actions = card.querySelector('.actions');
+      const expiry = getExpiryInfo(item);
+
+      if (info) {
+        const expiryDiv = document.createElement('div');
+        expiryDiv.className = `quick-path ${getExpiryClass(expiry)}`.trim();
+        expiryDiv.style.marginTop = '6px';
+        expiryDiv.textContent = expiry ? expiry.text : `Oöppnad ${toNonNegativeInt(item.bestBeforeDays, 0)} d • Öppnad ${toNonNegativeInt(item.openedDays, 0)} d`;
+        info.appendChild(expiryDiv);
+      }
+
+      if (actions) {
+        const openBtn = document.createElement('button');
+        openBtn.type = 'button';
+        openBtn.className = 'ghost-btn';
+        const realIndex = Array.isArray(items) ? items.indexOf(item) : -1;
+        if (item.openedDate) {
+          openBtn.textContent = '↺ Nollställ öppnad';
+          openBtn.onclick = function () { if (realIndex >= 0) window.resetOpenedDate(realIndex); };
+        } else {
+          openBtn.textContent = '🔓 Öppna';
+          openBtn.onclick = function () { if (realIndex >= 0) window.markItemOpened(realIndex); };
+        }
+        actions.insertBefore(openBtn, actions.firstChild);
+      }
+    }
+
+    return card;
+  };
+  createCard = window.createCard;
+
+  if (typeof window.render === 'function') {
+    try { window.render(); } catch (error) {}
+  }
+})();
