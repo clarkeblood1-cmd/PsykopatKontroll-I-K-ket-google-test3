@@ -2388,3 +2388,35 @@ input:focus,select:focus,textarea:focus{
 .expiry-muted{background:rgba(148,163,184,.18);color:#e2e8f0}
 .quick-field-date input,.quick-field-days input{width:100%}
 @media (max-width: 900px){.home-expiry-tools{justify-content:stretch}.home-expiry-tools select,.home-expiry-tools button{width:100%}}
+
+
+/* Demo bypass with testdata */
+.flow-secondary-btn{
+  min-height:44px;
+  border:none;
+  border-radius:16px;
+  padding:12px 16px;
+  font-size:14px;
+  font-weight:800;
+  cursor:pointer;
+  background:linear-gradient(135deg, rgba(56,189,248,.22), rgba(168,85,247,.22));
+  color:#fff;
+  border:1px solid rgba(255,255,255,.12);
+  box-shadow:0 12px 28px rgba(0,0,0,.22);
+}
+.flow-secondary-btn:hover{
+  background:linear-gradient(135deg, rgba(56,189,248,.34), rgba(168,85,247,.34));
+}
+.demo-bypass-wrap{
+  margin-top:14px;
+  display:grid;
+  gap:8px;
+}
+.demo-bypass-note{
+  font-size:12px;
+  color:var(--muted);
+  text-align:center;
+}
+body.demo-mode .app-header{
+  box-shadow:0 12px 30px rgba(56,189,248,.12);
+}

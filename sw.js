@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v74-quick-template-sync';
+const CACHE_NAME = 'matlista-app-v76-demo-testdata';
 const ASSETS = [
   './',
   './index.html',
@@ -6,7 +6,7 @@ const ASSETS = [
   './script.js',
   './cloud-sync.js',
   './cloud-hooks.js',
-  './quick-template-sync.js',
+  './demo-bypass.js',
   './household.js',
   './firebase-config.js',
   './manifest.json',

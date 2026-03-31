@@ -1,0 +1,6 @@
+Demo bypass + testdata version
+- Added button: Demo utan Google
+- Opens app directly to Har hemma
+- Seeds local demo data on first click
+- Includes quick list, home items and buy items
+- Added reset demo-data button in header
