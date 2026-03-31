@@ -197,6 +197,18 @@
       <div class="quick-field quick-field-price">
         <input id="itemPrice" type="number" min="0" placeholder="Pris (kr)">
       </div>
+      <div class="quick-field quick-field-expiry">
+        <input id="itemBestBeforeDays" type="number" min="0" placeholder="Bäst före (dagar)">
+      </div>
+
+      <div class="quick-field quick-field-expiry">
+        <input id="itemOpenedDays" type="number" min="0" placeholder="Öppnad (dagar)">
+      </div>
+
+      <div class="quick-field quick-field-expiry">
+        <input id="itemWarnBeforeDays" type="number" min="0" placeholder="Varna före (dagar)">
+      </div>
+
 
       <button type="button" class="ghost-btn quick-clear-btn" onclick="clearInputs()">🧹 Rensa</button>
 
@@ -342,6 +354,7 @@
         <button type="button" class="room-arrow" onclick="scrollPlaceTabs(1)">▶</button>
       </div>
       <div class="section-subtitle" id="homeRoomSubtitle">Uppdelat per rum och plats</div>
+      <div id="expiryAlerts" class="expiry-alerts"></div>
       <div class="container" id="homeList"></div>
     </section>
 
