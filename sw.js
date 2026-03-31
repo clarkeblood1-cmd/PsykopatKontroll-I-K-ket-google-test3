@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v73-appstore-ui';
+const CACHE_NAME = 'matlista-app-v74-quick-template-sync';
 const ASSETS = [
   './',
   './index.html',
@@ -6,7 +6,7 @@ const ASSETS = [
   './script.js',
   './cloud-sync.js',
   './cloud-hooks.js',
-  './appstore-ui.js',
+  './quick-template-sync.js',
   './household.js',
   './firebase-config.js',
   './manifest.json',

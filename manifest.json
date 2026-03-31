@@ -1,12 +1,12 @@
 {
-  "name": "PsykopatKontroll I Hemmet",
-  "short_name": "Hemmet Pro",
+  "name": "🏠 PsykopatKontroll I Hemmet 🏠",
+  "short_name": "Hemmet",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#07122a",
   "theme_color": "#07122a",
-  "description": "Ha hemma, bäst före, öppnad, notiser och smart hushållslista i premium-stil.",
+  "description": "Hemlista, rum och planering i en app med iPhone-känsla.",
   "icons": [
     {
       "src": "icons/icon-192.png",
