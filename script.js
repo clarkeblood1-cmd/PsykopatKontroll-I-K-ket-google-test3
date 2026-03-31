@@ -3817,6 +3817,9 @@ function openEditModal(item, isQuick, index) {
   const editCategory = document.getElementById('editCategory');
   const editPlace = document.getElementById('editPlace');
   const editMeasureText = document.getElementById('editMeasureText');
+  const editBestBeforeDays = document.getElementById('editBestBeforeDays');
+  const editOpenedDays = document.getElementById('editOpenedDays');
+  const editWarnBeforeDays = document.getElementById('editWarnBeforeDays');
 
   if (editName) editName.value = item.name || '';
   if (editPrice) editPrice.value = Number(item.price || 0) || '';
@@ -3836,6 +3839,9 @@ function openEditModal(item, isQuick, index) {
     renderPlaceOptions();
     editPlace.value = item.place || 'kyl';
   }
+  if (editBestBeforeDays) editBestBeforeDays.value = toPositiveWholeDays(item.bestBeforeDays || 0) || '';
+  if (editOpenedDays) editOpenedDays.value = toPositiveWholeDays(item.openedDays || 0) || '';
+  if (editWarnBeforeDays) editWarnBeforeDays.value = toPositiveWholeDays(item.warnBeforeDays || 0) || '';
   if (editModal) editModal.style.display = 'flex';
   try { syncEditMeasureModeVisibility(); updateEditMeasureSummary(); } catch (e) {}
 }
@@ -3921,6 +3927,9 @@ function saveEditItem() {
     room: updatedRoom,
     category: ensureCategoryExists(document.getElementById('editCategory')?.value || currentItem.category || getRoomFallbackCategory(updatedRoom), updatedRoom),
     place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || getPlacesForRoom(updatedRoom)[0]?.key || 'kyl', updatedRoom),
+    bestBeforeDays: toPositiveWholeDays(document.getElementById('editBestBeforeDays')?.value || 0),
+    openedDays: toPositiveWholeDays(document.getElementById('editOpenedDays')?.value || 0),
+    warnBeforeDays: toPositiveWholeDays(document.getElementById('editWarnBeforeDays')?.value || 0),
     img: currentItem?.img && String(currentItem.img).startsWith('data:')
       ? String(currentItem.img)
       : getAutoImagePath(updatedName)

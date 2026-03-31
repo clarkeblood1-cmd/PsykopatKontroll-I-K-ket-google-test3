@@ -569,6 +569,10 @@
 
         <select id="editPlace" data-place-select></select>
 
+        <input id="editBestBeforeDays" type="number" min="0" placeholder="Bäst före oöppnad (dagar)">
+        <input id="editOpenedDays" type="number" min="0" placeholder="Öppnad (dagar)">
+        <input id="editWarnBeforeDays" type="number" min="0" placeholder="Varning före (dagar)">
+
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button type="button" class="ghost-btn" style="flex:1;" onclick="closeEditModal()">Avbryt</button>
           <button type="button" style="flex:1;" onclick="saveEditItem()">Spara</button>
