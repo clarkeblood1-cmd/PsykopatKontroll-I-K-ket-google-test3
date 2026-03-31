@@ -38,14 +38,6 @@ let roomDefs = JSON.parse(localStorage.getItem('matlista_rooms') || 'null');
 let activeRoom = localStorage.getItem('matlista_active_room') || 'koket';
 let activePlaceFilter = localStorage.getItem('matlista_active_place_filter') || '';
 
-let expirySortMode = localStorage.getItem('matlista_expiry_sort_mode') || 'expiry';
-let expiryNotificationPermissionAsked = localStorage.getItem('matlista_expiry_notify_asked') === '1';
-let lastExpiryNotificationSignature = localStorage.getItem('matlista_last_expiry_notification') || '';
-let expiryNotificationCooldown = Number(localStorage.getItem('matlista_expiry_notification_time') || 0);
-const EXPIRY_WARNING_DAYS = 3;
-const EXPIRY_NOTIFICATION_INTERVAL_MS = 6 * 60 * 60 * 1000;
-
-
 
 function normalizeRoomKey(value) {
   return String(value || '')
@@ -59,217 +51,6 @@ function normalizeRoomKey(value) {
 
 function cleanRoomLabel(value) {
   return String(value || '').replace(/\s+/g, ' ').trim().toUpperCase();
-}
-
-
-function normalizeWholeDays(value, fallback = 0) {
-  const n = Math.round(Number(value || 0));
-  return Number.isFinite(n) ? Math.max(0, n) : fallback;
-}
-
-function parseDateOnly(value) {
-  if (!value) return null;
-  const match = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
-  const [, year, month, day] = match;
-  return new Date(Number(year), Number(month) - 1, Number(day), 0, 0, 0, 0);
-}
-
-function startOfToday() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-}
-
-function formatDateOnly(date) {
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function addDaysToDateString(baseDateString, days) {
-  const base = parseDateOnly(baseDateString) || startOfToday();
-  const result = new Date(base.getFullYear(), base.getMonth(), base.getDate() + normalizeWholeDays(days, 0), 0, 0, 0, 0);
-  return formatDateOnly(result);
-}
-
-function getDiffDaysFromToday(dateString) {
-  const date = parseDateOnly(dateString);
-  if (!date) return null;
-  const today = startOfToday();
-  return Math.round((date.getTime() - today.getTime()) / 86400000);
-}
-
-function formatRemainingDays(days) {
-  if (days == null) return '';
-  if (days > 1) return `${days} dagar kvar`;
-  if (days === 1) return '1 dag kvar';
-  if (days === 0) return 'Går ut idag';
-  if (days === -1) return 'Gick ut igår';
-  return `Gick ut för ${Math.abs(days)} dagar sedan`;
-}
-
-function getExpiryStatus(item) {
-  const bestBeforeDays = getDiffDaysFromToday(item?.bestBefore);
-  const openDaysSetting = normalizeWholeDays(item?.openDays, 0);
-  const openExpiryDate = item?.openedDate && openDaysSetting > 0 ? addDaysToDateString(item.openedDate, openDaysSetting) : '';
-  const openedDaysLeft = openExpiryDate ? getDiffDaysFromToday(openExpiryDate) : null;
-  const effectiveDays = [bestBeforeDays, openedDaysLeft].filter(v => v !== null);
-  const minDays = effectiveDays.length ? Math.min(...effectiveDays) : null;
-  let level = 'muted';
-  if (minDays !== null) {
-    if (minDays < 0) level = 'expired';
-    else if (minDays <= EXPIRY_WARNING_DAYS) level = 'warning';
-    else level = 'good';
-  }
-  return {
-    bestBeforeDays,
-    openedDaysLeft,
-    openExpiryDate,
-    effectiveDaysLeft: minDays,
-    level
-  };
-}
-
-function getExpiryBadges(item) {
-  const status = getExpiryStatus(item);
-  const badges = [];
-  if (status.bestBeforeDays !== null) {
-    badges.push({ label: `Bäst före: ${formatRemainingDays(status.bestBeforeDays)}`, level: status.bestBeforeDays < 0 ? 'expired' : (status.bestBeforeDays <= EXPIRY_WARNING_DAYS ? 'warning' : 'good') });
-  } else if (normalizeWholeDays(item?.shelfLifeDays, 0) > 0) {
-    badges.push({ label: `Bäst före mall: ${normalizeWholeDays(item?.shelfLifeDays, 0)} dagar`, level: 'muted' });
-  }
-  if (item?.openedDate) {
-    const openedForDays = Math.max(0, Math.round((startOfToday().getTime() - parseDateOnly(item.openedDate).getTime()) / 86400000));
-    badges.push({ label: `Öppnad: ${openedForDays} dagar sedan`, level: 'muted' });
-    if (status.openedDaysLeft !== null) {
-      badges.push({ label: `Efter öppning: ${formatRemainingDays(status.openedDaysLeft)}`, level: status.openedDaysLeft < 0 ? 'expired' : (status.openedDaysLeft <= EXPIRY_WARNING_DAYS ? 'warning' : 'good') });
-    }
-  } else if (normalizeWholeDays(item?.openDays, 0) > 0) {
-    badges.push({ label: `Efter öppning mall: ${normalizeWholeDays(item?.openDays, 0)} dagar`, level: 'muted' });
-  }
-  return badges;
-}
-
-function getExpirySortValue(item) {
-  const status = getExpiryStatus(item);
-  if (status.effectiveDaysLeft === null) return Number.MAX_SAFE_INTEGER;
-  return status.effectiveDaysLeft;
-}
-
-function normalizeExpiryFields(item, matchedQuick = null) {
-  const templateShelfLife = normalizeWholeDays(item?.shelfLifeDays ?? matchedQuick?.shelfLifeDays, 0);
-  const templateOpenDays = normalizeWholeDays(item?.openDays ?? matchedQuick?.openDays, 0);
-  const next = { ...item };
-  next.shelfLifeDays = templateShelfLife;
-  next.openDays = templateOpenDays;
-  next.openedDate = item?.openedDate ? formatDateOnly(parseDateOnly(item.openedDate)) : '';
-  next.bestBefore = item?.bestBefore ? formatDateOnly(parseDateOnly(item.bestBefore)) : '';
-  if (!next.bestBefore && templateShelfLife > 0 && item?.type !== 'buy') {
-    next.bestBefore = addDaysToDateString(formatDateOnly(startOfToday()), templateShelfLife);
-  }
-  return next;
-}
-
-function getTodayDateString() {
-  return formatDateOnly(startOfToday());
-}
-
-function collectExpiryAlertItems() {
-  return items
-    .filter(item => item.type === 'home')
-    .map(item => ({ item, status: getExpiryStatus(item) }))
-    .filter(entry => entry.status.effectiveDaysLeft !== null && entry.status.effectiveDaysLeft <= EXPIRY_WARNING_DAYS)
-    .sort((a, b) => a.status.effectiveDaysLeft - b.status.effectiveDaysLeft || String(a.item.name || '').localeCompare(String(b.item.name || ''), 'sv'));
-}
-
-function updateExpiryControls() {
-  const sortSelect = document.getElementById('expirySortMode');
-  if (sortSelect && sortSelect.value !== expirySortMode) sortSelect.value = expirySortMode;
-  const notifyBtn = document.getElementById('expiryNotifyBtn');
-  if (notifyBtn) {
-    const supported = 'Notification' in window;
-    const state = supported ? Notification.permission : 'unsupported';
-    notifyBtn.disabled = !supported;
-    notifyBtn.textContent = !supported ? '🔕 Notiser stöds inte' : (state === 'granted' ? '🔔 Notiser aktiva' : '🔔 Aktivera notiser');
-  }
-}
-
-async function requestExpiryNotifications() {
-  if (!('Notification' in window)) {
-    alert('Den här enheten/webbläsaren stöder inte notiser.');
-    updateExpiryControls();
-    return;
-  }
-  try {
-    const permission = await Notification.requestPermission();
-    expiryNotificationPermissionAsked = true;
-    localStorage.setItem('matlista_expiry_notify_asked', '1');
-    if (permission === 'granted') {
-      maybeSendExpiryNotifications(true);
-    }
-  } catch (error) {
-    console.warn('Kunde inte aktivera notiser:', error);
-  }
-  updateExpiryControls();
-}
-
-function dispatchExpiryNotification(title, body) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.ready.then(reg => {
-      if (reg?.active) {
-        reg.active.postMessage({
-          type: 'SHOW_NOTIFICATION',
-          title,
-          body,
-          url: './index.html'
-        });
-      } else {
-        new Notification(title, { body });
-      }
-    }).catch(() => {
-      new Notification(title, { body });
-    });
-    return;
-  }
-  new Notification(title, { body });
-}
-
-function maybeSendExpiryNotifications(force = false) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  const alerts = collectExpiryAlertItems();
-  if (!alerts.length) return;
-  const signature = alerts.slice(0, 8).map(entry => `${entry.item.name}:${entry.status.effectiveDaysLeft}`).join('|');
-  const now = Date.now();
-  if (!force && signature === lastExpiryNotificationSignature && now - expiryNotificationCooldown < EXPIRY_NOTIFICATION_INTERVAL_MS) return;
-  const lines = alerts.slice(0, 4).map(entry => `${entry.item.name}: ${formatRemainingDays(entry.status.effectiveDaysLeft)}`);
-  const body = lines.join(' • ');
-  dispatchExpiryNotification('Matlista – varor som snart går ut', body);
-  lastExpiryNotificationSignature = signature;
-  expiryNotificationCooldown = now;
-  localStorage.setItem('matlista_last_expiry_notification', signature);
-  localStorage.setItem('matlista_expiry_notification_time', String(now));
-}
-
-function setExpirySortMode(value) {
-  expirySortMode = value === 'name' ? 'name' : 'expiry';
-  localStorage.setItem('matlista_expiry_sort_mode', expirySortMode);
-  updateExpiryControls();
-  render();
-}
-
-function markItemOpened(index) {
-  const item = items[index];
-  if (!item || item.type !== 'home') return;
-  item.openedDate = getTodayDateString();
-  if (!item.bestBefore && normalizeWholeDays(item.shelfLifeDays, 0) > 0) {
-    item.bestBefore = addDaysToDateString(getTodayDateString(), item.shelfLifeDays);
-  }
-  save();
-  render();
-  maybeSendExpiryNotifications(true);
 }
 
 
@@ -2263,11 +2044,7 @@ function hydrateData() {
       type: item?.type === 'buy' ? 'buy' : 'home',
       img: item?.img ? String(item.img) : getAutoImagePath(item?.name || ''),
       openedAmount: Math.max(0, Number(item?.openedAmount || 0)),
-      packMode: item?.packMode === 'bags' ? 'bags' : '',
-      bestBefore: item?.bestBefore ? formatDateOnly(parseDateOnly(item.bestBefore)) : '',
-      openedDate: item?.openedDate ? formatDateOnly(parseDateOnly(item.openedDate)) : '',
-      shelfLifeDays: normalizeWholeDays(item?.shelfLifeDays, 0),
-      openDays: normalizeWholeDays(item?.openDays, 0)
+      packMode: item?.packMode === 'bags' ? 'bags' : ''
     };
   }).filter(item => item.name);
 
@@ -2287,11 +2064,7 @@ function hydrateData() {
       place: ensurePlaceExists(item?.place || fallbackPlace, room),
       room,
       type: 'home',
-      img: item?.img ? String(item.img) : getAutoImagePath(item?.name || ''),
-      bestBefore: '',
-      openedDate: '',
-      shelfLifeDays: normalizeWholeDays(item?.shelfLifeDays, 0),
-      openDays: normalizeWholeDays(item?.openDays, 0)
+      img: item?.img ? String(item.img) : getAutoImagePath(item?.name || '')
     };
   }).filter(item => item.name);
 
@@ -2327,7 +2100,6 @@ function save() {
   localStorage.setItem('matlista_rooms', JSON.stringify(getAllRoomDefs()));
   localStorage.setItem('matlista_active_room', activeRoom);
   localStorage.setItem('matlista_active_place_filter', activePlaceFilter);
-  localStorage.setItem('matlista_expiry_sort_mode', expirySortMode);
   localStorage.setItem('homeOpenState', JSON.stringify(homeOpenState));
   localStorage.setItem('matlista_recipe_choices', JSON.stringify(recipeIngredientChoices));
   localStorage.setItem('matlista_household_size', String(householdSize));
@@ -2346,7 +2118,6 @@ function save() {
   window.roomDefs = getAllRoomDefs();
   window.activeRoom = activeRoom;
   window.activePlaceFilter = activePlaceFilter;
-  window.expirySortMode = expirySortMode;
   window.homeOpenState = homeOpenState;
   window.recipeIngredientChoices = recipeIngredientChoices;
   window.householdSize = householdSize;
@@ -2370,7 +2141,6 @@ window.applyCloudState = function applyCloudState(data) {
   if (Array.isArray(data.roomDefs)) roomDefs = data.roomDefs;
   if (typeof data.activeRoom === 'string' && data.activeRoom) activeRoom = data.activeRoom;
   if (typeof data.activePlaceFilter === 'string') activePlaceFilter = data.activePlaceFilter;
-  if (typeof data.expirySortMode === 'string' && data.expirySortMode) expirySortMode = data.expirySortMode;
   if (data.homeOpenState && typeof data.homeOpenState === 'object') homeOpenState = data.homeOpenState;
   if (data.recipeIngredientChoices && typeof data.recipeIngredientChoices === 'object') recipeIngredientChoices = data.recipeIngredientChoices;
   if (typeof data.householdSize !== 'undefined') householdSize = Math.max(1, Math.min(8, Number(data.householdSize || 1)));
@@ -3504,8 +3274,6 @@ function createCard(item, source = 'items') {
   }
 
   const imageSource = getItemImageSourceMeta(item);
-  const expiryBadges = source === 'quick' ? getExpiryBadges(item) : getExpiryBadges(item);
-  const expiryHtml = expiryBadges.length ? `<div class="expiry-stack">${expiryBadges.map(badge => `<div class="expiry-pill expiry-${badge.level}">${badge.label}</div>`).join('')}</div>` : '';
   div.innerHTML = `
     <img src="${img}" alt="${item.name}" data-item-name="${item.name}" data-image-source="${imageSource.type}" onerror="handleItemImageError(this)" onclick="showImage(${realIndex})">
     <div class="info">
@@ -3529,11 +3297,9 @@ function createCard(item, source = 'items') {
             }</div>`
           : ''}
       </div>
-      ${item.type === 'home' ? expiryHtml : ''}
     </div>
     <div class="actions">
       <button type="button" class="ghost-btn image-source-badge image-source-${imageSource.type}" title="${imageSource.title}" onclick="showImageSourceInfo('${imageSource.type}')">${imageSource.label}</button>
-      ${item.type === 'home' ? `<button type="button" class="ghost-btn" onclick="markItemOpened(${realIndex})">📂 Öppna idag</button>` : ''}
       <button type="button" class="ghost-btn" onclick="editMainItem(${realIndex})">✏️ Ändra</button>
       <button type="button" class="delete" onclick="removeItem(${realIndex})">🗑️</button>
       <button type="button" onclick="moveItem(${realIndex})">${moveText}</button>
@@ -3562,12 +3328,7 @@ function renderHomeList(searchText, categoryFilter) {
     const filtered = roomItems.filter(item =>
       item.place === place.key &&
       matchesSearch(item, searchText, categoryFilter)
-    ).sort((a, b) => {
-      if (expirySortMode === 'name') return String(a.name || '').localeCompare(String(b.name || ''), 'sv');
-      const diff = getExpirySortValue(a) - getExpirySortValue(b);
-      if (diff !== 0) return diff;
-      return String(a.name || '').localeCompare(String(b.name || ''), 'sv');
-    });
+    );
 
     if (!filtered.length) return;
     hasAny = true;
@@ -3656,19 +3417,6 @@ function applyQuickItemToMainForm(index) {
 
   hideMainItemSuggestions();
   try { syncMeasureModeVisibility(); updateMeasureSummary(); } catch (e) {}
-}
-
-
-function applyQuickTemplateDefaults(item) {
-  if (!item) return;
-  const shelfLifeInput = document.getElementById('itemShelfLifeDays');
-  const openDaysInput = document.getElementById('itemOpenDays');
-  const bestBeforeInput = document.getElementById('itemBestBefore');
-  if (shelfLifeInput && !shelfLifeInput.value) shelfLifeInput.value = normalizeWholeDays(item.shelfLifeDays, 0) || '';
-  if (openDaysInput && !openDaysInput.value) openDaysInput.value = normalizeWholeDays(item.openDays, 0) || '';
-  if (bestBeforeInput && !bestBeforeInput.value && normalizeWholeDays(item.shelfLifeDays, 0) > 0) {
-    bestBeforeInput.value = addDaysToDateString(getTodayDateString(), normalizeWholeDays(item.shelfLifeDays, 0));
-  }
 }
 
 function showMainItemSuggestions() {
@@ -3886,9 +3634,6 @@ function openEditModal(item, isQuick, index) {
   const editCategory = document.getElementById('editCategory');
   const editPlace = document.getElementById('editPlace');
   const editMeasureText = document.getElementById('editMeasureText');
-  const editBestBefore = document.getElementById('editBestBefore');
-  const editShelfLifeDays = document.getElementById('editShelfLifeDays');
-  const editOpenDays = document.getElementById('editOpenDays');
 
   if (editName) editName.value = item.name || '';
   if (editPrice) editPrice.value = Number(item.price || 0) || '';
@@ -3898,9 +3643,6 @@ function openEditModal(item, isQuick, index) {
   if (editMeasureText) editMeasureText.value = supportsMeasureInput(item.unit) ? getMeasureTextFromSize(item.size, isPackUnit(item.unit) ? getPackMeasureUnit(item, 'g') : item.unit) : '';
   const editPackMeasureUnit = document.getElementById('editPackMeasureUnit');
   if (editPackMeasureUnit) editPackMeasureUnit.value = getPackMeasureUnit(item, 'g');
-  if (editBestBefore) editBestBefore.value = item.bestBefore || '';
-  if (editShelfLifeDays) editShelfLifeDays.value = normalizeWholeDays(item.shelfLifeDays, 0) || '';
-  if (editOpenDays) editOpenDays.value = normalizeWholeDays(item.openDays, 0) || '';
   if (editCategory) {
     editCategory.dataset.currentValue = item.category || getRoomFallbackCategory(item.room || activeRoom);
     renderCategoryOptions();
@@ -3982,8 +3724,6 @@ function saveEditItem() {
   }
 
   const updatedRoom = currentItem.room || activeRoom;
-  const updatedShelfLifeDays = normalizeWholeDays(document.getElementById('editShelfLifeDays')?.value || currentItem.shelfLifeDays, 0);
-  const updatedOpenDays = normalizeWholeDays(document.getElementById('editOpenDays')?.value || currentItem.openDays, 0);
   const updated = {
     name: updatedName,
     price: Number(document.getElementById('editPrice')?.value || 0),
@@ -4000,17 +3740,13 @@ function saveEditItem() {
     place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || getPlacesForRoom(updatedRoom)[0]?.key || 'kyl', updatedRoom),
     img: currentItem?.img && String(currentItem.img).startsWith('data:')
       ? String(currentItem.img)
-      : getAutoImagePath(updatedName),
-    bestBefore: String(document.getElementById('editBestBefore')?.value || '').trim(),
-    openedDate: currentItem?.openedDate || '',
-    shelfLifeDays: updatedShelfLifeDays,
-    openDays: updatedOpenDays
+      : getAutoImagePath(updatedName)
   };
 
   if (!updated.name) return;
 
   const oldName = currentItem.name;
-  targetList[editingIndex] = normalizeExpiryFields({ ...currentItem, ...updated });
+  targetList[editingIndex] = { ...currentItem, ...updated };
 
   if (editingQuick) {
     items = items.map(item =>
@@ -4087,9 +3823,6 @@ function clearInputs(focusName = false) {
   setUiForUnit('item', 'st');
   if (itemSize) updateSizeSelect('itemSize', 'st');
   if (itemMeasureText) itemMeasureText.value = '';
-  if (itemBestBefore) itemBestBefore.value = '';
-  if (itemShelfLifeDays) itemShelfLifeDays.value = '';
-  if (itemOpenDays) itemOpenDays.value = '';
   const itemPackMeasureUnit = document.getElementById('itemPackMeasureUnit');
   if (itemPackMeasureUnit) itemPackMeasureUnit.value = 'g';
   renderQuickAddRoomOptions(selectedQuickRoom, false);
@@ -4110,9 +3843,6 @@ function buildItemFromForm() {
   const sizeInput = document.getElementById('itemSize');
   const placeInput = document.getElementById('itemPlace');
   const itemMeasureTextInput = document.getElementById('itemMeasureText');
-  const itemBestBeforeInput = document.getElementById('itemBestBefore');
-  const itemShelfLifeInput = document.getElementById('itemShelfLifeDays');
-  const itemOpenDaysInput = document.getElementById('itemOpenDays');
 
   const name = nameInput?.value.trim() || '';
   if (!name) return null;
@@ -4140,10 +3870,6 @@ function buildItemFromForm() {
 
   const itemRoom = getQuickRoomSelection() || matchedQuick?.room || activeRoom;
   const fallbackPlace = getPlacesForRoom(itemRoom)[0]?.key || 'kyl';
-  const shelfLifeDays = normalizeWholeDays(itemShelfLifeInput?.value || matchedQuick?.shelfLifeDays, 0);
-  const openDays = normalizeWholeDays(itemOpenDaysInput?.value || matchedQuick?.openDays, 0);
-  const bestBeforeValue = String(itemBestBeforeInput?.value || '').trim();
-
   const item = {
     name: matchedQuick ? matchedQuick.name : name,
     price: Number(priceInput?.value || (matchedQuick ? matchedQuick.price : 0) || 0),
@@ -4159,14 +3885,10 @@ function buildItemFromForm() {
     category: ensureCategoryExists(categoryInput?.value || (matchedQuick ? matchedQuick.category : getRoomFallbackCategory(itemRoom)), itemRoom),
     place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : fallbackPlace), itemRoom),
     type: 'home',
-    img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name),
-    bestBefore: bestBeforeValue,
-    openedDate: '',
-    shelfLifeDays,
-    openDays
+    img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name)
   };
 
-  return { item: normalizeExpiryFields(item, matchedQuick), file: fileInput?.files?.[0] || null, matchedQuick };
+  return { item, file: fileInput?.files?.[0] || null, matchedQuick };
 }
 
 function saveQuickTemplate(item) {
@@ -4184,16 +3906,14 @@ function saveQuickTemplate(item) {
     existingQuick.room = normalized.room || existingQuick.room || activeRoom;
     existingQuick.category = normalized.category || existingQuick.category || getRoomFallbackCategory(existingQuick.room || activeRoom);
     existingQuick.place = normalized.place || existingQuick.place || getPlacesForRoom(existingQuick.room)[0]?.key || 'kyl';
-    existingQuick.shelfLifeDays = normalizeWholeDays(normalized.shelfLifeDays || existingQuick.shelfLifeDays, 0);
-    existingQuick.openDays = normalizeWholeDays(normalized.openDays || existingQuick.openDays, 0);
     if (normalized.img) existingQuick.img = normalized.img;
   } else {
-    quickItems.unshift({ ...normalized, bestBefore: '', openedDate: '' });
+    quickItems.unshift(normalized);
   }
 }
 
 function saveHomeItem(item) {
-  const normalizedItem = normalizeExpiryFields(normalizeMeasureItemData(item));
+  const normalizedItem = normalizeMeasureItemData(item);
   const existingHome = items.find(i => i.type === 'home' && sameVariant(i, normalizedItem));
 
   if (existingHome) {
@@ -4210,10 +3930,6 @@ function saveHomeItem(item) {
       existingHome.openedAmount -= Number(existingHome.size || 0);
     }
     existingHome.packMode = isWeightUnit(existingHome.unit) && (existingHome.quantity > 1 || existingHome.openedAmount > 0 || normalizedItem.packMode === 'bags' || existingHome.packMode === 'bags') ? 'bags' : '';
-    existingHome.bestBefore = [existingHome.bestBefore, normalizedItem.bestBefore].filter(Boolean).sort()[0] || '';
-    existingHome.shelfLifeDays = Math.max(normalizeWholeDays(existingHome.shelfLifeDays, 0), normalizeWholeDays(normalizedItem.shelfLifeDays, 0));
-    existingHome.openDays = Math.max(normalizeWholeDays(existingHome.openDays, 0), normalizeWholeDays(normalizedItem.openDays, 0));
-    if (!existingHome.openedDate && normalizedItem.openedDate) existingHome.openedDate = normalizedItem.openedDate;
     if (normalizedItem.img) existingHome.img = normalizedItem.img;
     syncQuickItemFromItem(existingHome);
   } else {
@@ -6786,21 +6502,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   updateInstallButtonVisibility();
-  updateExpiryControls();
-  setTimeout(() => {
-    if ('Notification' in window && Notification.permission === 'granted') maybeSendExpiryNotifications();
-  }, 1200);
-  setInterval(() => {
-    if ('Notification' in window && Notification.permission === 'granted') maybeSendExpiryNotifications();
-  }, 15 * 60 * 1000);
 });
 
 
-
-
-window.requestExpiryNotifications = requestExpiryNotifications;
-window.setExpirySortMode = setExpirySortMode;
-window.markItemOpened = markItemOpened;
 
 document.addEventListener('input', (e) => {
   if (!e.target) return;
@@ -8192,48 +7896,4 @@ window.addEventListener('load', () => {
   addMissingToBuy = window.addMissingToBuy;
 
   window.__autoBuyZip = 'v67-pack-actions-fix';
-})();
-
-
-/* === CLEAN MINIMAL UI PATCH === */
-(function () {
-  function shortenText(root) {
-    if (!root) return;
-    root.querySelectorAll('.expiry-badge, .badge, .chip, .meta-badge').forEach(function (el) {
-      const txt = (el.textContent || '').trim();
-      if (!txt) return;
-      el.textContent = txt
-        .replace('Bäst före: ', '⏳ ')
-        .replace('Efter öppning: ', '📂 ')
-        .replace('Öppnad: ', 'Öppnad ')
-        .replace(' dagar kvar', 'd')
-        .replace(' dag kvar', 'd')
-        .replace(' dagar sedan', 'd sedan')
-        .replace('Går ut idag', 'Idag')
-        .replace('Gick ut igår', 'Igår')
-        .replace('Gick ut för ', '-')
-        .replace('Bäst före mall: ', 'Mall ')
-        .replace('Efter öppning mall: ', 'Öppnad ');
-    });
-  }
-
-  function runCleanPatch() {
-    shortenText(document);
-  }
-
-  const origRender = window.render;
-  if (typeof origRender === 'function' && !window.__cleanPatchWrapped) {
-    window.__cleanPatchWrapped = true;
-    window.render = function () {
-      const result = origRender.apply(this, arguments);
-      try { runCleanPatch(); } catch (e) {}
-      return result;
-    };
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', runCleanPatch);
-  } else {
-    runCleanPatch();
-  }
 })();
