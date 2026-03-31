@@ -37,6 +37,9 @@ const DEPRECATED_ROOM_MIGRATIONS = {
 let roomDefs = JSON.parse(localStorage.getItem('matlista_rooms') || 'null');
 let activeRoom = localStorage.getItem('matlista_active_room') || 'koket';
 let activePlaceFilter = localStorage.getItem('matlista_active_place_filter') || '';
+const DEFAULT_EXPIRY_WARNING_DAYS = 2;
+let expiryWarningDays = Math.max(0, Number(localStorage.getItem('matlista_expiry_warning_days') || DEFAULT_EXPIRY_WARNING_DAYS));
+
 
 
 function normalizeRoomKey(value) {
@@ -1039,6 +1042,93 @@ function getOpenedCountdownInfo(item) {
     cls = 'soon';
   }
   return { label, cls, daysLeft, inactive: false };
+}
+
+function getExpiryAlertInfo(item, warningDays = expiryWarningDays) {
+  if (!item || item.type !== 'home') return null;
+
+  const bestBefore = getBestBeforeInfo(item);
+  const opened = getOpenedCountdownInfo(item);
+  const candidates = [];
+
+  if (bestBefore && Number.isFinite(bestBefore.days)) {
+    candidates.push({
+      source: 'bestBefore',
+      daysLeft: bestBefore.days,
+      detail: bestBefore.label,
+      cls: bestBefore.cls
+    });
+  }
+
+  if (opened && !opened.inactive && Number.isFinite(opened.daysLeft)) {
+    candidates.push({
+      source: 'opened',
+      daysLeft: opened.daysLeft,
+      detail: opened.label,
+      cls: opened.cls
+    });
+  }
+
+  if (!candidates.length) return null;
+
+  candidates.sort((a, b) => a.daysLeft - b.daysLeft);
+  const next = candidates[0];
+  if (next.daysLeft > warningDays) return null;
+
+  let title = '';
+  if (next.daysLeft < 0) title = `${item.name} har gått ut`;
+  else if (next.daysLeft === 0) title = `${item.name} går ut idag`;
+  else if (next.daysLeft === 1) title = `${item.name} går ut imorgon`;
+  else title = `${item.name} går ut om ${next.daysLeft} dagar`;
+
+  return {
+    name: item.name || 'Vara',
+    room: item.room || 'koket',
+    place: item.place || 'kyl',
+    daysLeft: next.daysLeft,
+    source: next.source,
+    detail: next.detail,
+    cls: next.cls,
+    title
+  };
+}
+
+function renderExpiryAlerts() {
+  const wrap = document.getElementById('expiryAlerts');
+  const subtitle = document.getElementById('homeRoomSubtitle');
+  if (subtitle) subtitle.textContent = 'Uppdelat per rum och plats';
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  wrap.style.display = 'none';
+}
+
+function getItemShelfLifeWarning(item) {
+  const alert = getExpiryAlertInfo(item);
+  if (!alert) return null;
+
+  let text = '';
+  if (alert.daysLeft < 0) text = 'Utgången';
+  else if (alert.daysLeft === 0) text = 'Går ut idag';
+  else if (alert.daysLeft === 1) text = 'Går ut imorgon';
+  else text = `Går ut om ${alert.daysLeft} dagar`;
+
+  const sourceLabel = alert.source === 'opened' ? 'Öppnad' : 'Bäst före';
+  return {
+    ...alert,
+    text,
+    sourceLabel
+  };
+}
+
+function renderShelfLifeWarning(item) {
+  const warning = getItemShelfLifeWarning(item);
+  if (!warning) return '';
+  return `
+    <div class="item-expiry-warning item-expiry-${warning.cls}">
+      <div class="item-expiry-warning-title">⚠️ ${warning.text}</div>
+      <div class="item-expiry-warning-detail">${warning.sourceLabel} • ${warning.detail}</div>
+    </div>
+  `;
 }
 
 function renderShelfLifeBadges(item) {
@@ -3386,6 +3476,8 @@ function createCard(item, source = 'items') {
   }
 
   const imageSource = getItemImageSourceMeta(item);
+  const itemWarning = getItemShelfLifeWarning(item);
+  if (itemWarning) div.classList.add(`card-expiry-${itemWarning.cls}`);
   div.innerHTML = `
     <img src="${img}" alt="${item.name}" data-item-name="${item.name}" data-image-source="${imageSource.type}" onerror="handleItemImageError(this)" onclick="showImage(${realIndex})">
     <div class="info">
@@ -3409,6 +3501,7 @@ function createCard(item, source = 'items') {
             }</div>`
           : ''}
       </div>
+      ${renderShelfLifeWarning(item)}
       ${renderShelfLifeBadges(item)}
     </div>
     <div class="actions">
@@ -5899,6 +5992,7 @@ function render() {
   const searchText = (document.getElementById('searchInput')?.value || '').toLowerCase().trim();
   const categoryFilter = document.getElementById('categoryFilter')?.value || '';
 
+  renderExpiryAlerts();
   renderHomeList(searchText, categoryFilter);
   renderBuyList(searchText, categoryFilter);
   updateSummary();

@@ -2379,4 +2379,43 @@ input:focus,select:focus,textarea:focus{
 }
 
 
-.shelf-life-wrap{display:flex;flex-direction:column;gap:6px;margin-top:8px}.shelf-life-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:12px;line-height:1.2;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);width:max-content;max-width:100%}.shelf-life-fresh{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.35)}.shelf-life-soon{background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.45)}.shelf-life-expired{background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.45)}.shelf-life-inactive{opacity:.9}.quick-field-date,.quick-field-open-days{min-width:200px}
+.shelf-life-wrap{display:flex;flex-direction:column;gap:6px;margin-top:8px}.shelf-life-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:12px;line-height:1.2;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);width:max-content;max-width:100%}.shelf-life-fresh{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.35)}.shelf-life-soon{background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.45)}.shelf-life-expired{background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.45)}.shelf-life-inactive{opacity:.9}.quick-field-date,.quick-field-open-days{min-width:200px}.expiry-alerts{margin:10px 0 16px}.expiry-alert-banner{padding:14px 16px;border-radius:18px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);box-shadow:0 10px 24px rgba(0,0,0,.18)}.expiry-alert-banner-head{font-size:16px;font-weight:800;margin-bottom:4px}.expiry-alert-banner-sub{font-size:13px;opacity:.9;margin-bottom:12px}.expiry-alert-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.expiry-alert-card{padding:12px;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05)}.expiry-alert-title{font-weight:800;margin-bottom:6px}.expiry-alert-meta{font-size:12px;opacity:.8;margin-bottom:4px}.expiry-alert-detail{font-size:13px;line-height:1.35}.expiry-alert-soon{border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.12)}.expiry-alert-expired{border-color:rgba(239,68,68,.38);background:rgba(239,68,68,.14)}.expiry-alert-fresh{border-color:rgba(34,197,94,.3);background:rgba(34,197,94,.12)}
+
+
+/* ===== ITEM EXPIRY WARNING ON CARD ===== */
+.card.card-expiry-soon{
+  border-color:rgba(245,158,11,.48) !important;
+  box-shadow:0 0 0 1px rgba(245,158,11,.16) inset, var(--shadow);
+}
+.card.card-expiry-expired{
+  border-color:rgba(239,68,68,.52) !important;
+  box-shadow:0 0 0 1px rgba(239,68,68,.18) inset, var(--shadow);
+}
+.item-expiry-warning{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  margin-top:8px;
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.06);
+}
+.item-expiry-warning-title{
+  font-size:13px;
+  font-weight:900;
+  line-height:1.2;
+}
+.item-expiry-warning-detail{
+  font-size:12px;
+  line-height:1.35;
+  opacity:.95;
+}
+.item-expiry-soon{
+  background:rgba(245,158,11,.14);
+  border-color:rgba(245,158,11,.42);
+}
+.item-expiry-expired{
+  background:rgba(239,68,68,.14);
+  border-color:rgba(239,68,68,.42);
+}
