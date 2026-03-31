@@ -39,6 +39,126 @@ let activeRoom = localStorage.getItem('matlista_active_room') || 'koket';
 let activePlaceFilter = localStorage.getItem('matlista_active_place_filter') || '';
 
 
+const EXPIRY_WARNING_DEFAULT_DAYS = 2;
+
+function toDayStamp(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function addDaysToStamp(baseStamp, days = 0) {
+  if (!baseStamp) return '';
+  const date = new Date(`${baseStamp}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  date.setDate(date.getDate() + Math.max(0, Number(days || 0)));
+  return toDayStamp(date);
+}
+
+function diffDaysFromToday(targetStamp) {
+  if (!targetStamp) return null;
+  const today = new Date(`${toDayStamp()}T12:00:00`);
+  const target = new Date(`${targetStamp}T12:00:00`);
+  if (Number.isNaN(today.getTime()) || Number.isNaN(target.getTime())) return null;
+  return Math.round((target - today) / 86400000);
+}
+
+function normalizeExpiryDays(value, fallback = 0) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return Math.max(0, Number(fallback || 0));
+  return Math.max(0, n);
+}
+
+function normalizeQuickExpiryFields(item = {}) {
+  return {
+    bestBeforeDays: normalizeExpiryDays(item.bestBeforeDays, 0),
+    openedDays: normalizeExpiryDays(item.openedDays, 0),
+    warnBeforeDays: normalizeExpiryDays(item.warnBeforeDays, EXPIRY_WARNING_DEFAULT_DAYS)
+  };
+}
+
+function buildExpiryFieldsForHomeItem(sourceItem = {}, existingItem = null) {
+  const today = toDayStamp();
+  const quickExpiry = normalizeQuickExpiryFields(sourceItem);
+  const addedAt = existingItem?.addedAt || sourceItem.addedAt || today;
+  const openedAt = existingItem?.openedAt || sourceItem.openedAt || '';
+  const bestBeforeDate = sourceItem.bestBeforeDate || existingItem?.bestBeforeDate || (quickExpiry.bestBeforeDays > 0 ? addDaysToStamp(addedAt, quickExpiry.bestBeforeDays) : '');
+  const openedBestBeforeDate = openedAt
+    ? (sourceItem.openedBestBeforeDate || existingItem?.openedBestBeforeDate || (quickExpiry.openedDays > 0 ? addDaysToStamp(openedAt, quickExpiry.openedDays) : ''))
+    : '';
+
+  return {
+    ...quickExpiry,
+    addedAt,
+    openedAt,
+    bestBeforeDate,
+    openedBestBeforeDate
+  };
+}
+
+function getExpiryStatus(item = {}) {
+  const bestBeforeDaysLeft = diffDaysFromToday(item.bestBeforeDate || '');
+  const openedDaysLeft = diffDaysFromToday(item.openedBestBeforeDate || '');
+  const warnDays = normalizeExpiryDays(item.warnBeforeDays, EXPIRY_WARNING_DEFAULT_DAYS);
+  const activeDays = openedDaysLeft !== null ? openedDaysLeft : bestBeforeDaysLeft;
+  let level = 'ok';
+  if (activeDays !== null) {
+    if (activeDays < 0) level = 'expired';
+    else if (activeDays <= warnDays) level = 'warning';
+  }
+  return { bestBeforeDaysLeft, openedDaysLeft, warnDays, activeDays, level };
+}
+
+function formatDaysCountdown(days) {
+  if (days === null || days === undefined) return '—';
+  if (days < 0) return `utgången sedan ${Math.abs(days)} dag${Math.abs(days) === 1 ? '' : 'ar'}`;
+  if (days === 0) return 'går ut idag';
+  return `${days} dag${days === 1 ? '' : 'ar'} kvar`;
+}
+
+function formatReadableDate(stamp) {
+  if (!stamp) return '';
+  const date = new Date(`${stamp}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('sv-SE', { day: 'numeric', month: 'long' });
+}
+
+function createExpiryMeta(item = {}) {
+  if ((item.type || 'home') !== 'home') return '';
+  const status = getExpiryStatus(item);
+  const chips = [];
+  if (status.bestBeforeDaysLeft !== null) {
+    chips.push(`<div class="expiry-chip">Bäst före: <strong>${formatDaysCountdown(status.bestBeforeDaysLeft)}</strong>${item.bestBeforeDate ? `<span>${formatReadableDate(item.bestBeforeDate)}</span>` : ''}</div>`);
+  }
+  if (item.openedAt) {
+    chips.push(`<div class="expiry-chip ${status.openedDaysLeft !== null && status.openedDaysLeft <= status.warnDays ? 'is-warning' : ''}">Öppnad: <strong>${formatDaysCountdown(status.openedDaysLeft)}</strong>${item.openedBestBeforeDate ? `<span>${formatReadableDate(item.openedBestBeforeDate)}</span>` : ''}</div>`);
+  } else if (normalizeExpiryDays(item.openedDays, 0) > 0) {
+    chips.push(`<div class="expiry-chip">Öppnad: <strong>inte öppnad</strong><span>${item.openedDays} dagar efter öppning</span></div>`);
+  }
+  if (status.level === 'expired') {
+    chips.push('<div class="expiry-alert is-expired">⚠️ Har gått ut</div>');
+  } else if (status.level === 'warning') {
+    chips.push(`<div class="expiry-alert is-warning">⚠️ Snart utgången inom ${status.warnDays} dagar</div>`);
+  }
+  return chips.length ? `<div class="expiry-meta">${chips.join('')}</div>` : '';
+}
+
+function normalizeItemExpiryData(item = {}) {
+  if (!item || typeof item !== 'object') return item;
+  const quickExpiry = normalizeQuickExpiryFields(item);
+  if ((item.type || 'home') === 'home') {
+    return { ...item, ...buildExpiryFieldsForHomeItem({ ...item, ...quickExpiry }) };
+  }
+  return { ...item, ...quickExpiry };
+}
+
+items = Array.isArray(items) ? items.map(normalizeItemExpiryData) : [];
+quickItems = Array.isArray(quickItems) ? quickItems.map(normalizeItemExpiryData) : [];
+
+
 function normalizeRoomKey(value) {
   return String(value || '')
     .toLowerCase()
@@ -2168,6 +2288,7 @@ window.applyCloudState = function applyCloudState(data) {
 function syncQuickItemFromItem(changedItem) {
   const quick = quickItems.find(q => normalizeText(q.name) === normalizeText(changedItem.name));
   if (!quick) return;
+  const expiryData = normalizeQuickExpiryFields(changedItem);
   quick.room = changedItem.room || quick.room || activeRoom;
   quick.place = ensurePlaceExists(changedItem.place || quick.place || getPlacesForRoom(quick.room)[0]?.key || 'kyl', quick.room);
   quick.category = ensureCategoryExists(changedItem.category || quick.category || getRoomFallbackCategory(quick.room), quick.room);
@@ -2180,6 +2301,9 @@ function syncQuickItemFromItem(changedItem) {
   quick.measureText = supportsMeasureInput(quick.unit) ? getMeasureTextFromSize(quick.size, quickMeasureUnit) : '';
   quick.weightText = isWeightUnit(quick.unit) ? quick.measureText : '';
   quick.quantity = Math.max(1, Number(quick.quantity || 1));
+  quick.bestBeforeDays = expiryData.bestBeforeDays;
+  quick.openedDays = expiryData.openedDays;
+  quick.warnBeforeDays = expiryData.warnBeforeDays;
 }
 
 function updateToggleButtons() {
@@ -2967,7 +3091,8 @@ function addHomeItemFromTemplate(sourceItem, quantity = 1, targetPlace = null) {
     type: 'home',
     img: sourceItem.img ? String(sourceItem.img) : '',
     openedAmount: Math.max(0, Number(sourceItem.openedAmount || 0)),
-    packMode: isWeightUnit(sourceItem.unit || 'st') && (Number(quantity || sourceItem.quantity || 0) > 1 || Number(sourceItem.openedAmount || 0) > 0 || sourceItem.packMode === 'bags') ? 'bags' : ''
+    packMode: isWeightUnit(sourceItem.unit || 'st') && (Number(quantity || sourceItem.quantity || 0) > 1 || Number(sourceItem.openedAmount || 0) > 0 || sourceItem.packMode === 'bags') ? 'bags' : '',
+    ...buildExpiryFieldsForHomeItem(sourceItem)
   };
 
   const existing = items.find(entry =>
@@ -2985,6 +3110,7 @@ function addHomeItemFromTemplate(sourceItem, quantity = 1, targetPlace = null) {
     existing.price = Number(copy.price || existing.price || 0);
     existing.category = copy.category;
     if (copy.img) existing.img = copy.img;
+    Object.assign(existing, buildExpiryFieldsForHomeItem(copy, existing));
     syncQuickItemFromItem(existing);
   } else {
     items.push(copy);
@@ -3008,7 +3134,8 @@ function addBuyItemFromTemplate(sourceItem, quantity = 1) {
     type: 'buy',
     img: sourceItem.img ? String(sourceItem.img) : '',
     openedAmount: 0,
-    packMode: ''
+    packMode: '',
+    ...normalizeQuickExpiryFields(sourceItem)
   };
 
   const existing = items.find(entry =>
@@ -3297,9 +3424,11 @@ function createCard(item, source = 'items') {
             }</div>`
           : ''}
       </div>
+      ${createExpiryMeta(item)}
     </div>
     <div class="actions">
       <button type="button" class="ghost-btn image-source-badge image-source-${imageSource.type}" title="${imageSource.title}" onclick="showImageSourceInfo('${imageSource.type}')">${imageSource.label}</button>
+      ${item.type === 'home' ? `<button type="button" class="ghost-btn" onclick="toggleOpenedState(${realIndex})">${item.openedAt ? '↺ Nollställ öppnad' : '🥫 Öppna idag'}</button>` : ''}
       <button type="button" class="ghost-btn" onclick="editMainItem(${realIndex})">✏️ Ändra</button>
       <button type="button" class="delete" onclick="removeItem(${realIndex})">🗑️</button>
       <button type="button" onclick="moveItem(${realIndex})">${moveText}</button>
@@ -3399,6 +3528,9 @@ function applyQuickItemToMainForm(index) {
   const itemSize = document.getElementById('itemSize');
   const itemPlace = document.getElementById('itemPlace');
   const itemMeasureText = document.getElementById('itemMeasureText');
+  const itemBestBeforeDays = document.getElementById('itemBestBeforeDays');
+  const itemOpenedDays = document.getElementById('itemOpenedDays');
+  const itemWarnBeforeDays = document.getElementById('itemWarnBeforeDays');
 
   if (itemName) itemName.value = item.name || '';
   if (itemPrice) itemPrice.value = Number(item.price || 0) || '';
@@ -3653,6 +3785,12 @@ function openEditModal(item, isQuick, index) {
     renderPlaceOptions();
     editPlace.value = item.place || 'kyl';
   }
+  const editBestBeforeDays = document.getElementById('editBestBeforeDays');
+  const editOpenedDays = document.getElementById('editOpenedDays');
+  const editWarnBeforeDays = document.getElementById('editWarnBeforeDays');
+  if (editBestBeforeDays) editBestBeforeDays.value = normalizeExpiryDays(item.bestBeforeDays, 0);
+  if (editOpenedDays) editOpenedDays.value = normalizeExpiryDays(item.openedDays, 0);
+  if (editWarnBeforeDays) editWarnBeforeDays.value = normalizeExpiryDays(item.warnBeforeDays, EXPIRY_WARNING_DEFAULT_DAYS);
   if (editModal) editModal.style.display = 'flex';
   try { syncEditMeasureModeVisibility(); updateEditMeasureSummary(); } catch (e) {}
 }
@@ -3740,13 +3878,20 @@ function saveEditItem() {
     place: ensurePlaceExists(document.getElementById('editPlace')?.value || currentItem.place || getPlacesForRoom(updatedRoom)[0]?.key || 'kyl', updatedRoom),
     img: currentItem?.img && String(currentItem.img).startsWith('data:')
       ? String(currentItem.img)
-      : getAutoImagePath(updatedName)
+      : getAutoImagePath(updatedName),
+    ...normalizeQuickExpiryFields({
+      bestBeforeDays: document.getElementById('editBestBeforeDays')?.value || currentItem.bestBeforeDays || 0,
+      openedDays: document.getElementById('editOpenedDays')?.value || currentItem.openedDays || 0,
+      warnBeforeDays: document.getElementById('editWarnBeforeDays')?.value || currentItem.warnBeforeDays || EXPIRY_WARNING_DEFAULT_DAYS
+    })
   };
 
   if (!updated.name) return;
 
   const oldName = currentItem.name;
-  targetList[editingIndex] = { ...currentItem, ...updated };
+  targetList[editingIndex] = editingQuick
+    ? { ...currentItem, ...updated }
+    : { ...currentItem, ...updated, ...buildExpiryFieldsForHomeItem({ ...currentItem, ...updated }, currentItem) };
 
   if (editingQuick) {
     items = items.map(item =>
@@ -3762,6 +3907,21 @@ function saveEditItem() {
   items = mergeItems(items);
   save();
   closeEditModal();
+  render();
+}
+
+function toggleOpenedState(index) {
+  const item = items[index];
+  if (!item || item.type !== 'home') return;
+  if (item.openedAt) {
+    item.openedAt = '';
+    item.openedBestBeforeDate = '';
+  } else {
+    item.openedAt = toDayStamp();
+    item.openedBestBeforeDate = normalizeExpiryDays(item.openedDays, 0) > 0 ? addDaysToStamp(item.openedAt, item.openedDays) : '';
+  }
+  syncQuickItemFromItem(item);
+  save();
   render();
 }
 
@@ -3812,6 +3972,9 @@ function clearInputs(focusName = false) {
   const itemSize = document.getElementById('itemSize');
   const itemPlace = document.getElementById('itemPlace');
   const itemMeasureText = document.getElementById('itemMeasureText');
+  const itemBestBeforeDays = document.getElementById('itemBestBeforeDays');
+  const itemOpenedDays = document.getElementById('itemOpenedDays');
+  const itemWarnBeforeDays = document.getElementById('itemWarnBeforeDays');
 
   if (itemName) itemName.value = '';
   if (itemPrice) itemPrice.value = '';
@@ -3885,7 +4048,12 @@ function buildItemFromForm() {
     category: ensureCategoryExists(categoryInput?.value || (matchedQuick ? matchedQuick.category : getRoomFallbackCategory(itemRoom)), itemRoom),
     place: ensurePlaceExists(placeInput?.value || (matchedQuick ? matchedQuick.place : fallbackPlace), itemRoom),
     type: 'home',
-    img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name)
+    img: matchedQuick?.img ? String(matchedQuick.img) : getAutoImagePath(matchedQuick ? matchedQuick.name : name),
+    ...normalizeQuickExpiryFields({
+      bestBeforeDays: document.getElementById('itemBestBeforeDays')?.value || matchedQuick?.bestBeforeDays || 0,
+      openedDays: document.getElementById('itemOpenedDays')?.value || matchedQuick?.openedDays || 0,
+      warnBeforeDays: document.getElementById('itemWarnBeforeDays')?.value || matchedQuick?.warnBeforeDays || EXPIRY_WARNING_DEFAULT_DAYS
+    })
   };
 
   return { item, file: fileInput?.files?.[0] || null, matchedQuick };
@@ -3907,8 +4075,9 @@ function saveQuickTemplate(item) {
     existingQuick.category = normalized.category || existingQuick.category || getRoomFallbackCategory(existingQuick.room || activeRoom);
     existingQuick.place = normalized.place || existingQuick.place || getPlacesForRoom(existingQuick.room)[0]?.key || 'kyl';
     if (normalized.img) existingQuick.img = normalized.img;
+    Object.assign(existingQuick, normalizeQuickExpiryFields(normalized));
   } else {
-    quickItems.unshift(normalized);
+    quickItems.unshift({ ...normalized, ...normalizeQuickExpiryFields(normalized) });
   }
 }
 
@@ -3931,15 +4100,18 @@ function saveHomeItem(item) {
     }
     existingHome.packMode = isWeightUnit(existingHome.unit) && (existingHome.quantity > 1 || existingHome.openedAmount > 0 || normalizedItem.packMode === 'bags' || existingHome.packMode === 'bags') ? 'bags' : '';
     if (normalizedItem.img) existingHome.img = normalizedItem.img;
+    Object.assign(existingHome, buildExpiryFieldsForHomeItem(normalizedItem, existingHome));
     syncQuickItemFromItem(existingHome);
   } else {
-    items.push({
+    const homeItem = {
       ...normalizedItem,
       room: normalizedItem.room || activeRoom,
       openedAmount: Math.max(0, Number(normalizedItem.openedAmount || 0)),
-      packMode: isWeightUnit(normalizedItem.unit) && (Number(normalizedItem.quantity || 0) > 1 || Number(normalizedItem.openedAmount || 0) > 0 || normalizedItem.packMode === 'bags') ? 'bags' : ''
-    });
-    syncQuickItemFromItem(normalizedItem);
+      packMode: isWeightUnit(normalizedItem.unit) && (Number(normalizedItem.quantity || 0) > 1 || Number(normalizedItem.openedAmount || 0) > 0 || normalizedItem.packMode === 'bags') ? 'bags' : '',
+      ...buildExpiryFieldsForHomeItem(normalizedItem)
+    };
+    items.push(homeItem);
+    syncQuickItemFromItem(homeItem);
   }
 }
 
@@ -5783,6 +5955,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const itemPrice = document.getElementById('itemPrice');
   const itemQuantity = document.getElementById('itemQuantity');
   const itemMeasureText = document.getElementById('itemMeasureText');
+  const itemBestBeforeDays = document.getElementById('itemBestBeforeDays');
+  const itemOpenedDays = document.getElementById('itemOpenedDays');
+  const itemWarnBeforeDays = document.getElementById('itemWarnBeforeDays');
 
   const handleQuickAddKeydown = (event) => {
     const targetId = event.target?.id || '';
@@ -6543,7 +6718,7 @@ document.addEventListener('blur', (e) => {
   }
 }, true);
 
-window.addEventListener('load', () => { try { syncMeasureModeVisibility(); syncEditMeasureModeVisibility(); syncIngredientEditMeasureModeVisibility(); updateMeasureSummary(); updateEditMeasureSummary(); updateIngredientEditMeasureSummary(); } catch (e) {} });
+window.addEventListener('load', () => { try { syncMeasureModeVisibility(); syncEditMeasureModeVisibility(); syncIngredientEditMeasureModeVisibility(); updateMeasureSummary(); updateEditMeasureSummary(); updateIngredientEditMeasureSummary(); const warnInput=document.getElementById('itemWarnBeforeDays'); if (warnInput && !warnInput.value) warnInput.value = EXPIRY_WARNING_DEFAULT_DAYS; } catch (e) {} });
 
 
 // Drag & Drop meals

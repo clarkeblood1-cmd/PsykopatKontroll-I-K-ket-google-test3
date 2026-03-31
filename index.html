@@ -197,6 +197,15 @@
       <div class="quick-field quick-field-price">
         <input id="itemPrice" type="number" min="0" placeholder="Pris (kr)">
       </div>
+      <div class="quick-field">
+        <input id="itemBestBeforeDays" type="number" min="0" placeholder="Bäst före dagar">
+      </div>
+      <div class="quick-field">
+        <input id="itemOpenedDays" type="number" min="0" placeholder="Öppnad dagar">
+      </div>
+      <div class="quick-field">
+        <input id="itemWarnBeforeDays" type="number" min="0" placeholder="Varna innan dagar">
+      </div>
 
       <button type="button" class="ghost-btn quick-clear-btn" onclick="clearInputs()">🧹 Rensa</button>
 
@@ -555,6 +564,9 @@
         <select id="editCategory" data-category-select></select>
 
         <select id="editPlace" data-place-select></select>
+        <input id="editBestBeforeDays" type="number" min="0" placeholder="Bäst före dagar">
+        <input id="editOpenedDays" type="number" min="0" placeholder="Öppnad dagar">
+        <input id="editWarnBeforeDays" type="number" min="0" placeholder="Varna innan dagar">
 
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button type="button" class="ghost-btn" style="flex:1;" onclick="closeEditModal()">Avbryt</button>
