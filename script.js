@@ -2180,6 +2180,10 @@ function syncQuickItemFromItem(changedItem) {
   quick.measureText = supportsMeasureInput(quick.unit) ? getMeasureTextFromSize(quick.size, quickMeasureUnit) : '';
   quick.weightText = isWeightUnit(quick.unit) ? quick.measureText : '';
   quick.quantity = Math.max(1, Number(quick.quantity || 1));
+  quick.bestBeforeDays = toPositiveWholeDays((changedItem?.bestBeforeDays ?? quick.bestBeforeDays) ?? 0);
+  quick.openedDays = toPositiveWholeDays((changedItem?.openedDays ?? quick.openedDays) ?? 0);
+  quick.warnBeforeDays = toPositiveWholeDays((changedItem?.warnBeforeDays ?? quick.warnBeforeDays) ?? 0);
+  sanitizeExpiryFields(quick);
 }
 
 function updateToggleButtons() {
@@ -2990,9 +2994,9 @@ function addHomeItemFromTemplate(sourceItem, quantity = 1, targetPlace = null) {
     existing.price = Number(copy.price || existing.price || 0);
     existing.category = copy.category;
     if (copy.img) existing.img = copy.img;
-    existing.bestBeforeDays = toPositiveWholeDays(copy.bestBeforeDays || existing.bestBeforeDays || 0);
-    existing.openedDays = toPositiveWholeDays(copy.openedDays || existing.openedDays || 0);
-    existing.warnBeforeDays = toPositiveWholeDays(copy.warnBeforeDays || existing.warnBeforeDays || 0);
+    existing.bestBeforeDays = toPositiveWholeDays((copy.bestBeforeDays ?? existing.bestBeforeDays) ?? 0);
+    existing.openedDays = toPositiveWholeDays((copy.openedDays ?? existing.openedDays) ?? 0);
+    existing.warnBeforeDays = toPositiveWholeDays((copy.warnBeforeDays ?? existing.warnBeforeDays) ?? 0);
     sanitizeExpiryFields(existing);
     syncQuickItemFromItem(existing);
   } else {
@@ -4114,9 +4118,9 @@ function saveQuickTemplate(item) {
     existingQuick.room = normalized.room || existingQuick.room || activeRoom;
     existingQuick.category = normalized.category || existingQuick.category || getRoomFallbackCategory(existingQuick.room || activeRoom);
     existingQuick.place = normalized.place || existingQuick.place || getPlacesForRoom(existingQuick.room)[0]?.key || 'kyl';
-    existingQuick.bestBeforeDays = toPositiveWholeDays(normalized.bestBeforeDays || existingQuick.bestBeforeDays || 0);
-    existingQuick.openedDays = toPositiveWholeDays(normalized.openedDays || existingQuick.openedDays || 0);
-    existingQuick.warnBeforeDays = toPositiveWholeDays(normalized.warnBeforeDays || existingQuick.warnBeforeDays || 0);
+    existingQuick.bestBeforeDays = toPositiveWholeDays((normalized.bestBeforeDays ?? existingQuick.bestBeforeDays) ?? 0);
+    existingQuick.openedDays = toPositiveWholeDays((normalized.openedDays ?? existingQuick.openedDays) ?? 0);
+    existingQuick.warnBeforeDays = toPositiveWholeDays((normalized.warnBeforeDays ?? existingQuick.warnBeforeDays) ?? 0);
     if (normalized.img) existingQuick.img = normalized.img;
     sanitizeExpiryFields(existingQuick);
   } else {
@@ -4138,9 +4142,9 @@ function saveHomeItem(item) {
     existingHome.size = normalizedItem.size;
     existingHome.measureText = normalizedItem.measureText || '';
     existingHome.weightText = normalizedItem.weightText || '';
-    existingHome.bestBeforeDays = toPositiveWholeDays(normalizedItem.bestBeforeDays || existingHome.bestBeforeDays || 0);
-    existingHome.openedDays = toPositiveWholeDays(normalizedItem.openedDays || existingHome.openedDays || 0);
-    existingHome.warnBeforeDays = toPositiveWholeDays(normalizedItem.warnBeforeDays || existingHome.warnBeforeDays || 0);
+    existingHome.bestBeforeDays = toPositiveWholeDays((normalizedItem.bestBeforeDays ?? existingHome.bestBeforeDays) ?? 0);
+    existingHome.openedDays = toPositiveWholeDays((normalizedItem.openedDays ?? existingHome.openedDays) ?? 0);
+    existingHome.warnBeforeDays = toPositiveWholeDays((normalizedItem.warnBeforeDays ?? existingHome.warnBeforeDays) ?? 0);
     if (!existingHome.addedDate) existingHome.addedDate = normalizedItem.addedDate || todayIsoLocal();
     if (normalizedItem.openedDate) existingHome.openedDate = normalizedItem.openedDate;
     existingHome.openedAmount = Math.max(0, Number(existingHome.openedAmount || 0)) + Math.max(0, Number(normalizedItem.openedAmount || 0));
@@ -7876,6 +7880,10 @@ window.addEventListener('load', () => {
       quick.measureText = (typeof getMeasureTextFromSize === 'function' && Number(quick.size || 0) > 0) ? getMeasureTextFromSize(quick.size, packUnit) : (quick.measureText || '');
       quick.weightText = (typeof isWeightUnit === 'function' && isWeightUnit(packUnit)) ? quick.measureText : '';
       quick.quantity = Math.max(1, Number(quick.quantity || 1));
+      quick.bestBeforeDays = (typeof toPositiveWholeDays === 'function') ? toPositiveWholeDays((changedItem?.bestBeforeDays ?? quick.bestBeforeDays) ?? 0) : Number(changedItem?.bestBeforeDays ?? quick.bestBeforeDays ?? 0);
+      quick.openedDays = (typeof toPositiveWholeDays === 'function') ? toPositiveWholeDays((changedItem?.openedDays ?? quick.openedDays) ?? 0) : Number(changedItem?.openedDays ?? quick.openedDays ?? 0);
+      quick.warnBeforeDays = (typeof toPositiveWholeDays === 'function') ? toPositiveWholeDays((changedItem?.warnBeforeDays ?? quick.warnBeforeDays) ?? 0) : Number(changedItem?.warnBeforeDays ?? quick.warnBeforeDays ?? 0);
+      if (typeof sanitizeExpiryFields === 'function') sanitizeExpiryFields(quick);
       return;
     }
 
