@@ -877,6 +877,12 @@ button:hover{background:var(--green-dark);color:#fff}
 .manage-card .section-top-row{margin-bottom:14px}
 .manage-card .section-title{font-size:28px}
 .manage-card .section-subtitle{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);padding:10px 14px;border-radius:16px;text-align:left}
+
+.manage-stack{display:grid;gap:18px;margin-top:18px}
+.manage-panel-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;justify-content:flex-end}
+.manage-stack .auth-panel,.manage-stack .household-panel{margin:0}
+#offlineInfo{background:rgba(56,189,248,.12);border:1px solid rgba(125,211,252,.18);padding:10px 12px;border-radius:16px}
+@media (max-width:700px){.manage-panel-actions{justify-content:flex-start}}
 @media (max-width:900px){.page-tabs{grid-template-columns:repeat(3,minmax(0,1fr));top:8px}}
 @media (max-width:700px){.manage-hero-card{padding:18px;border-radius:22px}.manage-hero h2{font-size:24px}.manage-card{padding:14px;border-radius:22px}}
 @media (max-width:560px){.page-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}}
