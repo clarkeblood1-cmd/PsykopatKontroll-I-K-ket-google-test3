@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v72-expiry-tools';
+const CACHE_NAME = 'matlista-app-v73-appstore-ui';
 const ASSETS = [
   './',
   './index.html',
@@ -6,6 +6,7 @@ const ASSETS = [
   './script.js',
   './cloud-sync.js',
   './cloud-hooks.js',
+  './appstore-ui.js',
   './household.js',
   './firebase-config.js',
   './manifest.json',
