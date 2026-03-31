@@ -3274,8 +3274,6 @@ function createCard(item, source = 'items') {
   }
 
   const imageSource = getItemImageSourceMeta(item);
-  const itemWarning = getItemShelfLifeWarning(item);
-  if (itemWarning) div.classList.add(`card-expiry-${itemWarning.cls}`);
   div.innerHTML = `
     <img src="${img}" alt="${item.name}" data-item-name="${item.name}" data-image-source="${imageSource.type}" onerror="handleItemImageError(this)" onclick="showImage(${realIndex})">
     <div class="info">
