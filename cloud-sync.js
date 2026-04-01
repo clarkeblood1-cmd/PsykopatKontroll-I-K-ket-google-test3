@@ -78,6 +78,7 @@
       recipeIngredientChoices: window.recipeIngredientChoices || {},
       householdSize: Number(window.householdSize || 1),
       portionGrams: Math.max(1, Math.min(250, Number(window.portionGrams || localStorage.getItem('matlista_portion_grams') || 100))),
+      dinnerCategorySelections: Array.isArray(window.dinnerCategorySelections) ? window.dinnerCategorySelections : JSON.parse(localStorage.getItem('matlista_dinner_categories_koket') || '[]'),
       weekPlanner: window.weekPlanner || {},
       selectedWeekDay: window.selectedWeekDay || 'mon',
       weekMealOrder: Array.isArray(window.weekMealOrder) ? window.weekMealOrder : JSON.parse(localStorage.getItem('matlista_week_meal_order') || '[]'),

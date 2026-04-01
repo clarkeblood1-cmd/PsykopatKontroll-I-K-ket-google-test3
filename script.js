@@ -38,6 +38,13 @@ let roomDefs = JSON.parse(localStorage.getItem('matlista_rooms') || 'null');
 let activeRoom = localStorage.getItem('matlista_active_room') || 'koket';
 let activePlaceFilter = localStorage.getItem('matlista_active_place_filter') || '';
 
+const DINNER_CATEGORY_STORAGE_KEY = 'matlista_dinner_categories_koket';
+let dinnerCategorySelections = JSON.parse(localStorage.getItem(DINNER_CATEGORY_STORAGE_KEY) || 'null');
+if (!Array.isArray(dinnerCategorySelections)) {
+  dinnerCategorySelections = ['KÖTTFÄRS', 'KYCKLING'];
+}
+window.dinnerCategorySelections = dinnerCategorySelections;
+
 let expirySortMode = localStorage.getItem('matlista_expiry_sort_mode') || 'expiry';
 let expiryNotificationPermissionAsked = localStorage.getItem('matlista_expiry_notify_asked') === '1';
 let lastExpiryNotificationSignature = localStorage.getItem('matlista_last_expiry_notification') || '';
@@ -617,7 +624,7 @@ function getReferenceProteinAmountForRecipe(recipe = null) {
 
   if (proteinRule && isWeightUnit(proteinRule.unit)) return Math.max(1, Math.round(Number(proteinRule.amount || 0)));
 
-  const canonicalAmount = recipeIngredientCanonicalAmount(proteinIngredient);
+  const canonicalAmount = recipeIngredientCanonicalAmount(proteinIngredient, recipe);
   return Math.max(1, Math.round(Number(canonicalAmount || 0))) || 450;
 }
 
@@ -3046,18 +3053,160 @@ function migrateInlineImagesToCloud(force = false) {
   });
 }
 
+
+function getDinnerSelectableCategories() {
+  const roomConfig = getRoomConfig('koket');
+  const categories = Array.isArray(roomConfig?.categories)
+    ? roomConfig.categories.map(cat => normalizeCategoryName(cat)).filter(Boolean)
+    : [];
+  return [...new Set(categories)];
+}
+
+function saveDinnerCategorySelections() {
+  window.dinnerCategorySelections = dinnerCategorySelections;
+  localStorage.setItem(DINNER_CATEGORY_STORAGE_KEY, JSON.stringify(dinnerCategorySelections));
+}
+
+function normalizeDinnerCategorySelections() {
+  const available = getDinnerSelectableCategories();
+  const unique = [];
+  const seen = new Set();
+  (Array.isArray(dinnerCategorySelections) ? dinnerCategorySelections : []).forEach(cat => {
+    const normalized = normalizeCategoryName(cat);
+    if (!normalized) return;
+    if (!available.includes(normalized)) return;
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    unique.push(normalized);
+  });
+  dinnerCategorySelections = unique;
+  saveDinnerCategorySelections();
+  return dinnerCategorySelections;
+}
+
+function getDinnerSelectedCategorySet() {
+  return new Set(normalizeDinnerCategorySelections());
+}
+
+function isDinnerCategorySelected(category) {
+  return getDinnerSelectedCategorySet().has(normalizeCategoryName(category));
+}
+
+function toggleDinnerCategorySelection(category) {
+  const normalized = normalizeCategoryName(category);
+  if (!normalized) return;
+  const selected = normalizeDinnerCategorySelections().slice();
+  const exists = selected.includes(normalized);
+  dinnerCategorySelections = exists ? selected.filter(cat => cat !== normalized) : [...selected, normalized];
+  saveDinnerCategorySelections();
+  updateSummary();
+  try { renderDinnerCategoryPicker(); } catch (error) {}
+}
+
+function setAllDinnerCategories(enabled) {
+  dinnerCategorySelections = enabled ? getDinnerSelectableCategories().slice() : [];
+  saveDinnerCategorySelections();
+  updateSummary();
+  try { renderDinnerCategoryPicker(); } catch (error) {}
+}
+
+function getDinnerCountDetails() {
+  const selectedCategories = getDinnerSelectedCategorySet();
+  const matchingItems = items.filter(item =>
+    item &&
+    item.type === 'home' &&
+    normalizeRoomKey(item.room || 'koket') === 'koket' &&
+    selectedCategories.has(normalizeCategoryName(item.category))
+  );
+
+  const totalDinnerWeight = matchingItems.reduce((sum, item) => sum + getDinnerWeightFromItem(item), 0);
+  const gramsPerDinner = Math.max(1, Number(portionGrams || 0) * Number(householdSize || 1));
+  const totalDinners = Math.floor(totalDinnerWeight / gramsPerDinner);
+
+  return {
+    matchingItems,
+    totalDinnerWeight,
+    gramsPerDinner,
+    totalDinners,
+    selectedCategories: [...selectedCategories]
+  };
+}
+
+function renderDinnerCategoryPicker() {
+  const wrap = document.getElementById('dinnerCategoryPicker');
+  const summary = document.getElementById('dinnerCategorySummary');
+  const total = document.getElementById('dinnerCategoryWeightSummary');
+  if (!wrap && !summary && !total) return;
+
+  const allCategories = getDinnerSelectableCategories();
+  const selectedSet = getDinnerSelectedCategorySet();
+  const details = getDinnerCountDetails();
+
+  if (wrap) {
+    wrap.innerHTML = allCategories.length
+      ? allCategories.map(category => {
+          const active = selectedSet.has(category);
+          return `<button type="button" class="dinner-category-chip${active ? ' active' : ''}" data-category="${escapeHtml(category)}">${active ? '✅' : '⬜'} ${escapeHtml(category)}</button>`;
+        }).join('')
+      : '<div class="manage-settings-subtitle">Inga kategorier finns i KÖKET ännu.</div>';
+
+    wrap.querySelectorAll('.dinner-category-chip').forEach(btn => {
+      btn.onclick = () => toggleDinnerCategorySelection(btn.dataset.category || '');
+    });
+  }
+
+  if (summary) {
+    if (!allCategories.length) summary.textContent = 'Lägg först till kategorier i KÖKET.';
+    else if (!details.selectedCategories.length) summary.textContent = 'Ingen kategori vald för middagsräkningen.';
+    else summary.textContent = `Valda kategorier: ${details.selectedCategories.join(', ')}`;
+  }
+
+  if (total) total.textContent = `${details.totalDinnerWeight}g totalt`;
+}
+
+function getRecipeIngredientPersonMultiplier(recipe = null) {
+  if (!recipe || !isRecipePortionControlled(recipe)) return 1;
+  return Math.max(1, Number(householdSize || 1));
+}
+
+function isRecipeIngredientPerPerson(ingredient) {
+  return Boolean(ingredient && ingredient.perPerson);
+}
+
+function getRecipeIngredientDisplayTotal(ingredient, recipe = null) {
+  const ing = normalizeRecipeIngredient(ingredient);
+  if (!ing) return { quantity: 0, unit: '', isPerPerson: false, perPersonAmount: 0, totalAmount: 0 };
+  const canonical = getItemCanonicalAmount(ing, ing.unit);
+  const multiplier = isRecipeIngredientPerPerson(ing) ? getRecipeIngredientPersonMultiplier(recipe) : 1;
+  return {
+    quantity: Number(ing.quantity || 0),
+    unit: ing.unit,
+    isPerPerson: isRecipeIngredientPerPerson(ing),
+    perPersonAmount: canonical,
+    totalAmount: canonical * multiplier,
+    multiplier
+  };
+}
+
 function getDinnerWeightFromItem(item) {
   if (!item || item.type !== 'home') return 0;
+  if (normalizeRoomKey(item.room || 'koket') !== 'koket') return 0;
 
   const category = normalizeCategoryName(item.category);
-  if (!['KÖTT', 'KOTT', 'KÖTTFÄRS', 'KOTTFARS', 'KYCKLING'].includes(category)) return 0;
+  if (!isDinnerCategorySelected(category)) return 0;
 
   const quantity = Math.max(0, Number(item.quantity || 0));
   if (quantity <= 0) return 0;
 
-  if (isWeightUnit(item.unit)) {
-    const size = Number(normalizeSize(item.unit, item.size, item.category) || 0);
-    if (size > 0) return quantity * size;
+  const rawUnit = String(item.unit || 'st').toLowerCase();
+  const effectiveUnit = isPackUnit(rawUnit) ? getPackMeasureUnit(item, 'g') : rawUnit;
+
+  if (isWeightUnit(effectiveUnit)) {
+    const canonical = getItemCanonicalAmount(item, rawUnit);
+    if (canonical > 0) {
+      const converted = convertCanonicalAmountForIngredient(canonical, effectiveUnit, 'g', item.name || '');
+      if (converted > 0) return converted;
+    }
   }
 
   return quantity * 250;
@@ -3128,13 +3277,11 @@ function updateSummary() {
     portionLiveSummary.textContent = `${householdSize} × ${portionGrams}g = ${totalLive}g`;
   }
 
-  if (dinnerCount) {
-    const totalDinnerWeight = homeItems.reduce((sum, item) => sum + getDinnerWeightFromItem(item), 0);
-    const gramsPerDinner = Math.max(1, portionGrams * householdSize);
-    const totalDinners = Math.floor(totalDinnerWeight / gramsPerDinner);
-    dinnerCount.textContent = `${totalDinners} st`;
-  }
+  const details = getDinnerCountDetails();
+  if (dinnerCount) dinnerCount.textContent = `${details.totalDinners} st`;
+  renderDinnerCategoryPicker();
 }
+
 
 function dragStartItem(index, source) {
   draggedItemIndex = index;
@@ -4516,7 +4663,7 @@ function renderDraftIngredients() {
     row.innerHTML = `
       <div class="recipe-item-main">
         <span class="recipe-drag-handle" aria-hidden="true">☰</span>
-        <div class="recipe-item-text">${recipeIngredientToText(ingredient)}</div>
+        <div class="recipe-item-text">${recipeIngredientToText(ingredient, { category: document.getElementById('recipeCategory')?.value || 'matlagning' })}</div>
       </div>
       <div class="recipe-item-actions">
         <button type="button" class="ghost-btn" onclick="editDraftIngredient(${idx})">✏️</button>
@@ -4557,6 +4704,8 @@ function editDraftIngredient(index) {
   if (ingredientEditMeasureText) ingredientEditMeasureText.value = supportsMeasureInput(parsed.unit)
     ? getMeasureTextFromSize(parsed.size, isPackUnit(parsed.unit) ? getPackMeasureUnit(parsed, 'g') : parsed.unit)
     : '';
+  const ingredientEditPerPerson = document.getElementById('ingredientEditPerPerson');
+  if (ingredientEditPerPerson) ingredientEditPerPerson.checked = Boolean(parsed.perPerson);
   if (ingredientEditModal) ingredientEditModal.style.display = 'flex';
   try { syncIngredientEditMeasureModeVisibility(); updateIngredientEditMeasureSummary(); } catch (e) {}
 }
@@ -4772,7 +4921,7 @@ function renderSelectedRecipeIngredients() {
           <span class="recipe-drag-handle" aria-hidden="true">☰</span>
           <img class="recipe-item-image" src="${ingredientImage}" alt="${displayIngredient.name}" data-item-name="${displayIngredient.name}" onerror="handleItemImageError(this)">
           <div class="recipe-item-content">
-            <div class="recipe-item-text">${recipeIngredientToText(displayIngredient)}</div>
+            <div class="recipe-item-text">${recipeIngredientToText(displayIngredient, recipe)}</div>
             ${controls}
           </div>
         </div>
@@ -4857,7 +5006,8 @@ function normalizeRecipeIngredient(value) {
     size: supportsSize(unit) ? normalizeSize(unit, parsedSize, context) : (isPackUnit(unit) ? Number(value.size || parsedSize || 0) || null : null),
     packMeasureUnit: isPackUnit(unit) ? getPackMeasureUnit(value, 'g') : '',
     category: preservedCategory || (context === 'RECIPE_KRYDDOR' ? 'KRYDDOR' : (context === 'RECIPE_RIVEN_OST' ? 'RECIPE_RIVEN_OST' : '')),
-    smartMode: String(value.smartMode || '').trim().toLowerCase()
+    smartMode: String(value.smartMode || '').trim().toLowerCase(),
+    perPerson: Boolean(value.perPerson)
   };
 }
 
@@ -4868,9 +5018,21 @@ function normalizeRecipeIngredientList(list, recipe = null) {
     .filter(Boolean);
 }
 
-function recipeIngredientToText(ingredient) {
+function recipeIngredientToText(ingredient, recipe = null) {
   const ing = normalizeRecipeIngredient(ingredient);
   if (!ing) return '';
+
+  if (isRecipeIngredientPerPerson(ing)) {
+    const details = getRecipeIngredientDisplayTotal(ing, recipe);
+    const perPersonText = supportsSize(ing.unit)
+      ? formatSmartMeasureDisplay(details.perPersonAmount, ing.unit)
+      : `${Math.max(1, Number(ing.quantity || 1))} ${ing.unit || 'st'}`.trim();
+    const totalText = supportsSize(ing.unit)
+      ? formatSmartMeasureDisplay(details.totalAmount, ing.unit)
+      : `${Math.max(1, Number(ing.quantity || 1)) * Math.max(1, Number(details.multiplier || 1))} ${ing.unit || 'st'}`.trim();
+    return `${perPersonText}/person ${ing.name} (${totalText} för ${Math.max(1, Number(details.multiplier || 1))} pers)`;
+  }
+
   if (isPackUnit(ing.unit)) {
     const measureUnit = getPackMeasureUnit(ing, 'g');
     const sizeText = Number(ing.size || 0) > 0 ? ` × ${formatSmartMeasureDisplay(Number(ing.size || 0), measureUnit)}` : '';
@@ -4882,6 +5044,7 @@ function recipeIngredientToText(ingredient) {
   }
   return `${ing.quantity} ${ing.unit} ${ing.name}`.trim();
 }
+
 
 function findQuickItemByName(name) {
   const normalized = normalizeText(name || '');
@@ -4945,23 +5108,11 @@ function getIngredientDensityPerMl(name) {
   if (!normalized) return null;
 
   const rules = [
-    { match: ['vatten'], gramsPerMl: 1.00 },
-    { match: ['mjolk', 'mellanmjolk', 'standardmjolk', 'lattmjolk', 'havremjolk', 'sojamjolk'], gramsPerMl: 1.03 },
-    { match: ['gradde', 'grädde', 'vispgradde', 'matlagningsgradde'], gramsPerMl: 1.00 },
-    { match: ['cremefraiche', 'crèmefraiche', 'yoghurt', 'filmjolk'], gramsPerMl: 1.00 },
-    { match: ['olja', 'olivolja', 'rapsolja'], gramsPerMl: 0.92 },
-    { match: ['strosocker', 'strösocker', 'socker'], gramsPerMl: 0.85 },
-    { match: ['florsocker'], gramsPerMl: 0.55 },
-    { match: ['vetemjol', 'vetemjöl', 'mjol', 'mjöl'], gramsPerMl: 0.60 },
-    { match: ['potatismjol', 'potatismjöl', 'maizena', 'majstarkelse'], gramsPerMl: 0.65 },
-    { match: ['havregryn'], gramsPerMl: 0.35 },
-    { match: ['ris', 'jasminris', 'basmatiris', 'fullkornsris', 'matris'], gramsPerMl: 0.80 },
-    { match: ['pasta', 'makaroner', 'makaroni', 'spaghetti', 'penne', 'fusilli'], gramsPerMl: 0.40 },
-    { match: ['quinoa'], gramsPerMl: 0.70 },
-    { match: ['bulgur', 'couscous'], gramsPerMl: 0.65 },
+    { match: ['strosocker', 'socker'], gramsPerMl: 0.85 },
+    { match: ['vetemjol', 'mjol'], gramsPerMl: 0.60 },
     { match: ['kakao'], gramsPerMl: 0.40 },
     { match: ['vanillinsocker', 'vaniljsocker'], gramsPerMl: 0.60 },
-    { match: ['salt', 'havssalt'], gramsPerMl: 1.20 }
+    { match: ['salt'], gramsPerMl: 1.20 }
   ];
 
   const found = rules.find(rule => rule.match.some(keyword => normalized.includes(keyword)));
@@ -5029,11 +5180,14 @@ function getItemCanonicalAmount(item, unitHint = null) {
   return quantity;
 }
 
-function recipeIngredientCanonicalAmount(ingredient) {
+function recipeIngredientCanonicalAmount(ingredient, recipe = null) {
   const ing = normalizeRecipeIngredient(ingredient);
   if (!ing) return 0;
-  return getItemCanonicalAmount(ing, ing.unit);
+  const base = getItemCanonicalAmount(ing, ing.unit);
+  if (!isRecipeIngredientPerPerson(ing)) return base;
+  return base * getRecipeIngredientPersonMultiplier(recipe);
 }
+
 
 function ingredientMatchesName(ingredient, name) {
   return normalizeText(normalizeRecipeIngredient(ingredient)?.name || '') === normalizeText(name || '');
@@ -5417,7 +5571,7 @@ function getCombinedRecipeIngredientEntries(recipeEntries = []) {
 
       const key = `${normalizeText(ingredient.name)}__${getRecipeUnitFamily(ingredient.unit)}`;
       const existing = combinedMap.get(key);
-      const canonical = recipeIngredientCanonicalAmount(ingredient);
+      const canonical = recipeIngredientCanonicalAmount(ingredient, recipe);
 
       if (!existing) {
         combinedMap.set(key, {
@@ -5427,7 +5581,8 @@ function getCombinedRecipeIngredientEntries(recipeEntries = []) {
                 quantity: 1,
                 size: canonical,
                 measureText: formatSmartMeasureDisplay(canonical, ingredient.unit),
-                weightText: isWeightUnit(ingredient.unit) ? formatSmartMeasureDisplay(canonical, ingredient.unit) : ''
+                weightText: isWeightUnit(ingredient.unit) ? formatSmartMeasureDisplay(canonical, ingredient.unit) : '',
+                perPerson: false
               }
             : { ...ingredient },
           amount: canonical
@@ -5460,7 +5615,7 @@ function formatRecipeAmount(unit, amount) {
 function getMissingRecipeIngredient(ingredient) {
   const ing = normalizeRecipeIngredient(ingredient);
   if (!ing) return null;
-  const needed = recipeIngredientCanonicalAmount(ing);
+  const needed = recipeIngredientCanonicalAmount(ing, getSelectedRecipe());
   const have = getHomeAmountForIngredient(ing);
   const missing = Math.max(0, needed - have);
   if (missing <= 0) return null;
@@ -5499,6 +5654,8 @@ function editRecipeIngredient(index) {
   if (ingredientEditMeasureText) ingredientEditMeasureText.value = supportsMeasureInput(parsed.unit)
     ? getMeasureTextFromSize(parsed.size, isPackUnit(parsed.unit) ? getPackMeasureUnit(parsed, 'g') : parsed.unit)
     : '';
+  const ingredientEditPerPerson = document.getElementById('ingredientEditPerPerson');
+  if (ingredientEditPerPerson) ingredientEditPerPerson.checked = Boolean(parsed.perPerson);
   if (ingredientEditModal) ingredientEditModal.style.display = 'flex';
   try { syncIngredientEditMeasureModeVisibility(); updateIngredientEditMeasureSummary(); } catch (e) {}
 }
@@ -5521,6 +5678,7 @@ function saveIngredientEdit() {
     ? String(document.getElementById('ingredientEditPackMeasureUnit')?.value || 'g').toLowerCase()
     : '';
   const measureUnit = isPackUnit(unit) ? packMeasureUnit : unit;
+  const perPerson = Boolean(document.getElementById('ingredientEditPerPerson')?.checked);
   let size = document.getElementById('ingredientEditSize')?.value || null;
 
   if (!name) return;
@@ -5555,6 +5713,7 @@ function saveIngredientEdit() {
     'manual',
     packMeasureUnit
   );
+  if (updated) updated.perPerson = perPerson;
   if (!updated) return;
 
   if (editingIngredientRecipeIndex === -1) {
@@ -5624,7 +5783,7 @@ function checkRecipe() {
     const ingredient = resolveRecipeIngredient(rawIngredient, recipe);
     if (!ingredient) return;
 
-    const needed = recipeIngredientCanonicalAmount(ingredient);
+    const needed = recipeIngredientCanonicalAmount(ingredient, recipe);
     const have = getHomeAmountForIngredient(ingredient);
 
     if (have >= needed) {
@@ -5647,7 +5806,7 @@ function checkRecipe() {
     has.forEach(entry => {
       const div = document.createElement('div');
       div.className = 'result-pill ok';
-      div.textContent = `${recipeIngredientToText(entry.ingredient)} • har ${formatHomeAmountForIngredientDisplay(entry.ingredient)}`;
+      div.textContent = `${recipeIngredientToText(entry.ingredient, recipe)} • har ${formatHomeAmountForIngredientDisplay(entry.ingredient)}`;
       hasList.appendChild(div);
     });
   }
@@ -8205,3 +8364,13 @@ window.addEventListener('load', () => {
 
   window.__autoBuyZip = 'v67-pack-actions-fix';
 })();
+
+
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    normalizeDinnerCategorySelections();
+    renderDinnerCategoryPicker();
+  } catch (error) {
+    console.error('Kunde inte starta middagskategori-val:', error);
+  }
+});
