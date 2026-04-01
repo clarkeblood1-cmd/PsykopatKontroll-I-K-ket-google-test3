@@ -166,7 +166,7 @@ function normalizeExpiryFields(item, matchedQuick = null) {
   next.openDays = templateOpenDays;
   next.openedDate = item?.openedDate ? formatDateOnly(parseDateOnly(item.openedDate)) : '';
   next.bestBefore = item?.bestBefore ? formatDateOnly(parseDateOnly(item.bestBefore)) : '';
-  if (!next.bestBefore && templateShelfLife > 0 && item?.type !== 'buy') {
+  if (!next.bestBefore && !next.openedDate && templateShelfLife > 0 && item?.type !== 'buy') {
     next.bestBefore = addDaysToDateString(formatDateOnly(startOfToday()), templateShelfLife);
   }
   return next;
@@ -6801,6 +6801,9 @@ document.addEventListener('DOMContentLoaded', () => {
 window.requestExpiryNotifications = requestExpiryNotifications;
 window.setExpirySortMode = setExpirySortMode;
 window.markItemOpened = markItemOpened;
+window.collectExpiryAlertItems = collectExpiryAlertItems;
+window.updateExpiryControls = updateExpiryControls;
+window.maybeSendExpiryNotifications = maybeSendExpiryNotifications;
 
 document.addEventListener('input', (e) => {
   if (!e.target) return;
