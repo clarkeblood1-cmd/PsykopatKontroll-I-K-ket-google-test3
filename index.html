@@ -93,28 +93,7 @@
       <div class="summary-box summary-box-dinner">
         <div>Middag kvar</div>
         <strong id="dinnerCount">0 st</strong>
-        <label class="summary-mini-label" for="householdSize">Hushåll</label>
-        <select id="householdSize" class="summary-mini-select" onchange="updateHouseholdSize(this.value)">
-          <option value="1">1 person</option>
-          <option value="2">2 personer</option>
-          <option value="3">3 personer</option>
-          <option value="4">4 personer</option>
-          <option value="5">5 personer</option>
-          <option value="6">6 personer</option>
-          <option value="7">7 personer</option>
-          <option value="8">8 personer</option>
-        </select>
-        <label class="summary-mini-label" for="portionGrams">1 portion (g)</label>
-        <div class="portion-controls">
-          <input id="portionGrams" class="summary-mini-input" type="number" min="1" max="250" step="1" value="100" onchange="updatePortionGrams(this.value)" oninput="updatePortionGrams(this.value, true)" placeholder="100">
-          <div class="portion-quick-buttons">
-            <button type="button" class="portion-chip" onclick="setPortionGramsPreset(100)">100g</button>
-            <button type="button" class="portion-chip" onclick="setPortionGramsPreset(150)">150g</button>
-            <button type="button" class="portion-chip" onclick="setPortionGramsPreset(200)">200g</button>
-            <button type="button" class="portion-chip" onclick="setPortionGramsPreset(250)">250g</button>
-          </div>
-          <div id="portionLiveSummary" class="portion-live-summary">1 × 100g = 100g</div>
-        </div>
+        <div class="summary-expiring-caption">Inställningar flyttade till ⚙️ Hantera</div>
       </div>
     </div>
 
@@ -236,6 +215,46 @@
           <div class="manage-stat-pill"><span>🏠</span><strong id="manageActiveRoomLabel">Köket</strong></div>
           <div class="manage-stat-pill"><span>🏷️</span><strong id="manageCategoryCount">0 kategorier</strong></div>
           <div class="manage-stat-pill"><span>📍</span><strong id="managePlaceCount">0 platser</strong></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section manage-card" data-page="manage" aria-label="Portionsinställningar">
+      <div class="manage-settings-card">
+        <div class="manage-settings-head">
+          <div>
+            <div class="auth-title">🍽️ Portionsinställningar</div>
+            <div class="manage-settings-subtitle">Flyttat från toppen för en renare startsida.</div>
+          </div>
+          <div class="manage-settings-total" id="portionLiveSummary">1 × 100g = 100g</div>
+        </div>
+
+        <div class="manage-settings-grid">
+          <div class="manage-setting-field">
+            <label class="summary-mini-label" for="householdSize">Hushåll</label>
+            <select id="householdSize" class="manage-select" onchange="updateHouseholdSize(this.value)">
+              <option value="1">1 person</option>
+              <option value="2">2 personer</option>
+              <option value="3">3 personer</option>
+              <option value="4">4 personer</option>
+              <option value="5">5 personer</option>
+              <option value="6">6 personer</option>
+              <option value="7">7 personer</option>
+              <option value="8">8 personer</option>
+            </select>
+          </div>
+
+          <div class="manage-setting-field">
+            <label class="summary-mini-label" for="portionGrams">1 portion (g)</label>
+            <input id="portionGrams" class="manage-input" type="number" min="1" max="250" step="1" value="100" onchange="updatePortionGrams(this.value)" oninput="updatePortionGrams(this.value, true)" placeholder="100">
+          </div>
+        </div>
+
+        <div class="portion-quick-buttons manage-portion-buttons">
+          <button type="button" class="portion-chip" onclick="setPortionGramsPreset(100)">100g</button>
+          <button type="button" class="portion-chip" onclick="setPortionGramsPreset(150)">150g</button>
+          <button type="button" class="portion-chip" onclick="setPortionGramsPreset(200)">200g</button>
+          <button type="button" class="portion-chip" onclick="setPortionGramsPreset(250)">250g</button>
         </div>
       </div>
     </section>
