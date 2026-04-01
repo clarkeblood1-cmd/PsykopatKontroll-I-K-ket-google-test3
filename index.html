@@ -156,7 +156,7 @@
 
       <button type="button" class="ghost-btn quick-gallery-btn" onclick="pickGallery()">🖼️ Galleri</button>
       <button type="button" class="ghost-btn quick-camera-btn" onclick="pickCamera()">📷 Kamera</button>
-      <button type="button" class="quick-home-btn" onclick="addItemAndUse()">Lägg till</button>
+      <button type="button" class="quick-home-btn" onclick="addItemAndUse()">Lägg till i hem och snabblista</button>
       <button type="button" class="ghost-btn quick-save-btn" onclick="addItem()">💾 Spara i snabblista</button>
 
       <div class="quick-field quick-field-price">
@@ -305,7 +305,6 @@
           <option value="">Alla kategorier</option>
         </select>
       </div>
-      <div class="section-subtitle">ÖVRIGT är fallback i rummet och kan inte tas bort</div>
       <div id="categoryChips" class="category-chips"></div>
     </section>
 
@@ -318,7 +317,6 @@
         </div>
         <div class="section-search-spacer"></div>
       </div>
-      <div class="section-subtitle">Kyl är fallback och kan inte tas bort</div>
       <div id="placeChips" class="category-chips"></div>
     </section>
 
@@ -372,7 +370,7 @@
     <div class="section-search-spacer"></div>
     <button type="button" class="ghost-btn" onclick="jumpToTodayPlan()">Idag</button>
   </div>
-  <div class="section-subtitle">Lätt, kompakt och snabb veckoplan med frukost, lunch, middag, kvällsmat, efterrätt och godis</div>
+  <div class="section-subtitle">Lätt, kompakt och snabb veckoplan med frukost, lunch, middag, efterrätt, kvällsmat, och godis</div>
 
   <div class="week-planner compact">
     <div class="week-day-row compact" id="weekDayRow"></div>
@@ -387,53 +385,41 @@
           <div class="week-mini-line"><strong>Frukost:</strong> <span id="weekPreviewBreakfast">-</span></div>
           <div class="week-mini-line"><strong>Lunch:</strong> <span id="weekPreviewLunch">-</span></div>
           <div class="week-mini-line"><strong>Middag:</strong> <span id="weekPreviewMeal">-</span></div>
-          <div class="week-mini-line"><strong>Kvällsmat:</strong> <span id="weekPreviewEvening">-</span></div>
-          <div class="week-mini-line"><strong>Efterrätt:</strong> <span id="weekPreviewDessert">-</span></div>
+          <div class="week-mini-line"><strong>Efterrätt:</strong> <span id="weekPreviewEvening">-</span></div>
+          <div class="week-mini-line"><strong>Kvällsmat:</strong> <span id="weekPreviewDessert">-</span></div>
           <div class="week-mini-line"><strong>Godis:</strong> <span id="weekPreviewCandy">-</span></div>
-          <div class="week-mini-line"><strong>Notis:</strong> <span id="weekPreviewNote">-</span></div>
         </div>
       </div>
 
       <div class="week-compact-grid week-compact-grid-meals" id="weekMealRows">
         <div class="week-meal-row" data-slot-key="breakfast" draggable="true">
           <label for="weekBreakfastRecipeSelect">🥐 Frukost</label>
-          <select id="weekBreakfastRecipeSelect" title="Frukost recept"></select>
-          <input id="weekBreakfast" placeholder="🥐 Egen frukost">
+          <select id="weekBreakfastRecipeSelect" title="Frukost recept"></select>       
         </div>
-
+        
         <div class="week-meal-row" data-slot-key="lunch" draggable="true">
           <label for="weekLunchRecipeSelect">🥗 Lunch</label>
-          <select id="weekLunchRecipeSelect" title="Lunch recept"></select>
-          <input id="weekLunch" placeholder="🥗 Egen lunch">
+          <select id="weekLunchRecipeSelect" title="Lunch recept"></select>         
         </div>
-
+                
         <div class="week-meal-row" data-slot-key="dinner" draggable="true">
           <label for="weekRecipeSelect">🍽️ Middag</label>
           <select id="weekRecipeSelect" title="Middag recept"></select>
-          <input id="weekCustomMeal" placeholder="🍽️ Egen middag">
         </div>
 
+         <div class="week-meal-row" data-slot-key="dessert" draggable="true">
+          <label for="weekDessertRecipeSelect">🍰 Efterrätt</label>
+          <select id="weekDessertRecipeSelect" title="Efterrätt recept"></select>         
+        </div>
+        
         <div class="week-meal-row" data-slot-key="evening" draggable="true">
           <label for="weekEveningRecipeSelect">🌙 Kvällsmat</label>
-          <select id="weekEveningRecipeSelect" title="Kvällsmat recept"></select>
-          <input id="weekEveningMeal" placeholder="🌙 Egen kvällsmat">
-        </div>
-
-        <div class="week-meal-row" data-slot-key="dessert" draggable="true">
-          <label for="weekDessertRecipeSelect">🍰 Efterrätt</label>
-          <select id="weekDessertRecipeSelect" title="Efterrätt recept"></select>
-          <input id="weekDessertMeal" placeholder="🍰 Egen efterrätt">
-        </div>
-
+          <select id="weekEveningRecipeSelect" title="Kvällsmat recept"></select>         
+        </div> 
+        
         <div class="week-meal-row" data-slot-key="candy" draggable="true">
           <label for="weekCandyRecipeSelect">🍬 Godis</label>
           <select id="weekCandyRecipeSelect" title="Godis recept"></select>
-          <input id="weekCandyMeal" placeholder="🍬 Eget godis">
-        </div>
-
-        <div class="week-meal-row week-note-row">
-          <label for="weekNote">📝 Notis</label>
-          <input id="weekNote" placeholder="📝 Notis">
         </div>
       </div>
 
@@ -457,8 +443,7 @@
         <div class="section-search-spacer"></div>
         
       </div>
-      <div class="section-subtitle">Skapa recept, ändra ingredienser och kolla vad som saknas</div>
-
+    
       <div id="recipeSection">
         <div class="recipe-grid">
           <div class="recipe-box">
@@ -470,7 +455,6 @@
                   <input id="newRecipeCategoryName" placeholder="Ny receptkategori" onkeydown="if(event.key==='Enter'){event.preventDefault(); addRecipeCategory();}">
                   <button type="button" class="ghost-btn" onclick="addRecipeCategory()">Lägg till kategori</button>
                 </div>
-                <div class="section-subtitle">Alla kategorier r alla recept. Matlagning och Bakverk är fallback.</div>
                 <div id="recipeCategoryChips" class="category-chips"></div>
               </div>
               <input id="recipeName" placeholder="Receptnamn, t.ex. Tacos">
@@ -481,7 +465,7 @@
               <input id="recipeLink" placeholder="Länk till recept (https://...)">
 
               <div style="position:relative; margin-top:10px;">
-                <input id="recipeQuickSearch" placeholder="Sök ingrediens från snabblistan..." oninput="showNewRecipeQuickSuggestions()">
+                <input id="recipeQuickSearch" placeholder="Lägg till ingredienser" oninput="showNewRecipeQuickSuggestions()">
                 <div id="recipeQuickSuggestions" class="suggestion-box"></div>
               </div>
               <div class="recipe-quick-hint">Ingredienser hämtas från <strong>Snabblista</strong>. För <strong>bakverk</strong> används bara ingrediensnamnet därifrån – mängd och gram sätter du i receptet själv.</div>
