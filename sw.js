@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v74-clean-manage-settings';
+const CACHE_NAME = 'matlista-app-v73-appstore-ui';
 const ASSETS = [
   './',
   './index.html',

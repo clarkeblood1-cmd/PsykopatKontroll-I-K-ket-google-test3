@@ -12,12 +12,20 @@
     const panel = document.createElement('div');
     panel.className = 'expiry-top-panel';
     panel.id = 'expiryTopPanel';
-    panel.innerHTML = `<div>⏳ Går ut snart</div>`;
+
+    panel.innerHTML = `
+      <div class="expiry-top-left">
+        <div class="expiry-top-title">⏳ Går ut snart</div>
+        <div class="expiry-top-subtitle">Topp 5 viktigaste varorna först</div>
+      </div>
+    `;
 
     homeSection.prepend(panel);
 
     const dashboard = document.createElement('div');
     dashboard.id = 'expiryDashboardPro';
+    dashboard.className = 'expiry-dashboard-pro';
+
     panel.after(dashboard);
   }
 
