@@ -38,6 +38,12 @@ let roomDefs = JSON.parse(localStorage.getItem('matlista_rooms') || 'null');
 let activeRoom = localStorage.getItem('matlista_active_room') || 'koket';
 let activePlaceFilter = localStorage.getItem('matlista_active_place_filter') || '';
 
+const DINNER_CATEGORY_STORAGE_KEY = 'matlista_dinner_categories_koket';
+let dinnerCategorySelections = JSON.parse(localStorage.getItem(DINNER_CATEGORY_STORAGE_KEY) || 'null');
+if (!Array.isArray(dinnerCategorySelections)) {
+  dinnerCategorySelections = ['KÖTTFÄRS', 'KYCKLING'];
+}
+
 let expirySortMode = localStorage.getItem('matlista_expiry_sort_mode') || 'expiry';
 let expiryNotificationPermissionAsked = localStorage.getItem('matlista_expiry_notify_asked') === '1';
 let lastExpiryNotificationSignature = localStorage.getItem('matlista_last_expiry_notification') || '';
@@ -2332,6 +2338,7 @@ function save() {
   localStorage.setItem('matlista_recipe_choices', JSON.stringify(recipeIngredientChoices));
   localStorage.setItem('matlista_household_size', String(householdSize));
   localStorage.setItem('matlista_portion_grams', String(portionGrams));
+  localStorage.setItem(DINNER_CATEGORY_STORAGE_KEY, JSON.stringify(dinnerCategorySelections));
   localStorage.setItem('matlista_weekplanner', JSON.stringify(weekPlanner));
   localStorage.setItem('matlista_weekplanner_selected', selectedWeekDay);
   localStorage.setItem('matlista_week_meal_order', JSON.stringify(weekMealOrder));
@@ -2351,6 +2358,7 @@ function save() {
   window.recipeIngredientChoices = recipeIngredientChoices;
   window.householdSize = householdSize;
   window.portionGrams = portionGrams;
+  window.dinnerCategorySelections = dinnerCategorySelections;
   window.weekPlanner = weekPlanner;
   window.selectedWeekDay = selectedWeekDay;
   window.weekMealOrder = weekMealOrder;
@@ -2375,6 +2383,10 @@ window.applyCloudState = function applyCloudState(data) {
   if (data.recipeIngredientChoices && typeof data.recipeIngredientChoices === 'object') recipeIngredientChoices = data.recipeIngredientChoices;
   if (typeof data.householdSize !== 'undefined') householdSize = Math.max(1, Math.min(8, Number(data.householdSize || 1)));
   if (typeof data.portionGrams !== 'undefined') portionGrams = Math.max(1, Math.min(250, Math.round(Number(data.portionGrams || 100) || 100)));
+  if (Array.isArray(data.dinnerCategorySelections)) {
+    dinnerCategorySelections = data.dinnerCategorySelections.map(value => normalizeCategoryName(value)).filter(Boolean);
+    localStorage.setItem(DINNER_CATEGORY_STORAGE_KEY, JSON.stringify(dinnerCategorySelections));
+  }
   if (data.weekPlanner && typeof data.weekPlanner === 'object') weekPlanner = data.weekPlanner;
   if (typeof data.selectedWeekDay === 'string' && data.selectedWeekDay) selectedWeekDay = data.selectedWeekDay;
   if (Array.isArray(data.weekMealOrder)) weekMealOrder = data.weekMealOrder;
@@ -3046,11 +3058,149 @@ function migrateInlineImagesToCloud(force = false) {
   });
 }
 
+function saveDinnerCategorySelections() {
+  localStorage.setItem(DINNER_CATEGORY_STORAGE_KEY, JSON.stringify(dinnerCategorySelections));
+  window.dinnerCategorySelections = dinnerCategorySelections;
+}
+
+function normalizeDinnerCategorySelections() {
+  const roomConfig = getRoomConfig('koket');
+  const available = Array.isArray(roomConfig?.categories)
+    ? roomConfig.categories.map(cat => normalizeCategoryName(cat)).filter(Boolean)
+    : [];
+
+  const unique = [];
+  const seen = new Set();
+
+  (Array.isArray(dinnerCategorySelections) ? dinnerCategorySelections : []).forEach(cat => {
+    const normalized = normalizeCategoryName(cat);
+    if (!normalized) return;
+    if (!available.includes(normalized)) return;
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    unique.push(normalized);
+  });
+
+  dinnerCategorySelections = unique;
+  saveDinnerCategorySelections();
+  return dinnerCategorySelections;
+}
+
+function getDinnerSelectableCategories() {
+  const roomConfig = getRoomConfig('koket');
+  const categories = Array.isArray(roomConfig?.categories)
+    ? roomConfig.categories.map(cat => normalizeCategoryName(cat)).filter(Boolean)
+    : [];
+  return [...new Set(categories)];
+}
+
+function getDinnerSelectedCategorySet() {
+  return new Set(normalizeDinnerCategorySelections());
+}
+
+function isDinnerCategorySelected(category) {
+  return getDinnerSelectedCategorySet().has(normalizeCategoryName(category));
+}
+
+function toggleDinnerCategorySelection(category) {
+  const normalized = normalizeCategoryName(category);
+  if (!normalized) return;
+
+  const selected = normalizeDinnerCategorySelections().slice();
+  const exists = selected.includes(normalized);
+
+  dinnerCategorySelections = exists
+    ? selected.filter(cat => cat !== normalized)
+    : [...selected, normalized];
+
+  saveDinnerCategorySelections();
+  updateSummary();
+  try { renderDinnerCategoryPicker(); } catch (error) {}
+}
+
+function setAllDinnerCategories(enabled) {
+  if (enabled) {
+    dinnerCategorySelections = getDinnerSelectableCategories().slice();
+  } else {
+    dinnerCategorySelections = [];
+  }
+  saveDinnerCategorySelections();
+  updateSummary();
+  try { renderDinnerCategoryPicker(); } catch (error) {}
+}
+
+function getDinnerCountDetails() {
+  const selectedCategories = getDinnerSelectedCategorySet();
+
+  const matchingItems = items.filter(item =>
+    item &&
+    item.type === 'home' &&
+    normalizeRoomKey(item.room || 'koket') === 'koket' &&
+    selectedCategories.has(normalizeCategoryName(item.category))
+  );
+
+  const totalDinnerWeight = matchingItems.reduce((sum, item) => sum + getDinnerWeightFromItem(item), 0);
+  const gramsPerDinner = Math.max(1, Number(portionGrams || 0) * Number(householdSize || 1));
+  const totalDinners = Math.floor(totalDinnerWeight / gramsPerDinner);
+
+  return {
+    matchingItems,
+    totalDinnerWeight,
+    gramsPerDinner,
+    totalDinners,
+    selectedCategories: [...selectedCategories]
+  };
+}
+
+function renderDinnerCategoryPicker() {
+  const wrap = document.getElementById('dinnerCategoryPicker');
+  const summary = document.getElementById('dinnerCategorySummary');
+  const total = document.getElementById('dinnerCategoryWeightSummary');
+
+  if (!wrap && !summary && !total) return;
+
+  const allCategories = getDinnerSelectableCategories();
+  const selectedSet = getDinnerSelectedCategorySet();
+  const details = getDinnerCountDetails();
+
+  if (wrap) {
+    wrap.innerHTML = allCategories.length
+      ? allCategories.map(category => {
+          const active = selectedSet.has(category);
+          return `
+            <button
+              type="button"
+              class="dinner-category-chip${active ? ' active' : ''}"
+              onclick="toggleDinnerCategorySelection('${String(category).replace(/'/g, "\'")}')"
+            >
+              ${active ? '✅' : '⬜'} ${category}
+            </button>
+          `;
+        }).join('')
+      : '<div class="manage-settings-subtitle">Inga kategorier finns i KÖKET ännu.</div>';
+  }
+
+  if (summary) {
+    if (!allCategories.length) {
+      summary.textContent = 'Lägg först till kategorier i KÖKET.';
+    } else if (!details.selectedCategories.length) {
+      summary.textContent = 'Ingen kategori vald för middagsräkningen.';
+    } else {
+      summary.textContent = `Valda kategorier: ${details.selectedCategories.join(', ')}`;
+    }
+  }
+
+  if (total) {
+    total.textContent = `${details.totalDinnerWeight}g totalt`;
+  }
+}
+
 function getDinnerWeightFromItem(item) {
   if (!item || item.type !== 'home') return 0;
+  if (normalizeRoomKey(item.room || 'koket') !== 'koket') return 0;
 
   const category = normalizeCategoryName(item.category);
-  if (!['KÖTT', 'KOTT', 'KÖTTFÄRS', 'KOTTFARS', 'KYCKLING'].includes(category)) return 0;
+  if (!isDinnerCategorySelected(category)) return 0;
 
   const quantity = Math.max(0, Number(item.quantity || 0));
   if (quantity <= 0) return 0;
@@ -3058,6 +3208,14 @@ function getDinnerWeightFromItem(item) {
   if (isWeightUnit(item.unit)) {
     const size = Number(normalizeSize(item.unit, item.size, item.category) || 0);
     if (size > 0) return quantity * size;
+  }
+
+  if (isPackUnit(item.unit)) {
+    const packUnit = getPackMeasureUnit(item, 'g');
+    if (isWeightUnit(packUnit)) {
+      const size = Number(normalizeSize(packUnit, item.size, item.category) || 0);
+      if (size > 0) return quantity * size;
+    }
   }
 
   return quantity * 250;
@@ -3104,6 +3262,7 @@ function updateSummary() {
   const buyCount = document.getElementById('buyCount');
   const buyCost = document.getElementById('buyCost');
   const dinnerCount = document.getElementById('dinnerCount');
+  const dinnerCountManage = document.getElementById('dinnerCountManage');
   const householdSelect = document.getElementById('householdSize');
   const portionGramsInput = document.getElementById('portionGrams');
   const portionLiveSummary = document.getElementById('portionLiveSummary');
@@ -3128,12 +3287,12 @@ function updateSummary() {
     portionLiveSummary.textContent = `${householdSize} × ${portionGrams}g = ${totalLive}g`;
   }
 
-  if (dinnerCount) {
-    const totalDinnerWeight = homeItems.reduce((sum, item) => sum + getDinnerWeightFromItem(item), 0);
-    const gramsPerDinner = Math.max(1, portionGrams * householdSize);
-    const totalDinners = Math.floor(totalDinnerWeight / gramsPerDinner);
-    dinnerCount.textContent = `${totalDinners} st`;
-  }
+  const details = getDinnerCountDetails();
+
+  if (dinnerCount) dinnerCount.textContent = `${details.totalDinners} st`;
+  if (dinnerCountManage) dinnerCountManage.textContent = `${details.totalDinners} st`;
+
+  renderDinnerCategoryPicker();
 }
 
 function dragStartItem(index, source) {
@@ -8193,3 +8352,14 @@ window.addEventListener('load', () => {
 
   window.__autoBuyZip = 'v67-pack-actions-fix';
 })();
+
+
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    normalizeDinnerCategorySelections();
+    renderDinnerCategoryPicker();
+    updateSummary();
+  } catch (error) {
+    console.error('Kunde inte starta middagskategori-val:', error);
+  }
+});

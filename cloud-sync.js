@@ -78,6 +78,7 @@
       recipeIngredientChoices: window.recipeIngredientChoices || {},
       householdSize: Number(window.householdSize || 1),
       portionGrams: Math.max(1, Math.min(250, Number(window.portionGrams || localStorage.getItem('matlista_portion_grams') || 100))),
+      dinnerCategorySelections: Array.isArray(window.dinnerCategorySelections) ? window.dinnerCategorySelections : JSON.parse(localStorage.getItem('matlista_dinner_categories_koket') || '[]'),
       weekPlanner: window.weekPlanner || {},
       selectedWeekDay: window.selectedWeekDay || 'mon',
       weekMealOrder: Array.isArray(window.weekMealOrder) ? window.weekMealOrder : JSON.parse(localStorage.getItem('matlista_week_meal_order') || '[]'),
@@ -109,6 +110,10 @@
         if (data.recipeIngredientChoices && typeof data.recipeIngredientChoices === 'object') window.recipeIngredientChoices = data.recipeIngredientChoices;
         if (typeof data.householdSize !== 'undefined') window.householdSize = Math.max(1, Math.min(8, Number(data.householdSize || 1)));
         if (typeof data.portionGrams !== 'undefined') window.portionGrams = Math.max(1, Math.min(250, Number(data.portionGrams || 100)));
+        if (Array.isArray(data.dinnerCategorySelections)) {
+          window.dinnerCategorySelections = data.dinnerCategorySelections;
+          localStorage.setItem('matlista_dinner_categories_koket', JSON.stringify(data.dinnerCategorySelections));
+        }
         if (data.weekPlanner && typeof data.weekPlanner === 'object') {
           window.weekPlanner = data.weekPlanner;
           localStorage.setItem('matlista_weekplanner', JSON.stringify(data.weekPlanner));

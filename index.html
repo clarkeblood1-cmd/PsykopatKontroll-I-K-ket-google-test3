@@ -204,7 +204,9 @@
         <div class="manage-settings-head">
           <div>
             <div class="auth-title">🍽️ Portionsinställningar</div>
-            
+            <div class="manage-settings-subtitle">
+              Välj hushåll, portionsstorlek och vilka kategorier i KÖKET som ska räknas som middagar.
+            </div>
           </div>
           <div class="manage-settings-total" id="portionLiveSummary">1 × 100g = 100g</div>
         </div>
@@ -226,7 +228,28 @@
 
           <div class="manage-setting-field">
             <label class="summary-mini-label" for="portionGrams">1 portion (g)</label>
-            <input id="portionGrams" class="manage-input" type="number" min="1" max="250" step="1" value="100" onchange="updatePortionGrams(this.value)" oninput="updatePortionGrams(this.value, true)" placeholder="100">
+            <input
+              id="portionGrams"
+              class="manage-input"
+              type="number"
+              min="1"
+              max="250"
+              step="1"
+              value="100"
+              onchange="updatePortionGrams(this.value)"
+              oninput="updatePortionGrams(this.value, true)"
+              placeholder="100"
+            >
+          </div>
+
+          <div class="manage-setting-field">
+            <label class="summary-mini-label">Middagar kvar</label>
+            <div class="manage-settings-total" id="dinnerCountManage">0 st</div>
+          </div>
+
+          <div class="manage-setting-field">
+            <label class="summary-mini-label">Vald råvikt</label>
+            <div class="manage-settings-total" id="dinnerCategoryWeightSummary">0g totalt</div>
           </div>
         </div>
 
@@ -235,6 +258,24 @@
           <button type="button" class="portion-chip" onclick="setPortionGramsPreset(150)">150g</button>
           <button type="button" class="portion-chip" onclick="setPortionGramsPreset(200)">200g</button>
           <button type="button" class="portion-chip" onclick="setPortionGramsPreset(250)">250g</button>
+        </div>
+
+        <div class="manage-dinner-picker">
+          <div class="manage-dinner-picker-head">
+            <div>
+              <div class="auth-title">🍖 Kategorier för middagsräkning</div>
+              <div id="dinnerCategorySummary" class="manage-settings-subtitle">
+                Ingen kategori vald för middagsräkningen.
+              </div>
+            </div>
+
+            <div class="manage-dinner-picker-actions">
+              <button type="button" class="ghost-btn" onclick="setAllDinnerCategories(true)">Välj alla</button>
+              <button type="button" class="ghost-btn" onclick="setAllDinnerCategories(false)">Rensa</button>
+            </div>
+          </div>
+
+          <div id="dinnerCategoryPicker" class="dinner-category-grid"></div>
         </div>
       </div>
     </section>

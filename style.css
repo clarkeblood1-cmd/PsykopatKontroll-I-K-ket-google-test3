@@ -2725,3 +2725,55 @@ input:focus,select:focus,textarea:focus{
     border-radius:20px;
   }
 }
+
+
+.manage-dinner-picker{
+  display:grid;
+  gap:14px;
+  padding:18px;
+  border-radius:20px;
+  background:rgba(255,255,255,.035);
+  border:1px solid rgba(255,255,255,.08);
+}
+
+.manage-dinner-picker-head{
+  display:flex;
+  gap:12px;
+  justify-content:space-between;
+  align-items:flex-start;
+  flex-wrap:wrap;
+}
+
+.manage-dinner-picker-actions{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
+.dinner-category-grid{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+}
+
+.dinner-category-chip{
+  min-height:42px;
+  padding:10px 14px;
+  border:none;
+  border-radius:999px;
+  background:#22304f;
+  color:#fff;
+  font-weight:700;
+  cursor:pointer;
+  transition:transform .15s ease, box-shadow .15s ease, background .15s ease;
+}
+
+.dinner-category-chip:hover{
+  transform:translateY(-1px);
+}
+
+.dinner-category-chip.active{
+  background:rgba(34,197,94,.18);
+  color:#bbf7d0;
+  box-shadow:0 0 0 1px rgba(34,197,94,.28) inset;
+}
