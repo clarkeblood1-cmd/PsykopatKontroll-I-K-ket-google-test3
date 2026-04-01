@@ -4945,11 +4945,23 @@ function getIngredientDensityPerMl(name) {
   if (!normalized) return null;
 
   const rules = [
-    { match: ['strosocker', 'socker'], gramsPerMl: 0.85 },
-    { match: ['vetemjol', 'mjol'], gramsPerMl: 0.60 },
+    { match: ['vatten'], gramsPerMl: 1.00 },
+    { match: ['mjolk', 'mellanmjolk', 'standardmjolk', 'lattmjolk', 'havremjolk', 'sojamjolk'], gramsPerMl: 1.03 },
+    { match: ['gradde', 'grädde', 'vispgradde', 'matlagningsgradde'], gramsPerMl: 1.00 },
+    { match: ['cremefraiche', 'crèmefraiche', 'yoghurt', 'filmjolk'], gramsPerMl: 1.00 },
+    { match: ['olja', 'olivolja', 'rapsolja'], gramsPerMl: 0.92 },
+    { match: ['strosocker', 'strösocker', 'socker'], gramsPerMl: 0.85 },
+    { match: ['florsocker'], gramsPerMl: 0.55 },
+    { match: ['vetemjol', 'vetemjöl', 'mjol', 'mjöl'], gramsPerMl: 0.60 },
+    { match: ['potatismjol', 'potatismjöl', 'maizena', 'majstarkelse'], gramsPerMl: 0.65 },
+    { match: ['havregryn'], gramsPerMl: 0.35 },
+    { match: ['ris', 'jasminris', 'basmatiris', 'fullkornsris', 'matris'], gramsPerMl: 0.80 },
+    { match: ['pasta', 'makaroner', 'makaroni', 'spaghetti', 'penne', 'fusilli'], gramsPerMl: 0.40 },
+    { match: ['quinoa'], gramsPerMl: 0.70 },
+    { match: ['bulgur', 'couscous'], gramsPerMl: 0.65 },
     { match: ['kakao'], gramsPerMl: 0.40 },
     { match: ['vanillinsocker', 'vaniljsocker'], gramsPerMl: 0.60 },
-    { match: ['salt'], gramsPerMl: 1.20 }
+    { match: ['salt', 'havssalt'], gramsPerMl: 1.20 }
   ];
 
   const found = rules.find(rule => rule.match.some(keyword => normalized.includes(keyword)));

@@ -204,7 +204,7 @@
         <div class="manage-settings-head">
           <div>
             <div class="auth-title">🍽️ Portionsinställningar</div>
-            <div class="manage-settings-subtitle">Välj hushåll, portionsstorlek och vilka kategorier i KÖKET som ska räknas som middagar.</div>
+            
           </div>
           <div class="manage-settings-total" id="portionLiveSummary">1 × 100g = 100g</div>
         </div>
@@ -228,16 +228,6 @@
             <label class="summary-mini-label" for="portionGrams">1 portion (g)</label>
             <input id="portionGrams" class="manage-input" type="number" min="1" max="250" step="1" value="100" onchange="updatePortionGrams(this.value)" oninput="updatePortionGrams(this.value, true)" placeholder="100">
           </div>
-
-          <div class="manage-setting-field">
-            <label class="summary-mini-label">Middagar kvar</label>
-            <div class="manage-settings-total" id="dinnerCount">0 st</div>
-          </div>
-
-          <div class="manage-setting-field">
-            <label class="summary-mini-label">Vald råvikt</label>
-            <div class="manage-settings-total" id="dinnerCategoryWeightSummary">0g totalt</div>
-          </div>
         </div>
 
         <div class="portion-quick-buttons manage-portion-buttons">
@@ -245,22 +235,6 @@
           <button type="button" class="portion-chip" onclick="setPortionGramsPreset(150)">150g</button>
           <button type="button" class="portion-chip" onclick="setPortionGramsPreset(200)">200g</button>
           <button type="button" class="portion-chip" onclick="setPortionGramsPreset(250)">250g</button>
-        </div>
-
-        <div class="manage-dinner-picker">
-          <div class="manage-dinner-picker-head">
-            <div>
-              <div class="auth-title">🍖 Kategorier för middagsräkning</div>
-              <div id="dinnerCategorySummary" class="manage-settings-subtitle">Ingen kategori vald för middagsräkningen.</div>
-            </div>
-
-            <div class="manage-dinner-picker-actions">
-              <button type="button" class="ghost-btn" onclick="setAllDinnerCategories(true)">Välj alla</button>
-              <button type="button" class="ghost-btn" onclick="setAllDinnerCategories(false)">Rensa</button>
-            </div>
-          </div>
-
-          <div id="dinnerCategoryPicker" class="dinner-category-grid"></div>
         </div>
       </div>
     </section>
@@ -495,7 +469,7 @@
                 <input id="recipeQuickSearch" placeholder="Lägg till ingredienser" oninput="showNewRecipeQuickSuggestions()">
                 <div id="recipeQuickSuggestions" class="suggestion-box"></div>
               </div>
-              <div class="recipe-quick-hint">Ingredienser hämtas från <strong>Snabblista</strong>. För <strong>bakverk</strong> används bara ingrediensnamnet därifrån – mängd och gram sätter du i receptet själv. För vanliga recept kan du även markera en ingrediens som <strong>per person</strong>, t.ex. ris 70g/person.</div>
+              <div class="recipe-quick-hint">Ingredienser hämtas från <strong>Snabblista</strong>. För <strong>bakverk</strong> används bara ingrediensnamnet därifrån – mängd och gram sätter du i receptet själv.</div>
 
               <div id="recipeDraftList" class="recipe-items"></div>
               <button type="button" onclick="saveRecipe()">💾 Spara recept</button>
@@ -620,8 +594,6 @@
           </select>
           <div id="ingredientEditMeasureSummary" class="measure-summary" style="display:none;"></div>
         </div>
-        <label class="ingredient-per-person-toggle"><input id="ingredientEditPerPerson" type="checkbox"> <span>Räkna denna ingrediens per person</span></label>
-        <div class="ingredient-per-person-help">Exempel: Ris 70g/person blir 210g automatiskt när hushållet är 3 personer.</div>
         <div style="display:flex; gap:10px;">
           <button type="button" class="ghost-btn" style="flex:1;" onclick="closeIngredientEdit()">Avbryt</button>
           <button type="button" style="flex:1;" onclick="saveIngredientEdit()">Spara</button>
