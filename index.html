@@ -65,22 +65,6 @@
      
       <span>🏠 PsykopatKontroll I Hemmet 🏠</span>
     </div>
-    <div class="header-right theme-toolbar">
-      <label class="theme-select-wrap" for="themeSelect">
-        <span>🎨 Tema</span>
-        <select id="themeSelect" onchange="setTheme(this.value)">
-          <option value="scifi">Sci‑fi</option>
-          <option value="dark">Dark</option>
-          <option value="light">Light</option>
-          <option value="matrix">Matrix</option>
-          <option value="sunset">Sunset</option>
-          <option value="ice">Ice</option>
-          <option value="forest">Forest</option>
-          <option value="rose">Rose</option>
-        </select>
-      </label>
-      <button id="themeToggleBtn" onclick="toggleTheme()">🎨 Byt tema</button>
-    </div>
   </header>
 
   <div class="page">
@@ -258,6 +242,39 @@
         </div>
       </div>
     </section>
+
+    <section class="section manage-card" data-page="manage" aria-label="Tema">
+      <div class="manage-settings-card">
+        <div class="manage-settings-head">
+          <div>
+            <div class="auth-title">🎨 Tema</div>
+            <div class="manage-settings-subtitle">Flyttat från toppen för en renare header.</div>
+          </div>
+        </div>
+
+        <div class="manage-settings-grid">
+          <div class="manage-setting-field">
+            <label class="summary-mini-label" for="themeSelect">Tema</label>
+            <select id="themeSelect" class="manage-select" onchange="setTheme(this.value)">
+              <option value="scifi">Sci‑fi</option>
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+              <option value="matrix">Matrix</option>
+              <option value="sunset">Sunset</option>
+              <option value="ice">Ice</option>
+              <option value="forest">Forest</option>
+              <option value="rose">Rose</option>
+            </select>
+          </div>
+
+          <div class="manage-setting-field">
+            <label class="summary-mini-label" for="themeToggleBtn">Snabbval</label>
+            <button type="button" id="themeToggleBtn" class="ghost-btn" onclick="toggleTheme()">🎨 Byt tema</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
 
     <section class="section manage-card" data-page="manage">
       <div class="auth-panel" style="margin:0;">
