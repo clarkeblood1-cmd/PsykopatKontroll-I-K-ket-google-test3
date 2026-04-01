@@ -110,10 +110,6 @@
         if (data.recipeIngredientChoices && typeof data.recipeIngredientChoices === 'object') window.recipeIngredientChoices = data.recipeIngredientChoices;
         if (typeof data.householdSize !== 'undefined') window.householdSize = Math.max(1, Math.min(8, Number(data.householdSize || 1)));
         if (typeof data.portionGrams !== 'undefined') window.portionGrams = Math.max(1, Math.min(250, Number(data.portionGrams || 100)));
-        if (Array.isArray(data.dinnerCategorySelections)) {
-          window.dinnerCategorySelections = data.dinnerCategorySelections;
-          localStorage.setItem('matlista_dinner_categories_koket', JSON.stringify(data.dinnerCategorySelections));
-        }
         if (data.weekPlanner && typeof data.weekPlanner === 'object') {
           window.weekPlanner = data.weekPlanner;
           localStorage.setItem('matlista_weekplanner', JSON.stringify(data.weekPlanner));
