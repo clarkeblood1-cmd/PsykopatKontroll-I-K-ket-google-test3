@@ -17,23 +17,7 @@
       <h1>Startar appen</h1>
       <p>Kontrollerar konto och hushåll...</p>
       <div id="hhStatus" class="flow-status">Vänta lite...</div>
-    
-<div class="manage-settings-card">
-  <h3>🎨 Tema</h3>
-  <select id="themeSelect" onchange="setTheme(this.value)">
-    <option value="scifi">Sci-fi</option>
-    <option value="dark">Dark</option>
-    <option value="light">Light</option>
-    <option value="matrix">Matrix</option>
-    <option value="sunset">Sunset</option>
-    <option value="ice">Ice</option>
-    <option value="forest">Forest</option>
-    <option value="rose">Rose</option>
-  </select>
-  <button onclick="toggleTheme()">🎨 Byt tema</button>
-</div>
-
-</section>
+    </section>
 
     <section class="flow-card" data-flow-view="login" style="display:none;">
       <div class="flow-badge">🔐 Steg 1</div>
@@ -81,7 +65,22 @@
      
       <span>🏠 PsykopatKontroll I Hemmet 🏠</span>
     </div>
-    
+    <div class="header-right theme-toolbar">
+      <label class="theme-select-wrap" for="themeSelect">
+        <span>🎨 Tema</span>
+        <select id="themeSelect" onchange="setTheme(this.value)">
+          <option value="scifi">Sci‑fi</option>
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+          <option value="matrix">Matrix</option>
+          <option value="sunset">Sunset</option>
+          <option value="ice">Ice</option>
+          <option value="forest">Forest</option>
+          <option value="rose">Rose</option>
+        </select>
+      </label>
+      <button id="themeToggleBtn" onclick="toggleTheme()">🎨 Byt tema</button>
+    </div>
   </header>
 
   <div class="page">
