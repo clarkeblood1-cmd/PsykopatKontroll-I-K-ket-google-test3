@@ -93,7 +93,7 @@
       <div class="summary-box"><div>Kostnad att köpa</div><strong id="buyCost">0 kr</strong></div>
       <div class="summary-box summary-box-dinner">
         <div>Middag kvar</div>
-        <strong id="dinnerCount">0 st</strong>
+        <strong id="dinnerCountSummary">0 st</strong>
         
       </div>
     </div>
@@ -231,7 +231,7 @@
 
           <div class="manage-setting-field">
             <label class="summary-mini-label">Middagar kvar</label>
-            <div class="manage-settings-total" id="dinnerCount">0 st</div>
+            <div class="manage-settings-total" id="dinnerCountManage">0 st</div>
           </div>
 
           <div class="manage-setting-field">
@@ -412,8 +412,8 @@
           <div class="week-mini-line"><strong>Frukost:</strong> <span id="weekPreviewBreakfast">-</span></div>
           <div class="week-mini-line"><strong>Lunch:</strong> <span id="weekPreviewLunch">-</span></div>
           <div class="week-mini-line"><strong>Middag:</strong> <span id="weekPreviewMeal">-</span></div>
-          <div class="week-mini-line"><strong>Efterrätt:</strong> <span id="weekPreviewEvening">-</span></div>
-          <div class="week-mini-line"><strong>Kvällsmat:</strong> <span id="weekPreviewDessert">-</span></div>
+          <div class="week-mini-line"><strong>Kvällsmat:</strong> <span id="weekPreviewEvening">-</span></div>
+          <div class="week-mini-line"><strong>Efterrätt:</strong> <span id="weekPreviewDessert">-</span></div>
           <div class="week-mini-line"><strong>Godis:</strong> <span id="weekPreviewCandy">-</span></div>
         </div>
       </div>
@@ -638,7 +638,11 @@
 <script src="cloud-sync.js"></script>
 <script src="script.js"></script>
 <script src="cloud-hooks.js"></script>
+<script src="quick-template-sync.js"></script>
+<script src="expiry-integration.js"></script>
 <script src="household.js"></script>
 <script src="appstore-ui.js"></script>
+<script src="offline-mode.js"></script>
+<script src="demo-bypass.js"></script>
 </body>
 </html>

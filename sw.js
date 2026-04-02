@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v75-v7-allt-ihop';
+const CACHE_NAME = 'matlista-app-v76-bugfix-all';
 const ASSETS = [
   './',
   './index.html',
@@ -6,6 +6,10 @@ const ASSETS = [
   './script.js',
   './cloud-sync.js',
   './cloud-hooks.js',
+  './quick-template-sync.js',
+  './expiry-integration.js',
+  './offline-mode.js',
+  './demo-bypass.js',
   './appstore-ui.js',
   './household.js',
   './firebase-config.js',
