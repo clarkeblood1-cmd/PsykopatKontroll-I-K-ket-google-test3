@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v74-clean-manage-settings';
+const CACHE_NAME = 'matlista-app-v75-auto-gram-match';
 const ASSETS = [
   './',
   './index.html',

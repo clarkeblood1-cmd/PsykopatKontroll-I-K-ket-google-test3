@@ -5108,10 +5108,25 @@ function getIngredientDensityPerMl(name) {
   if (!normalized) return null;
 
   const rules = [
+    { match: ['vatten'], gramsPerMl: 1.00 },
+    { match: ['mjolk', 'standardmjolk', 'mellanmjolk', 'lattmjolk'], gramsPerMl: 1.03 },
+    { match: ['vispgradde', 'mellangradde', 'matlagningsgradde', 'gradde'], gramsPerMl: 1.00 },
+    { match: ['olja', 'rapsolja', 'olivolja'], gramsPerMl: 0.92 },
+    { match: ['smor'], gramsPerMl: 0.93 },
     { match: ['strosocker', 'socker'], gramsPerMl: 0.85 },
+    { match: ['farinsocker'], gramsPerMl: 0.72 },
+    { match: ['florsocker'], gramsPerMl: 0.55 },
+    { match: ['vanillinsocker', 'vaniljsocker'], gramsPerMl: 0.80 },
     { match: ['vetemjol', 'mjol'], gramsPerMl: 0.60 },
+    { match: ['grahamsmjol'], gramsPerMl: 0.55 },
+    { match: ['potatismjol'], gramsPerMl: 0.80 },
+    { match: ['havregryn'], gramsPerMl: 0.35 },
+    { match: ['ris', 'jasminris', 'basmatiris', 'quinoa'], gramsPerMl: 0.85 },
     { match: ['kakao'], gramsPerMl: 0.40 },
-    { match: ['vanillinsocker', 'vaniljsocker'], gramsPerMl: 0.60 },
+    { match: ['majsstarkelse', 'maizena'], gramsPerMl: 0.55 },
+    { match: ['tomatpure'], gramsPerMl: 1.00 },
+    { match: ['honung'], gramsPerMl: 1.40 },
+    { match: ['sirap'], gramsPerMl: 1.35 },
     { match: ['salt'], gramsPerMl: 1.20 }
   ];
 
