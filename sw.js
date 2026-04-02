@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v75-paket-mangd-core';
+const CACHE_NAME = 'matlista-app-v75-template-threshold-refill';
 const ASSETS = [
   './',
   './index.html',

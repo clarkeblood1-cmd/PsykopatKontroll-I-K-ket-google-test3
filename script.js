@@ -1966,31 +1966,13 @@ function normalizeMeasureItemData(item, unitHint = null) {
     && (cameFromPackUnit || Number(item?.quantity || 0) > 1 || openedAmount > 0 || item?.packMode === 'bags');
   return {
     ...item,
-    unit: cameFromPackUnit ? originalUnit : hint,
+    unit: cameFromPackUnit ? hint : hint,
     size: parsed,
     measureText: formatSmartMeasureDisplay(parsed, hint),
     weightText: getUnitFamily(hint) === 'weight' ? formatSmartMeasureDisplay(parsed, hint) : '',
     openedAmount,
     packMeasureUnit: cameFromPackUnit ? getPackMeasureUnit(item, hint) : (item?.packMeasureUnit || ''),
     packMode: shouldKeepPackMode ? 'bags' : ''
-  };
-}
-
-function normalizeStoredMeasureStructure(item) {
-  if (!item) return item;
-  const unit = String(item.unit || '').toLowerCase();
-  if (isPackUnit(unit) || !supportsSize(unit)) return item;
-
-  const quantity = Math.max(1, Number(item.quantity || 1));
-  const size = Math.max(0, Number(item.size || 0));
-  const total = Math.max(0, Math.round(size * quantity));
-
-  return {
-    ...item,
-    quantity: 1,
-    size: total || size,
-    measureText: total > 0 ? formatSmartMeasureDisplay(total, unit) : (item.measureText || ''),
-    weightText: isWeightUnit(unit) && total > 0 ? formatSmartMeasureDisplay(total, unit) : (isWeightUnit(unit) ? (item.weightText || '') : '')
   };
 }
 
@@ -2273,7 +2255,7 @@ function hydrateData() {
   items = items.map(item => {
     const room = getAllRoomDefs().some(entry => entry.key === item?.room) ? item.room : (getAllRoomDefs()[0]?.key || 'koket');
     const fallbackPlace = getPlacesForRoom(room)[0]?.key || 'kyl';
-    const hydrated = {
+    return {
       name: String(item?.name || '').trim(),
       price: Number(item?.price || 0),
       quantity: Math.max(0, Number(item?.quantity || 0)),
@@ -2294,13 +2276,12 @@ function hydrateData() {
       shelfLifeDays: normalizeWholeDays(item?.shelfLifeDays, 0),
       openDays: normalizeWholeDays(item?.openDays, 0)
     };
-    return normalizeStoredMeasureStructure(hydrated);
   }).filter(item => item.name);
 
   quickItems = quickItems.map(item => {
     const room = getAllRoomDefs().some(entry => entry.key === item?.room) ? item.room : (getAllRoomDefs()[0]?.key || 'koket');
     const fallbackPlace = getPlacesForRoom(room)[0]?.key || 'kyl';
-    const hydrated = {
+    return {
       name: String(item?.name || '').trim(),
       price: Number(item?.price || 0),
       quantity: Math.max(1, Number(item?.quantity || 1)),
@@ -2319,7 +2300,6 @@ function hydrateData() {
       shelfLifeDays: normalizeWholeDays(item?.shelfLifeDays, 0),
       openDays: normalizeWholeDays(item?.openDays, 0)
     };
-    return normalizeStoredMeasureStructure(hydrated);
   }).filter(item => item.name);
 
   recipeCategories = [...new Set(
@@ -4154,7 +4134,7 @@ function saveEditItem() {
   const updated = {
     name: updatedName,
     price: Number(document.getElementById('editPrice')?.value || 0),
-    quantity: supportsSize(updatedUnit) && !isPackUnit(updatedUnit) ? 1 : updatedQuantity,
+    quantity: updatedQuantity,
     unit: updatedUnit,
     size: supportsMeasureInput(updatedUnit)
       ? parsedMeasure
@@ -4314,7 +4294,7 @@ function buildItemFromForm() {
   const item = {
     name: matchedQuick ? matchedQuick.name : name,
     price: Number(priceInput?.value || (matchedQuick ? matchedQuick.price : 0) || 0),
-    quantity: supportsSize(resolvedUnit) && !isPackUnit(resolvedUnit) ? 1 : quantity,
+    quantity,
     unit: resolvedUnit,
     size: supportsMeasureInput(resolvedUnit)
       ? parsedMeasure
@@ -4337,7 +4317,7 @@ function buildItemFromForm() {
 }
 
 function saveQuickTemplate(item) {
-  const normalized = normalizeStoredMeasureStructure(normalizeMeasureItemData({ ...item, quantity: Math.max(1, Number(item?.quantity || 1)) }));
+  const normalized = normalizeMeasureItemData({ ...item, quantity: Math.max(1, Number(item?.quantity || 1)) });
   const existingQuick = quickItems.find(i => normalizeText(i.name) === normalizeText(normalized.name));
 
   if (existingQuick) {
@@ -4360,7 +4340,7 @@ function saveQuickTemplate(item) {
 }
 
 function saveHomeItem(item) {
-  const normalizedItem = normalizeExpiryFields(normalizeStoredMeasureStructure(normalizeMeasureItemData(item)));
+  const normalizedItem = normalizeExpiryFields(normalizeMeasureItemData(item));
   const existingHome = items.find(i => i.type === 'home' && sameVariant(i, normalizedItem));
 
   if (existingHome) {
@@ -5128,18 +5108,10 @@ function getIngredientDensityPerMl(name) {
   if (!normalized) return null;
 
   const rules = [
-    { match: ['tomatpure', 'tomatpur', 'tomatp'], gramsPerMl: 1.00 },
     { match: ['strosocker', 'socker'], gramsPerMl: 0.85 },
-    { match: ['vanillinsocker', 'vaniljsocker'], gramsPerMl: 0.80 },
-    { match: ['vetemjol'], gramsPerMl: 0.60 },
-    { match: ['mjol'], gramsPerMl: 0.60 },
+    { match: ['vetemjol', 'mjol'], gramsPerMl: 0.60 },
     { match: ['kakao'], gramsPerMl: 0.40 },
-    { match: ['majsstarkelse', 'maizena'], gramsPerMl: 0.55 },
-    { match: ['ris'], gramsPerMl: 0.85 },
-    { match: ['mjolk'], gramsPerMl: 1.03 },
-    { match: ['vatten'], gramsPerMl: 1.00 },
-    { match: ['smor'], gramsPerMl: 0.95 },
-    { match: ['olja'], gramsPerMl: 0.92 },
+    { match: ['vanillinsocker', 'vaniljsocker'], gramsPerMl: 0.60 },
     { match: ['salt'], gramsPerMl: 1.20 }
   ];
 
@@ -5199,10 +5171,6 @@ function getItemCanonicalAmount(item, unitHint = null) {
       return (quantity * size) + opened;
     }
 
-    if ((item?.type === 'home' || item?.type === 'buy') && !isPackUnit(rawUnit)) {
-      return size;
-    }
-
     if (isPackTrackedItem(item)) {
       return (quantity * size) + getOpenedAmount(item);
     }
@@ -5222,10 +5190,7 @@ function recipeIngredientCanonicalAmount(ingredient, recipe = null) {
 
 
 function ingredientMatchesName(ingredient, name) {
-  const a = normalizeText(normalizeRecipeIngredient(ingredient)?.name || '');
-  const b = normalizeText(name || '');
-  if (!a || !b) return false;
-  return a === b || a.includes(b) || b.includes(a);
+  return normalizeText(normalizeRecipeIngredient(ingredient)?.name || '') === normalizeText(name || '');
 }
 
 function getMatchingHomeItemsForIngredient(ingredient) {
@@ -7321,26 +7286,55 @@ window.addEventListener('load', () => {
   };
   createBuyItemFromMissingEntry = window.createBuyItemFromMissingEntry;
 
-  const AUTO_BUY_WEIGHT_THRESHOLD_GRAMS = 5;
-
-  function shouldAutoBuyPack(ingredient) {
+  function getTemplateRestockAmountForIngredient(ingredient) {
     const ing = normalizeRecipeIngredient(ingredient);
-    if (!ing) return false;
+    const quick = getQuickTemplateForIngredient(ing);
+    if (!ing || !quick) return 0;
 
-    const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
-    if (isWeightUnit(ing.unit)) return amountAfter <= AUTO_BUY_WEIGHT_THRESHOLD_GRAMS;
-    return amountAfter <= 0;
+    const quickUnit = String(quick.unit || ing.unit || 'st').toLowerCase();
+    if (!supportsSize(quickUnit)) return 0;
+
+    const context = getRecipeIngredientContext({
+      ...quick,
+      ...ing,
+      unit: quickUnit,
+      category: quick.category || ing.category || ''
+    });
+
+    const quickSize = Math.max(0, Number(normalizeSize(quickUnit, quick.size, context) || 0));
+    if (quickSize <= 0) return 0;
+
+    const converted = Number(convertCanonicalAmountForIngredient(quickSize, quickUnit, ing.unit, ing.name) || 0);
+    return Math.max(0, converted);
   }
 
-  /* Restock size-based items only when they are nearly empty.
-     Weight items restock at 5 g or less. */
+  function getRestockCrossingCount(amountBefore, amountAfter, templateAmount) {
+    const step = Math.max(0, Number(templateAmount || 0));
+    const before = Math.max(0, Number(amountBefore || 0));
+    const after = Math.max(0, Number(amountAfter || 0));
+    if (step <= 0 || before <= after) return 0;
+
+    const beforeLevel = Math.floor(before / step);
+    const afterLevel = Math.floor(after / step);
+    return Math.max(0, beforeLevel - afterLevel);
+  }
+
+  /* Restock from Snabblista mallmängd:
+     if a template has e.g. 400 g, add one 400 g row to Buy list every time
+     Har hemma crosses another 400 g step downward. */
   window.queueRestockIfDepleted = function queueRestockIfDepletedAutoBuy(ingredient, amountBefore = 0) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing || amountBefore <= 0) return;
     if (!supportsSize(ing.unit)) return;
-    if (!shouldAutoBuyPack(ing)) return;
 
-    const buyItem = buildQuickPackBuyItem(ing, 1);
+    const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
+    const templateAmount = getTemplateRestockAmountForIngredient(ing);
+    if (templateAmount <= 0) return;
+
+    const restockCount = getRestockCrossingCount(amountBefore, amountAfter, templateAmount);
+    if (restockCount <= 0) return;
+
+    const buyItem = buildQuickPackBuyItem(ing, restockCount);
     if (buyItem) pushOrMergeBuyPack(buyItem);
   };
   queueRestockIfDepleted = window.queueRestockIfDepleted;
@@ -7363,7 +7357,7 @@ window.addEventListener('load', () => {
   };
   useRecipeIngredients = window.useRecipeIngredients;
 
-  window.__autoBuyZip = 'v23-locked-5g';
+  window.__autoBuyZip = 'v26-template-threshold-refill';
 })();
 
 
