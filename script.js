@@ -8536,36 +8536,3 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.__autoBuyZip = 'v7-balanced-units-auto-refill';
 })();
-
-
-// 🔧 V8 FIX: st-varor recipe logik (endast tillägg, inget ändrat)
-window.handleRecipeUsage_st_fix = function(itemName, usedAmount, unit) {
-  if (unit !== 'st') return;
-
-  const homeItem = items.find(i =>
-    i.type === 'home' &&
-    (i.name || '').toLowerCase() === (itemName || '').toLowerCase()
-  );
-
-  if (!homeItem) return;
-
-  // dra från hemma
-  homeItem.quantity = Math.max(0, (homeItem.quantity || 0) - usedAmount);
-
-  // hitta/skapa buy item
-  let buyItem = items.find(i =>
-    i.type === 'buy' &&
-    (i.name || '').toLowerCase() === (itemName || '').toLowerCase()
-  );
-
-  if (!buyItem) {
-    buyItem = { ...homeItem, type: 'buy', quantity: 0 };
-    items.push(buyItem);
-  }
-
-  // lägg till i shoplist
-  buyItem.quantity = (buyItem.quantity || 0) + usedAmount;
-
-  if (typeof save === 'function') save();
-  if (typeof render === 'function') render();
-};
