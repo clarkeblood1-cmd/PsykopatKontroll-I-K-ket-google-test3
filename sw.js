@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v75-only-add-fix';
+const CACHE_NAME = 'matlista-app-v75-v7-allt-ihop';
 const ASSETS = [
   './',
   './index.html',
