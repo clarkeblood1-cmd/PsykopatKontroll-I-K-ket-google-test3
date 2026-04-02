@@ -1966,13 +1966,31 @@ function normalizeMeasureItemData(item, unitHint = null) {
     && (cameFromPackUnit || Number(item?.quantity || 0) > 1 || openedAmount > 0 || item?.packMode === 'bags');
   return {
     ...item,
-    unit: cameFromPackUnit ? hint : hint,
+    unit: cameFromPackUnit ? originalUnit : hint,
     size: parsed,
     measureText: formatSmartMeasureDisplay(parsed, hint),
     weightText: getUnitFamily(hint) === 'weight' ? formatSmartMeasureDisplay(parsed, hint) : '',
     openedAmount,
     packMeasureUnit: cameFromPackUnit ? getPackMeasureUnit(item, hint) : (item?.packMeasureUnit || ''),
     packMode: shouldKeepPackMode ? 'bags' : ''
+  };
+}
+
+function normalizeStoredMeasureStructure(item) {
+  if (!item) return item;
+  const unit = String(item.unit || '').toLowerCase();
+  if (isPackUnit(unit) || !supportsSize(unit)) return item;
+
+  const quantity = Math.max(1, Number(item.quantity || 1));
+  const size = Math.max(0, Number(item.size || 0));
+  const total = Math.max(0, Math.round(size * quantity));
+
+  return {
+    ...item,
+    quantity: 1,
+    size: total || size,
+    measureText: total > 0 ? formatSmartMeasureDisplay(total, unit) : (item.measureText || ''),
+    weightText: isWeightUnit(unit) && total > 0 ? formatSmartMeasureDisplay(total, unit) : (isWeightUnit(unit) ? (item.weightText || '') : '')
   };
 }
 
@@ -2255,7 +2273,7 @@ function hydrateData() {
   items = items.map(item => {
     const room = getAllRoomDefs().some(entry => entry.key === item?.room) ? item.room : (getAllRoomDefs()[0]?.key || 'koket');
     const fallbackPlace = getPlacesForRoom(room)[0]?.key || 'kyl';
-    return {
+    const hydrated = {
       name: String(item?.name || '').trim(),
       price: Number(item?.price || 0),
       quantity: Math.max(0, Number(item?.quantity || 0)),
@@ -2276,12 +2294,13 @@ function hydrateData() {
       shelfLifeDays: normalizeWholeDays(item?.shelfLifeDays, 0),
       openDays: normalizeWholeDays(item?.openDays, 0)
     };
+    return normalizeStoredMeasureStructure(hydrated);
   }).filter(item => item.name);
 
   quickItems = quickItems.map(item => {
     const room = getAllRoomDefs().some(entry => entry.key === item?.room) ? item.room : (getAllRoomDefs()[0]?.key || 'koket');
     const fallbackPlace = getPlacesForRoom(room)[0]?.key || 'kyl';
-    return {
+    const hydrated = {
       name: String(item?.name || '').trim(),
       price: Number(item?.price || 0),
       quantity: Math.max(1, Number(item?.quantity || 1)),
@@ -2300,6 +2319,7 @@ function hydrateData() {
       shelfLifeDays: normalizeWholeDays(item?.shelfLifeDays, 0),
       openDays: normalizeWholeDays(item?.openDays, 0)
     };
+    return normalizeStoredMeasureStructure(hydrated);
   }).filter(item => item.name);
 
   recipeCategories = [...new Set(
@@ -4134,7 +4154,7 @@ function saveEditItem() {
   const updated = {
     name: updatedName,
     price: Number(document.getElementById('editPrice')?.value || 0),
-    quantity: updatedQuantity,
+    quantity: supportsSize(updatedUnit) && !isPackUnit(updatedUnit) ? 1 : updatedQuantity,
     unit: updatedUnit,
     size: supportsMeasureInput(updatedUnit)
       ? parsedMeasure
@@ -4294,7 +4314,7 @@ function buildItemFromForm() {
   const item = {
     name: matchedQuick ? matchedQuick.name : name,
     price: Number(priceInput?.value || (matchedQuick ? matchedQuick.price : 0) || 0),
-    quantity,
+    quantity: supportsSize(resolvedUnit) && !isPackUnit(resolvedUnit) ? 1 : quantity,
     unit: resolvedUnit,
     size: supportsMeasureInput(resolvedUnit)
       ? parsedMeasure
@@ -4317,7 +4337,7 @@ function buildItemFromForm() {
 }
 
 function saveQuickTemplate(item) {
-  const normalized = normalizeMeasureItemData({ ...item, quantity: Math.max(1, Number(item?.quantity || 1)) });
+  const normalized = normalizeStoredMeasureStructure(normalizeMeasureItemData({ ...item, quantity: Math.max(1, Number(item?.quantity || 1)) }));
   const existingQuick = quickItems.find(i => normalizeText(i.name) === normalizeText(normalized.name));
 
   if (existingQuick) {
@@ -4340,7 +4360,7 @@ function saveQuickTemplate(item) {
 }
 
 function saveHomeItem(item) {
-  const normalizedItem = normalizeExpiryFields(normalizeMeasureItemData(item));
+  const normalizedItem = normalizeExpiryFields(normalizeStoredMeasureStructure(normalizeMeasureItemData(item)));
   const existingHome = items.find(i => i.type === 'home' && sameVariant(i, normalizedItem));
 
   if (existingHome) {
@@ -5108,25 +5128,18 @@ function getIngredientDensityPerMl(name) {
   if (!normalized) return null;
 
   const rules = [
-    { match: ['vatten'], gramsPerMl: 1.00 },
-    { match: ['mjolk', 'standardmjolk', 'mellanmjolk', 'lattmjolk'], gramsPerMl: 1.03 },
-    { match: ['vispgradde', 'mellangradde', 'matlagningsgradde', 'gradde'], gramsPerMl: 1.00 },
-    { match: ['olja', 'rapsolja', 'olivolja'], gramsPerMl: 0.92 },
-    { match: ['smor'], gramsPerMl: 0.93 },
+    { match: ['tomatpure', 'tomatpur', 'tomatp'], gramsPerMl: 1.00 },
     { match: ['strosocker', 'socker'], gramsPerMl: 0.85 },
-    { match: ['farinsocker'], gramsPerMl: 0.72 },
-    { match: ['florsocker'], gramsPerMl: 0.55 },
     { match: ['vanillinsocker', 'vaniljsocker'], gramsPerMl: 0.80 },
-    { match: ['vetemjol', 'mjol'], gramsPerMl: 0.60 },
-    { match: ['grahamsmjol'], gramsPerMl: 0.55 },
-    { match: ['potatismjol'], gramsPerMl: 0.80 },
-    { match: ['havregryn'], gramsPerMl: 0.35 },
-    { match: ['ris', 'jasminris', 'basmatiris', 'quinoa'], gramsPerMl: 0.85 },
+    { match: ['vetemjol'], gramsPerMl: 0.60 },
+    { match: ['mjol'], gramsPerMl: 0.60 },
     { match: ['kakao'], gramsPerMl: 0.40 },
     { match: ['majsstarkelse', 'maizena'], gramsPerMl: 0.55 },
-    { match: ['tomatpure'], gramsPerMl: 1.00 },
-    { match: ['honung'], gramsPerMl: 1.40 },
-    { match: ['sirap'], gramsPerMl: 1.35 },
+    { match: ['ris'], gramsPerMl: 0.85 },
+    { match: ['mjolk'], gramsPerMl: 1.03 },
+    { match: ['vatten'], gramsPerMl: 1.00 },
+    { match: ['smor'], gramsPerMl: 0.95 },
+    { match: ['olja'], gramsPerMl: 0.92 },
     { match: ['salt'], gramsPerMl: 1.20 }
   ];
 
@@ -5186,6 +5199,10 @@ function getItemCanonicalAmount(item, unitHint = null) {
       return (quantity * size) + opened;
     }
 
+    if ((item?.type === 'home' || item?.type === 'buy') && !isPackUnit(rawUnit)) {
+      return size;
+    }
+
     if (isPackTrackedItem(item)) {
       return (quantity * size) + getOpenedAmount(item);
     }
@@ -5205,7 +5222,10 @@ function recipeIngredientCanonicalAmount(ingredient, recipe = null) {
 
 
 function ingredientMatchesName(ingredient, name) {
-  return normalizeText(normalizeRecipeIngredient(ingredient)?.name || '') === normalizeText(name || '');
+  const a = normalizeText(normalizeRecipeIngredient(ingredient)?.name || '');
+  const b = normalizeText(name || '');
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
 }
 
 function getMatchingHomeItemsForIngredient(ingredient) {
