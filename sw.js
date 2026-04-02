@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v75-v7-allt-ihop';
+const CACHE_NAME = 'matlista-app-v75-zip-final-weight-quantity';
 const ASSETS = [
   './',
   './index.html',
@@ -7,6 +7,7 @@ const ASSETS = [
   './cloud-sync.js',
   './cloud-hooks.js',
   './appstore-ui.js',
+  './package-merge-fix.js',
   './household.js',
   './firebase-config.js',
   './manifest.json',
