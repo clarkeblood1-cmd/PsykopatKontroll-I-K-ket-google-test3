@@ -8193,3 +8193,10 @@ window.addEventListener('load', () => {
 
   window.__autoBuyZip = 'v67-pack-actions-fix';
 })();
+
+
+/* ===== additive patch: keep old refill logic + keep st recipe->shoplist path ===== */
+(function () {
+  'use strict';
+  window.__onlyAddPatch = 'v8b-keep-old-and-add-st';
+})();

@@ -5446,12 +5446,12 @@ function queueConsumedCountToBuy(ingredient, consumedAmount = 0) {
   };
 
   const unit = String(template.unit || ing.unit || 'st').toLowerCase();
-  if (unit !== 'st') return;
+  if (supportsSize(unit)) return;
 
   mergeCanonicalItemIntoList({
     ...template,
     type: 'buy',
-    unit: 'st',
+    unit,
     size: null,
     measureText: '',
     weightText: '',
@@ -5551,7 +5551,7 @@ function consumeIngredientEntries(entries = []) {
     if (supportsSize(ingredient.unit)) {
       queueRestockIfDepleted(ingredient, amountBefore);
     } else {
-      queueConsumedCountToBuy(ingredient, requestedAmount);
+      queueConsumedCountToBuy(ingredient, consumedTotal);
     }
   });
 
@@ -8376,4 +8376,8 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
-window.__stOnlyRecipeShoplistZip = 'v8-st-only-shoplist';
+/* ===== additive patch: keep old refill logic + keep st recipe->shoplist path ===== */
+(function () {
+  'use strict';
+  window.__onlyAddPatch = 'v8b-keep-old-and-add-st';
+})();
