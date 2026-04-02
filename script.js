@@ -5549,7 +5549,7 @@ function consumeIngredientEntries(entries = []) {
 
     const consumedTotal = Math.max(0, requestedAmount - remaining);
     if (supportsSize(ingredient.unit)) {
-      queueRestockIfDepleted(ingredient, amountBefore);
+      queueRestockIfDepleted(ingredient, amountBefore, consumedTotal);
     } else {
       queueConsumedCountToBuy(ingredient, consumedTotal);
     }
@@ -7286,55 +7286,26 @@ window.addEventListener('load', () => {
   };
   createBuyItemFromMissingEntry = window.createBuyItemFromMissingEntry;
 
-  function getTemplateRestockAmountForIngredient(ingredient) {
+  const AUTO_BUY_WEIGHT_THRESHOLD_GRAMS = 5;
+
+  function shouldAutoBuyPack(ingredient) {
     const ing = normalizeRecipeIngredient(ingredient);
-    const quick = getQuickTemplateForIngredient(ing);
-    if (!ing || !quick) return 0;
+    if (!ing) return false;
 
-    const quickUnit = String(quick.unit || ing.unit || 'st').toLowerCase();
-    if (!supportsSize(quickUnit)) return 0;
-
-    const context = getRecipeIngredientContext({
-      ...quick,
-      ...ing,
-      unit: quickUnit,
-      category: quick.category || ing.category || ''
-    });
-
-    const quickSize = Math.max(0, Number(normalizeSize(quickUnit, quick.size, context) || 0));
-    if (quickSize <= 0) return 0;
-
-    const converted = Number(convertCanonicalAmountForIngredient(quickSize, quickUnit, ing.unit, ing.name) || 0);
-    return Math.max(0, converted);
+    const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
+    if (isWeightUnit(ing.unit)) return amountAfter <= AUTO_BUY_WEIGHT_THRESHOLD_GRAMS;
+    return amountAfter <= 0;
   }
 
-  function getRestockCrossingCount(amountBefore, amountAfter, templateAmount) {
-    const step = Math.max(0, Number(templateAmount || 0));
-    const before = Math.max(0, Number(amountBefore || 0));
-    const after = Math.max(0, Number(amountAfter || 0));
-    if (step <= 0 || before <= after) return 0;
-
-    const beforeLevel = Math.floor(before / step);
-    const afterLevel = Math.floor(after / step);
-    return Math.max(0, beforeLevel - afterLevel);
-  }
-
-  /* Restock from Snabblista mallmängd:
-     if a template has e.g. 400 g, add one 400 g row to Buy list every time
-     Har hemma crosses another 400 g step downward. */
+  /* Restock size-based items only when they are nearly empty.
+     Weight items restock at 5 g or less. */
   window.queueRestockIfDepleted = function queueRestockIfDepletedAutoBuy(ingredient, amountBefore = 0) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing || amountBefore <= 0) return;
     if (!supportsSize(ing.unit)) return;
+    if (!shouldAutoBuyPack(ing)) return;
 
-    const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
-    const templateAmount = getTemplateRestockAmountForIngredient(ing);
-    if (templateAmount <= 0) return;
-
-    const restockCount = getRestockCrossingCount(amountBefore, amountAfter, templateAmount);
-    if (restockCount <= 0) return;
-
-    const buyItem = buildQuickPackBuyItem(ing, restockCount);
+    const buyItem = buildQuickPackBuyItem(ing, 1);
     if (buyItem) pushOrMergeBuyPack(buyItem);
   };
   queueRestockIfDepleted = window.queueRestockIfDepleted;
@@ -7357,7 +7328,7 @@ window.addEventListener('load', () => {
   };
   useRecipeIngredients = window.useRecipeIngredients;
 
-  window.__autoBuyZip = 'v26-template-threshold-refill';
+  window.__autoBuyZip = 'v23-locked-5g';
 })();
 
 
@@ -8403,3 +8374,165 @@ document.addEventListener('DOMContentLoaded', () => {
     console.error('Kunde inte starta middagskategori-val:', error);
   }
 });
+
+
+(function () {
+  'use strict';
+
+  function v7NormalizeName(value) {
+    try {
+      return typeof normalizeText === 'function'
+        ? normalizeText(value || '')
+        : String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
+    } catch (e) {
+      return String(value || '').toLowerCase();
+    }
+  }
+
+  function v7GetDensityPerMl(name) {
+    const normalized = v7NormalizeName(name);
+    if (!normalized) return null;
+
+    const rules = [
+      { keywords: ['vatten'], gramsPerMl: 1.00 },
+      { keywords: ['mjolk'], gramsPerMl: 1.03 },
+      { keywords: ['tomatpure', 'tomatpasta'], gramsPerMl: 1.00 },
+      { keywords: ['strosocker', 'socker'], gramsPerMl: 0.85 },
+      { keywords: ['vanillinsocker', 'vaniljsocker'], gramsPerMl: 0.80 },
+      { keywords: ['vetemjol', 'mjol'], gramsPerMl: 0.60 },
+      { keywords: ['kakao'], gramsPerMl: 0.40 },
+      { keywords: ['majsstarkelse', 'maizena'], gramsPerMl: 0.55 },
+      { keywords: ['ris'], gramsPerMl: 0.85 },
+      { keywords: ['smor'], gramsPerMl: 0.95 },
+      { keywords: ['olja'], gramsPerMl: 0.92 },
+      { keywords: ['salt'], gramsPerMl: 1.20 }
+    ];
+
+    const match = rules.find(rule => rule.keywords.some(keyword => normalized.includes(keyword)));
+    return match ? Number(match.gramsPerMl || 0) : null;
+  }
+
+  try {
+    getIngredientDensityPerMl = v7GetDensityPerMl;
+    window.getIngredientDensityPerMl = v7GetDensityPerMl;
+  } catch (e) {}
+
+  const RESTOCK_DEFICIT_STORAGE_KEY = 'matlista_restock_deficit_v7';
+
+  function loadRestockDeficitMap() {
+    try {
+      const raw = localStorage.getItem(RESTOCK_DEFICIT_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function saveRestockDeficitMap(map) {
+    try {
+      localStorage.setItem(RESTOCK_DEFICIT_STORAGE_KEY, JSON.stringify(map || {}));
+    } catch (e) {}
+  }
+
+  window.restockDeficitMap = loadRestockDeficitMap();
+
+  function getRestockKey(ingredient) {
+    const ing = typeof normalizeRecipeIngredient === 'function' ? normalizeRecipeIngredient(ingredient) : ingredient;
+    if (!ing) return '';
+    const family = typeof getRecipeUnitFamily === 'function' ? getRecipeUnitFamily(ing.unit) : String(ing.unit || '');
+    return [v7NormalizeName(ing.name || ''), family].join('__');
+  }
+
+  function getQuickTemplateForRestock(ingredient) {
+    const ing = typeof normalizeRecipeIngredient === 'function' ? normalizeRecipeIngredient(ingredient) : ingredient;
+    if (!ing) return null;
+    if (typeof cloneTemplateForIngredient === 'function') {
+      const cloned = cloneTemplateForIngredient(ing);
+      if (cloned) return cloned;
+    }
+    if (typeof findQuickItemByName === 'function') {
+      return findQuickItemByName(ing.name || '') || null;
+    }
+    return null;
+  }
+
+  function getTemplateCanonicalAmountForIngredient(ingredient) {
+    const ing = typeof normalizeRecipeIngredient === 'function' ? normalizeRecipeIngredient(ingredient) : ingredient;
+    const template = getQuickTemplateForRestock(ing);
+    if (!ing || !template || typeof getItemCanonicalAmount !== 'function' || typeof convertCanonicalAmountForIngredient !== 'function') return 0;
+    const canonical = Math.max(0, Number(getItemCanonicalAmount(template, template.unit) || 0));
+    if (!canonical) return 0;
+    const converted = Number(convertCanonicalAmountForIngredient(canonical, template.unit, ing.unit, ing.name) || 0);
+    return Math.max(0, converted);
+  }
+
+  function addRestockTemplateToBuy(ingredient, times) {
+    const ing = typeof normalizeRecipeIngredient === 'function' ? normalizeRecipeIngredient(ingredient) : ingredient;
+    const count = Math.max(0, Math.floor(Number(times || 0)));
+    if (!ing || count <= 0) return;
+
+    if (typeof createRestockBuyItemFromQuick === 'function' && typeof mergeCanonicalItemIntoList === 'function') {
+      for (let i = 0; i < count; i += 1) {
+        const buyItem = createRestockBuyItemFromQuick(ing);
+        if (buyItem) mergeCanonicalItemIntoList(buyItem, 'buy');
+      }
+      return;
+    }
+
+    if (typeof addBuyItemFromTemplate === 'function') {
+      const template = getQuickTemplateForRestock(ing);
+      if (!template) return;
+      for (let i = 0; i < count; i += 1) addBuyItemFromTemplate(template, 1);
+    }
+  }
+
+  function queueRestockByConsumedTemplateAmount(ingredient, consumedAmount) {
+    const ing = typeof normalizeRecipeIngredient === 'function' ? normalizeRecipeIngredient(ingredient) : ingredient;
+    const consumed = Math.max(0, Number(consumedAmount || 0));
+    if (!ing || consumed <= 0) return;
+    if (typeof supportsSize === 'function' && !supportsSize(ing.unit)) return;
+
+    const templateCanonical = getTemplateCanonicalAmountForIngredient(ing);
+    if (!templateCanonical || templateCanonical <= 0) return;
+
+    const key = getRestockKey(ing);
+    if (!key) return;
+
+    const map = window.restockDeficitMap && typeof window.restockDeficitMap === 'object'
+      ? window.restockDeficitMap
+      : (window.restockDeficitMap = {});
+
+    map[key] = Math.max(0, Number(map[key] || 0)) + consumed;
+    const refillCount = Math.floor(map[key] / templateCanonical);
+    if (refillCount > 0) {
+      addRestockTemplateToBuy(ing, refillCount);
+      map[key] = Math.max(0, map[key] - (refillCount * templateCanonical));
+    }
+
+    saveRestockDeficitMap(map);
+  }
+
+  window.queueRestockIfDepleted = function queueRestockIfDepletedV7(ingredient, amountBefore, consumedAmount) {
+    queueRestockByConsumedTemplateAmount(ingredient, consumedAmount);
+  };
+  try { queueRestockIfDepleted = window.queueRestockIfDepleted; } catch (e) {}
+
+  window.useRecipeIngredients = function useRecipeIngredientsV7BalancedAutoRefill() {
+    const recipe = typeof getSelectedRecipe === 'function' ? getSelectedRecipe() : null;
+    if (!recipe) return;
+
+    const combinedEntries = typeof getCombinedRecipeIngredientEntries === 'function'
+      ? getCombinedRecipeIngredientEntries([{ slot: { label: 'Recept' }, recipe, recipeName: recipe.name }])
+      : [];
+
+    if (typeof consumeIngredientEntries === 'function') consumeIngredientEntries(combinedEntries);
+
+    try { if (typeof save === 'function') save(); } catch (e) {}
+    try { if (typeof checkRecipe === 'function') checkRecipe(); } catch (e) {}
+    try { if (typeof render === 'function') render(); } catch (e) {}
+  };
+  try { useRecipeIngredients = window.useRecipeIngredients; } catch (e) {}
+
+  window.__autoBuyZip = 'v7-balanced-units-auto-refill';
+})();

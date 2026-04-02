@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v75-template-threshold-refill';
+const CACHE_NAME = 'matlista-app-v75-v7-allt-ihop';
 const ASSETS = [
   './',
   './index.html',

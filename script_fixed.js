@@ -7115,55 +7115,26 @@ window.addEventListener('load', () => {
   };
   createBuyItemFromMissingEntry = window.createBuyItemFromMissingEntry;
 
-  function getTemplateRestockAmountForIngredient(ingredient) {
+  const AUTO_BUY_WEIGHT_THRESHOLD_GRAMS = 5;
+
+  function shouldAutoBuyPack(ingredient) {
     const ing = normalizeRecipeIngredient(ingredient);
-    const quick = getQuickTemplateForIngredient(ing);
-    if (!ing || !quick) return 0;
+    if (!ing) return false;
 
-    const quickUnit = String(quick.unit || ing.unit || 'st').toLowerCase();
-    if (!supportsSize(quickUnit)) return 0;
-
-    const context = getRecipeIngredientContext({
-      ...quick,
-      ...ing,
-      unit: quickUnit,
-      category: quick.category || ing.category || ''
-    });
-
-    const quickSize = Math.max(0, Number(normalizeSize(quickUnit, quick.size, context) || 0));
-    if (quickSize <= 0) return 0;
-
-    const converted = Number(convertCanonicalAmountForIngredient(quickSize, quickUnit, ing.unit, ing.name) || 0);
-    return Math.max(0, converted);
+    const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
+    if (isWeightUnit(ing.unit)) return amountAfter <= AUTO_BUY_WEIGHT_THRESHOLD_GRAMS;
+    return amountAfter <= 0;
   }
 
-  function getRestockCrossingCount(amountBefore, amountAfter, templateAmount) {
-    const step = Math.max(0, Number(templateAmount || 0));
-    const before = Math.max(0, Number(amountBefore || 0));
-    const after = Math.max(0, Number(amountAfter || 0));
-    if (step <= 0 || before <= after) return 0;
-
-    const beforeLevel = Math.floor(before / step);
-    const afterLevel = Math.floor(after / step);
-    return Math.max(0, beforeLevel - afterLevel);
-  }
-
-  /* Restock from Snabblista mallmängd:
-     if a template has e.g. 400 g, add one 400 g row to Buy list every time
-     Har hemma crosses another 400 g step downward. */
+  /* Restock size-based items only when they are nearly empty.
+     Weight items restock at 5 g or less. */
   window.queueRestockIfDepleted = function queueRestockIfDepletedAutoBuy(ingredient, amountBefore = 0) {
     const ing = normalizeRecipeIngredient(ingredient);
     if (!ing || amountBefore <= 0) return;
     if (!supportsSize(ing.unit)) return;
+    if (!shouldAutoBuyPack(ing)) return;
 
-    const amountAfter = Math.max(0, Number(getHomeAmountForIngredient(ing) || 0));
-    const templateAmount = getTemplateRestockAmountForIngredient(ing);
-    if (templateAmount <= 0) return;
-
-    const restockCount = getRestockCrossingCount(amountBefore, amountAfter, templateAmount);
-    if (restockCount <= 0) return;
-
-    const buyItem = buildQuickPackBuyItem(ing, restockCount);
+    const buyItem = buildQuickPackBuyItem(ing, 1);
     if (buyItem) pushOrMergeBuyPack(buyItem);
   };
   queueRestockIfDepleted = window.queueRestockIfDepleted;
@@ -7186,7 +7157,7 @@ window.addEventListener('load', () => {
   };
   useRecipeIngredients = window.useRecipeIngredients;
 
-  window.__autoBuyZip = 'v26-template-threshold-refill';
+  window.__autoBuyZip = 'v23-locked-5g';
 })();
 
 
