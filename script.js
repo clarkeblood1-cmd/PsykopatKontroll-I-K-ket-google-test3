@@ -3252,7 +3252,7 @@ function updateSummary() {
   const homeCount = document.getElementById('homeCount');
   const buyCount = document.getElementById('buyCount');
   const buyCost = document.getElementById('buyCost');
-  const dinnerCounts = [document.getElementById('dinnerCountSummary'), document.getElementById('dinnerCountManage')].filter(Boolean);
+  const dinnerCount = document.getElementById('dinnerCount');
   const householdSelect = document.getElementById('householdSize');
   const portionGramsInput = document.getElementById('portionGrams');
   const portionLiveSummary = document.getElementById('portionLiveSummary');
@@ -3278,7 +3278,7 @@ function updateSummary() {
   }
 
   const details = getDinnerCountDetails();
-  dinnerCounts.forEach(el => { el.textContent = `${details.totalDinners} st`; });
+  if (dinnerCount) dinnerCount.textContent = `${details.totalDinners} st`;
   renderDinnerCategoryPicker();
 }
 
