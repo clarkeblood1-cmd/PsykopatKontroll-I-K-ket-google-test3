@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v83-count-buy-exact-hotfix';
+const CACHE_NAME = 'matlista-app-v74-clean-manage-settings';
 const ASSETS = [
   './',
   './index.html',
@@ -7,7 +7,6 @@ const ASSETS = [
   './cloud-sync.js',
   './cloud-hooks.js',
   './appstore-ui.js',
-  './count-buy-exact-hotfix.js',
   './household.js',
   './firebase-config.js',
   './manifest.json',
