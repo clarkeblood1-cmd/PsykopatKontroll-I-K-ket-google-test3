@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v75-ultra-rules';
+const CACHE_NAME = 'matlista-app-v76-threshold-restock';
 const ASSETS = [
   './',
   './index.html',
@@ -7,7 +7,7 @@ const ASSETS = [
   './cloud-sync.js',
   './cloud-hooks.js',
   './appstore-ui.js',
-  './ultra-rules.js',
+  './threshold-restock-fix.js',
   './household.js',
   './firebase-config.js',
   './manifest.json',
