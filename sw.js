@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v76-threshold-restock';
+const CACHE_NAME = 'matlista-app-v77-zip-b-restock';
 const ASSETS = [
   './',
   './index.html',
@@ -7,7 +7,7 @@ const ASSETS = [
   './cloud-sync.js',
   './cloud-hooks.js',
   './appstore-ui.js',
-  './threshold-restock-fix.js',
+  './zip-b-restock.js',
   './household.js',
   './firebase-config.js',
   './manifest.json',
