@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v81-safe-patch';
+const CACHE_NAME = 'matlista-app-v83-count-buy-exact-hotfix';
 const ASSETS = [
   './',
   './index.html',
@@ -7,7 +7,7 @@ const ASSETS = [
   './cloud-sync.js',
   './cloud-hooks.js',
   './appstore-ui.js',
-  './safe-rules-patch.js',
+  './count-buy-exact-hotfix.js',
   './household.js',
   './firebase-config.js',
   './manifest.json',
