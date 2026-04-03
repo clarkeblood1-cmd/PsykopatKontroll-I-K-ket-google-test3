@@ -87,6 +87,7 @@
   function getTemplateBaseSize(item) {
     const quick = getQuickTemplate(item?.name || '');
     if (!quick) return 0;
+
     const quickUnit = String(quick.unit || 'st').toLowerCase();
     const itemUnit = String(item?.unit || 'st').toLowerCase();
     const quickMeasureUnit = getMeasureUnit(quick);
@@ -100,20 +101,18 @@
     return 0;
   }
 
-  function shouldUseTemplateQuantity(item) {
-    if (!item || item.type !== 'home') return false;
-    if (!isMeasure(item)) return false;
-    return getTemplateBaseSize(item) > 0 && Math.max(0, num(item.quantity, 0)) > 0;
+  function getPerUnitSize(item) {
+    const templateBase = getTemplateBaseSize(item);
+    if (templateBase > 0) return templateBase;
+    return parseSize(item);
   }
 
-  function recalcMeasuredItemFromTemplate(item) {
-    if (!shouldUseTemplateQuantity(item)) return item;
-    const qty = Math.max(0, num(item.quantity, 0));
+  function normalizeMeasuredItem(item) {
+    if (!item || !isMeasure(item)) return item;
     const unit = String(item.unit || 'g').toLowerCase();
-    const baseSize = getTemplateBaseSize(item);
-    const total = Math.max(0, baseSize * qty);
-    item.size = total;
-    item.measureText = total > 0 ? formatSize(total, unit) : '';
+    const perUnitSize = getPerUnitSize(item);
+    item.size = perUnitSize;
+    item.measureText = perUnitSize > 0 ? formatSize(perUnitSize, unit) : '';
     item.weightText = isWeight(unit) ? item.measureText : '';
     return item;
   }
@@ -122,18 +121,18 @@
     if (!Array.isArray(window.items)) return;
     window.items = window.items.map((item) => {
       const copy = cloneItem(item);
-      return recalcMeasuredItemFromTemplate(copy);
+      return normalizeMeasuredItem(copy);
     });
   }
 
   function makeKey(item) {
-    const entry = cloneItem(item);
+    const entry = normalizeMeasuredItem(cloneItem(item));
     const type = entry.type === 'buy' ? 'buy' : 'home';
     const room = entry.room || 'koket';
     const place = entry.place || 'kyl';
 
     if (isPack(entry)) {
-      const bits = [type, 'pack', nrm(entry.name), String(entry.unit || 'pkt').toLowerCase(), getMeasureUnit(entry), String(parseSize(entry) || 0)];
+      const bits = [type, 'pack', nrm(entry.name), String(entry.unit || 'paket').toLowerCase(), getMeasureUnit(entry), String(parseSize(entry) || 0)];
       return type === 'buy' ? bits.join('|') : bits.concat([room, place]).join('|');
     }
 
@@ -169,9 +168,11 @@
     }
 
     if (isMeasure(existing)) {
-      existing.quantity = Math.max(0, num(existing.quantity, 0) + num(incoming.quantity, 0));
-      existing.size = Math.max(0, parseSize(existing) + parseSize(incoming));
-      existing.measureText = formatSize(existing.size, getMeasureUnit(existing));
+      const mergedQty = Math.max(0, num(existing.quantity, 0) + num(incoming.quantity, 0));
+      const preferredPerUnit = getTemplateBaseSize(existing) || getTemplateBaseSize(incoming) || parseSize(existing) || parseSize(incoming);
+      existing.quantity = mergedQty;
+      existing.size = Math.max(0, preferredPerUnit);
+      existing.measureText = existing.size > 0 ? formatSize(existing.size, getMeasureUnit(existing)) : '';
       existing.weightText = isWeight(existing) ? existing.measureText : '';
       return existing;
     }
@@ -184,7 +185,7 @@
     const map = new Map();
     (Array.isArray(list) ? list : []).forEach((raw) => {
       if (!raw || !String(raw.name || '').trim()) return;
-      const item = recalcMeasuredItemFromTemplate(cloneItem(raw));
+      const item = normalizeMeasuredItem(cloneItem(raw));
       if (item.quantity <= 0 && num(item.openedAmount, 0) <= 0) return;
       const key = makeKey(item);
       const existing = map.get(key);
@@ -194,7 +195,7 @@
       }
       mergeInto(existing, item);
     });
-    const merged = Array.from(map.values()).map((item) => recalcMeasuredItemFromTemplate(item));
+    const merged = Array.from(map.values()).map((item) => normalizeMeasuredItem(item));
     return merged.filter((item) => item && String(item.name || '').trim() && (num(item.quantity, 0) > 0 || num(item.openedAmount, 0) > 0));
   }
 
@@ -202,7 +203,7 @@
     const map = new Map();
     (Array.isArray(list) ? list : []).forEach((raw) => {
       if (!raw || !String(raw.name || '').trim()) return;
-      const item = cloneItem(raw);
+      const item = normalizeMeasuredItem(cloneItem(raw));
       const key = nrm(item.name);
       const existing = map.get(key);
       if (!existing) {
@@ -212,7 +213,7 @@
       existing.price = num(existing.price, 0) || num(item.price, 0);
       existing.unit = item.unit || existing.unit || 'st';
       existing.quantity = Math.max(num(existing.quantity, 1), num(item.quantity, 1), 1);
-      existing.size = parseSize(existing) || parseSize(item);
+      existing.size = getTemplateBaseSize(existing) || parseSize(existing) || getTemplateBaseSize(item) || parseSize(item);
       existing.packMeasureUnit = existing.packMeasureUnit || item.packMeasureUnit || '';
       existing.measureText = existing.measureText || item.measureText || '';
       existing.weightText = existing.weightText || item.weightText || '';
@@ -223,7 +224,7 @@
       existing.shelfLifeDays = Math.max(num(existing.shelfLifeDays, 0), num(item.shelfLifeDays, 0));
       existing.openDays = Math.max(num(existing.openDays, 0), num(item.openDays, 0));
     });
-    return Array.from(map.values());
+    return Array.from(map.values()).map((item) => normalizeMeasuredItem(item));
   }
 
   function applySmartMerge() {
@@ -236,39 +237,38 @@
   if (typeof mergeItems !== 'undefined') mergeItems = mergeListSmart;
 
   const originalSave = typeof window.save === 'function' ? window.save : null;
-  if (originalSave && !originalSave.__zipFinalPatched) {
+  if (originalSave && !originalSave.__zipFinalPatchedV2) {
     window.save = function patchedSave() {
       applySmartMerge();
       return originalSave.apply(this, arguments);
     };
-    window.save.__zipFinalPatched = true;
+    window.save.__zipFinalPatchedV2 = true;
     if (typeof save !== 'undefined') save = window.save;
   }
 
   const originalRender = typeof window.render === 'function' ? window.render : null;
-  if (originalRender && !originalRender.__zipFinalPatched) {
+  if (originalRender && !originalRender.__zipFinalPatchedV2) {
     window.render = function patchedRender() {
       applySmartMerge();
       return originalRender.apply(this, arguments);
     };
-    window.render.__zipFinalPatched = true;
+    window.render.__zipFinalPatchedV2 = true;
     if (typeof render !== 'undefined') render = window.render;
   }
 
   const originalUpdateQuantity = typeof window.updateQuantity === 'function' ? window.updateQuantity : null;
-  if (originalUpdateQuantity && !originalUpdateQuantity.__zipFinalPatched) {
-    window.updateQuantity = function updateQuantityZipFinal(index, value) {
+  if (originalUpdateQuantity && !originalUpdateQuantity.__zipFinalPatchedV2) {
+    window.updateQuantity = function updateQuantityZipFinalV2(index, value) {
       const item = Array.isArray(window.items) ? window.items[index] : null;
       if (!item) return originalUpdateQuantity.apply(this, arguments);
 
-      const oldQty = Math.max(0, num(item.quantity, 0));
       const newQty = Math.max(0, num(value, 0));
-      const baseSize = getTemplateBaseSize(item);
 
-      if (item.type === 'home' && isMeasure(item) && baseSize > 0) {
+      if (item.type === 'home' && isMeasure(item)) {
         item.quantity = newQty;
-        item.size = baseSize * newQty;
-        item.measureText = newQty > 0 ? formatSize(item.size, item.unit || 'g') : '';
+        const baseSize = getPerUnitSize(item);
+        item.size = baseSize;
+        item.measureText = baseSize > 0 ? formatSize(baseSize, item.unit || 'g') : '';
         item.weightText = isWeight(item.unit || 'g') ? item.measureText : '';
 
         if (newQty === 0) {
@@ -287,32 +287,32 @@
       applySmartMerge();
       return result;
     };
-    window.updateQuantity.__zipFinalPatched = true;
+    window.updateQuantity.__zipFinalPatchedV2 = true;
     if (typeof updateQuantity !== 'undefined') updateQuantity = window.updateQuantity;
   }
 
   const originalSaveEditItem = typeof window.saveEditItem === 'function' ? window.saveEditItem : null;
-  if (originalSaveEditItem && !originalSaveEditItem.__zipFinalPatched) {
-    window.saveEditItem = function saveEditItemZipFinal() {
+  if (originalSaveEditItem && !originalSaveEditItem.__zipFinalPatchedV2) {
+    window.saveEditItem = function saveEditItemZipFinalV2() {
       const result = originalSaveEditItem.apply(this, arguments);
       applySmartMerge();
       if (typeof window.save === 'function') window.save();
       if (typeof window.render === 'function') window.render();
       return result;
     };
-    window.saveEditItem.__zipFinalPatched = true;
+    window.saveEditItem.__zipFinalPatchedV2 = true;
     if (typeof saveEditItem !== 'undefined') saveEditItem = window.saveEditItem;
   }
 
   const originalTransferSingleItem = typeof window.transferSingleItem === 'function' ? window.transferSingleItem : null;
-  if (originalTransferSingleItem && !originalTransferSingleItem.__zipFinalPatched) {
-    window.transferSingleItem = function transferSingleItemZipFinal(index, targetType, targetPlace = null) {
+  if (originalTransferSingleItem && !originalTransferSingleItem.__zipFinalPatchedV2) {
+    window.transferSingleItem = function transferSingleItemZipFinalV2(index, targetType, targetPlace = null) {
       const sourceItem = Array.isArray(window.items) ? window.items[index] : null;
       const normalizedTargetType = targetType === 'buy' ? 'buy' : 'home';
       const sourceType = sourceItem && sourceItem.type === 'buy' ? 'buy' : 'home';
 
       if (sourceItem && sourceType === 'buy' && normalizedTargetType === 'home') {
-        const moved = recalcMeasuredItemFromTemplate(cloneItem({ ...sourceItem, type: 'home', place: targetPlace || sourceItem.place || 'kyl' }));
+        const moved = normalizeMeasuredItem(cloneItem({ ...sourceItem, type: 'home', place: targetPlace || sourceItem.place || 'kyl' }));
         const movedKey = makeKey(moved);
         const existing = window.items.find((entry, entryIndex) => entryIndex !== index && makeKey({ ...entry, type: 'home' }) === movedKey);
 
@@ -331,14 +331,14 @@
       applySmartMerge();
       return result;
     };
-    window.transferSingleItem.__zipFinalPatched = true;
+    window.transferSingleItem.__zipFinalPatchedV2 = true;
     if (typeof transferSingleItem !== 'undefined') transferSingleItem = window.transferSingleItem;
   }
 
   const originalAddHomeItemFromTemplate = typeof window.addHomeItemFromTemplate === 'function' ? window.addHomeItemFromTemplate : null;
-  if (originalAddHomeItemFromTemplate && !originalAddHomeItemFromTemplate.__zipFinalPatched) {
-    window.addHomeItemFromTemplate = function addHomeItemFromTemplateZipFinal(sourceItem, quantity, targetPlace) {
-      const incoming = recalcMeasuredItemFromTemplate(cloneItem({
+  if (originalAddHomeItemFromTemplate && !originalAddHomeItemFromTemplate.__zipFinalPatchedV2) {
+    window.addHomeItemFromTemplate = function addHomeItemFromTemplateZipFinalV2(sourceItem, quantity, targetPlace) {
+      const incoming = normalizeMeasuredItem(cloneItem({
         ...(sourceItem || {}),
         type: 'home',
         quantity: Math.max(1, num(quantity, 1)),
@@ -357,7 +357,7 @@
       applySmartMerge();
       return result;
     };
-    window.addHomeItemFromTemplate.__zipFinalPatched = true;
+    window.addHomeItemFromTemplate.__zipFinalPatchedV2 = true;
     if (typeof addHomeItemFromTemplate !== 'undefined') addHomeItemFromTemplate = window.addHomeItemFromTemplate;
   }
 
@@ -378,5 +378,5 @@
   };
 
   applySmartMerge();
-  window.__packMergeFix = 'zip-final-v1-weight-quantity-template';
+  window.__packMergeFix = 'zip-final-v2-per-unit-weight';
 })();
