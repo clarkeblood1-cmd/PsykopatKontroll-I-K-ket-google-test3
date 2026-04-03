@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v74-clean-manage-settings';
+const CACHE_NAME = 'matlista-app-v84-count-force-fix';
 const ASSETS = [
   './',
   './index.html',
@@ -7,6 +7,7 @@ const ASSETS = [
   './cloud-sync.js',
   './cloud-hooks.js',
   './appstore-ui.js',
+  './count-force-fix.js',
   './household.js',
   './firebase-config.js',
   './manifest.json',
