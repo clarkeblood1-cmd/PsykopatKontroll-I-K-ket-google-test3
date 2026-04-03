@@ -1,4 +1,4 @@
-const CACHE_NAME = 'matlista-app-v78-final-lock';
+const CACHE_NAME = 'matlista-app-v79-final-plus';
 const ASSETS = [
   './',
   './index.html',
@@ -7,7 +7,7 @@ const ASSETS = [
   './cloud-sync.js',
   './cloud-hooks.js',
   './appstore-ui.js',
-  './final-lock.js',
+  './final-plus-recipes.js',
   './household.js',
   './firebase-config.js',
   './manifest.json',
