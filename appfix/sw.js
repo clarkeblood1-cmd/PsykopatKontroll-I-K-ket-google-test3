@@ -1,4 +1,4 @@
-const CACHE = "matlist-split-v1";
+const CACHE = "matlist-split-v2-pwa";
 const ASSETS = [
   "./",
   "./index.html",

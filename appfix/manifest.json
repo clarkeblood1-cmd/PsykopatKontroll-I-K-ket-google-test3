@@ -16,5 +16,11 @@
       "sizes": "512x512",
       "type": "image/png"
     }
+  ],
+  "description": "Matlist som installerbar mobilapp.",
+  "scope": "./",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
   ]
 }

@@ -6,6 +6,7 @@
   <title>Recept – Matlist</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#07111f">
+  <meta name="description" content="Matlist – installera appen på mobilen och använd den som en riktig app.">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Matlist">
@@ -22,6 +23,10 @@
         <button id="nav-add"  data-page-link="add">Lägg till</button>
 		<button id="nav-recipes"  data-page-link="recipes">Recept</button>
         <button id="nav-manage"  data-page-link="manage">Hantera</button>       
+      </div>
+      <div class="installRow">
+        <button class="btn primary installBtn" id="installBtn" type="button" hidden>📲 Ladda ner app</button>
+        <div class="installHint" id="installHint" hidden></div>
       </div>
     </div>
 

@@ -2712,10 +2712,86 @@ function bootApp(targetPage){
   syncAllItemsFromTemplates();
   saveState();
   bindPageLinks();
+  setupPwaInstall();
   const page = targetPage || state.currentPage || "home";
   setActiveNav(page);
   showPage(page);
 }
+
+let deferredInstallPrompt = null;
+
+function isStandaloneMode(){
+  return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+    || window.navigator.standalone === true;
+}
+
+function showInstallHint(message){
+  const hint = document.getElementById('installHint');
+  if(!hint) return;
+  hint.textContent = message;
+  hint.hidden = false;
+}
+
+function hideInstallHint(){
+  const hint = document.getElementById('installHint');
+  if(hint) hint.hidden = true;
+}
+
+function setupPwaInstall(){
+  const btn = document.getElementById('installBtn');
+  if(!btn) return;
+
+  if(isStandaloneMode()){
+    btn.hidden = true;
+    hideInstallHint();
+    return;
+  }
+
+  const ua = window.navigator.userAgent || '';
+  const isIOS = /iphone|ipad|ipod/i.test(ua);
+  const isSafari = /safari/i.test(ua) && !/crios|fxios|edgios|opr\//i.test(ua);
+
+  btn.addEventListener('click', async () => {
+    if(deferredInstallPrompt){
+      deferredInstallPrompt.prompt();
+      try { await deferredInstallPrompt.userChoice; } catch(e) {}
+      deferredInstallPrompt = null;
+      btn.hidden = true;
+      showInstallHint('Appen kan nu installeras från webbläsarens meny om popupen inte redan visades.');
+      return;
+    }
+
+    if(isIOS){
+      showInstallHint('På iPhone eller iPad: tryck Dela och välj "Lägg till på hemskärmen".');
+      return;
+    }
+
+    showInstallHint('Öppna webbläsarens meny och välj "Installera app" eller "Lägg till på startskärmen".');
+  });
+
+  if(isIOS && isSafari){
+    btn.hidden = false;
+    btn.textContent = '📲 Lägg till på hemskärmen';
+    showInstallHint('På iPhone eller iPad: tryck Dela och välj "Lägg till på hemskärmen".');
+  } else {
+    btn.hidden = true;
+  }
+
+  window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    btn.hidden = false;
+    btn.textContent = '📲 Ladda ner app';
+    hideInstallHint();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    btn.hidden = true;
+    showInstallHint('Matlist är nu installerad på mobilen.');
+  });
+}
+
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("sw.js").catch(() => {});
