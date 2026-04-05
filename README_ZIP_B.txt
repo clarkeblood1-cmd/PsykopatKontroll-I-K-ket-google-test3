@@ -1,1 +1,0 @@
-ZIP B-regel:\n- Varje gång mallstorlek förbrukas från hemma, lägg till 1 ny i köplistan.\n- Exempel mall 400g: 1600 -> 1200 = +1, 1600 -> 800 = +2.\n- Snabblista är bara mall och ska inte ändra hemma/köpa mängder.\n- Gör hård uppdatering i webbläsaren efter filbyte.\n
