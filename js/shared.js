@@ -69,6 +69,7 @@ function normalizeRestItems(){
       item.mode = "package";
       item.qty = 1;
       item.packageCount = 1;
+      item.fixedAmount = Number(item.fixedAmount || 0) || 0;
     }
   });
 }
@@ -405,13 +406,78 @@ function baseToUnit(amountBase, unit){
     default: return n;
   }
 }
-function canConvertUnits(fromUnit, toUnit){
-  return !!fromUnit && !!toUnit && unitFamily(fromUnit) === unitFamily(toUnit);
+const ingredientDensityMap = {
+  "strosocker": { gramsPerDeciliter: 85 },
+  "socker": { gramsPerDeciliter: 85 },
+  "vetemjol": { gramsPerDeciliter: 60 },
+  "mjol": { gramsPerDeciliter: 60 },
+  "kakao": { gramsPerDeciliter: 40 },
+  "vanillinsocker": { gramsPerDeciliter: 60 },
+  "vaniljsocker": { gramsPerDeciliter: 60 },
+  "salt": { gramsPerDeciliter: 120 }
+};
+function normalizeIngredientName(name){
+  return String(name || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
 }
-function convertAmount(amount, fromUnit, toUnit){
+function getDensityDataByName(name){
+  const n = normalizeIngredientName(name);
+  return ingredientDensityMap[n] || null;
+}
+function getTemplateDensityData(templateOrName){
+  if(!templateOrName) return null;
+  if(typeof templateOrName === "string") return getDensityDataByName(templateOrName);
+  return getDensityDataByName(templateOrName.name);
+}
+function canConvertUnits(fromUnit, toUnit, templateOrName){
+  if(!fromUnit || !toUnit) return false;
+  if(fromUnit === toUnit) return true;
+
+  const fromFamily = unitFamily(fromUnit);
+  const toFamily = unitFamily(toUnit);
+  if(fromFamily === toFamily) return true;
+
+  const densityData = getTemplateDensityData(templateOrName);
+  const massVolume =
+    (fromFamily === "mass" && toFamily === "volume") ||
+    (fromFamily === "volume" && toFamily === "mass");
+
+  return !!densityData?.gramsPerDeciliter && massVolume;
+}
+function convertByDensity(amount, fromUnit, toUnit, densityData){
+  if(!densityData?.gramsPerDeciliter) return NaN;
+  const n = Number(amount) || 0;
+  const fromFamily = unitFamily(fromUnit);
+  const toFamily = unitFamily(toUnit);
+
+  if(fromFamily === "volume" && toFamily === "mass"){
+    const volumeMl = unitToBase(n, fromUnit);
+    const grams = (volumeMl / 100) * densityData.gramsPerDeciliter;
+    return baseToUnit(grams, toUnit);
+  }
+  if(fromFamily === "mass" && toFamily === "volume"){
+    const grams = unitToBase(n, fromUnit);
+    const volumeMl = (grams / densityData.gramsPerDeciliter) * 100;
+    return baseToUnit(volumeMl, toUnit);
+  }
+  return NaN;
+}
+function convertAmount(amount, fromUnit, toUnit, templateOrName){
   if(!fromUnit || !toUnit || fromUnit === toUnit) return Number(amount)||0;
-  if(!canConvertUnits(fromUnit, toUnit)) return NaN;
-  return baseToUnit(unitToBase(amount, fromUnit), toUnit);
+
+  const fromFamily = unitFamily(fromUnit);
+  const toFamily = unitFamily(toUnit);
+
+  if(fromFamily === toFamily){
+    return baseToUnit(unitToBase(amount, fromUnit), toUnit);
+  }
+  if(canConvertUnits(fromUnit, toUnit, templateOrName)){
+    return convertByDensity(amount, fromUnit, toUnit, getTemplateDensityData(templateOrName));
+  }
+  return NaN;
 }
 function getHomeTotalByTemplateIdInUnit(templateId, targetUnit){
   const template = getTemplateById(templateId);
@@ -421,7 +487,7 @@ function getHomeTotalByTemplateIdInUnit(templateId, targetUnit){
     .reduce((sum, item) => sum + getItemTotalAmount(item), 0);
 
   if(!targetUnit || !templateUnit) return totalInTemplateUnit;
-  const converted = convertAmount(totalInTemplateUnit, templateUnit, targetUnit);
+  const converted = convertAmount(totalInTemplateUnit, templateUnit, targetUnit, template);
   return Number.isNaN(converted) ? totalInTemplateUnit : converted;
 }
 function recipeHasEverything(recipe){
@@ -429,7 +495,7 @@ function recipeHasEverything(recipe){
     const template = getTemplateById(ing.templateId);
     const homeUnit = template?.unit || "";
     const recipeUnit = ing.unit || homeUnit;
-    if(recipeUnit && homeUnit && !canConvertUnits(recipeUnit, homeUnit)) return false;
+    if(recipeUnit && homeUnit && !canConvertUnits(recipeUnit, homeUnit, template)) return false;
     return getHomeTotalByTemplateIdInUnit(ing.templateId, recipeUnit) >= (Number(ing.amount)||0);
   });
 }
@@ -445,14 +511,14 @@ function recipeMissingText(recipe){
       const template = getTemplateById(ing.templateId);
       const homeUnit = template?.unit || "";
       const recipeUnit = ing.unit || homeUnit;
-      if(recipeUnit && homeUnit && !canConvertUnits(recipeUnit, homeUnit)) return true;
+      if(recipeUnit && homeUnit && !canConvertUnits(recipeUnit, homeUnit, template)) return true;
       return getHomeTotalByTemplateIdInUnit(ing.templateId, recipeUnit) < (Number(ing.amount)||0);
     })
     .map(ing => {
       const t = getTemplateById(ing.templateId);
       const recipeUnit = ing.unit || t?.unit || "";
       const homeUnit = t?.unit || "";
-      if(recipeUnit && homeUnit && !canConvertUnits(recipeUnit, homeUnit)){
+      if(recipeUnit && homeUnit && !canConvertUnits(recipeUnit, homeUnit, t)){
         return `${t?.name || "Saknad vara"} (fel enhet: ${recipeUnit} ↔ ${homeUnit})`;
       }
       const need = (Number(ing.amount)||0) - getHomeTotalByTemplateIdInUnit(ing.templateId, recipeUnit);
@@ -1129,7 +1195,7 @@ function cookRecipe(recipeId){
     let packagesUsedForRecipe = 0;
 
     if(recipeUnit && homeUnit && recipeUnit !== homeUnit){
-      const converted = convertAmount(ing.amount, recipeUnit, homeUnit);
+      const converted = convertAmount(ing.amount, recipeUnit, homeUnit, template);
       if(Number.isNaN(converted)) return;
       neededInHomeUnit = converted;
     }
@@ -1159,7 +1225,23 @@ function cookRecipe(recipeId){
         const availablePackages = Number(item.packageCount || item.qty || 0) || 0;
         if(availablePackages <= 0) continue;
 
-        if(template?.fixedAmount && fixedAmount === Number(template.fixedAmount || 1)){
+        if(item.isRest){
+          const availableAmount = Number(item.fixedAmount || 0) || 0;
+          const deductAmount = Math.min(availableAmount, remaining);
+          const restLeft = Math.max(0, Number((availableAmount - deductAmount).toFixed(2)));
+
+          remaining -= deductAmount;
+
+          if(restLeft > 0){
+            item.packageCount = 1;
+            item.qty = 1;
+            item.fixedAmount = restLeft;
+          }else{
+            item.packageCount = 0;
+            item.qty = 0;
+            item.fixedAmount = 0;
+          }
+        }else if(template?.fixedAmount && fixedAmount === Number(template.fixedAmount || 1)){
           while(remaining > 0 && (Number(item.packageCount || item.qty || 0) || 0) > 0){
             const currentPackages = Number(item.packageCount || item.qty || 0) || 0;
 
@@ -2022,6 +2104,9 @@ function syncTemplateToItems(templateId){
 
   [...state.homeItems, ...state.buyItems].forEach(entry=>{
     if(entry.templateId === templateId){
+      const prevQty = Number(entry.qty || 0) || 0;
+      const prevPackageCount = Number(entry.packageCount || 0) || 0;
+      const prevFixedAmount = Number(entry.fixedAmount || 0) || 0;
       entry.name = template.name;
       entry.img = template.img || "";
       entry.room = template.defaultRoom || "";
@@ -2030,8 +2115,21 @@ function syncTemplateToItems(templateId){
       entry.category = template.category || "";
       entry.unit = template.unit || "";
       entry.mode = template.mode || "normal";
-      entry.packageCount = Number(template.packageCount || template.qty || entry.packageCount || entry.qty || 0) || 0;
-      entry.fixedAmount = Number(template.fixedAmount || entry.fixedAmount || 1) || 1;
+
+      if(entry.isRest){
+        entry.mode = "package";
+        entry.qty = 1;
+        entry.packageCount = 1;
+        entry.fixedAmount = prevFixedAmount;
+      }else if(entry.mode === "package"){
+        entry.packageCount = prevPackageCount;
+        entry.qty = prevQty;
+        entry.fixedAmount = Number(template.fixedAmount || prevFixedAmount || 1) || 1;
+      }else{
+        entry.qty = prevQty;
+        entry.packageCount = prevQty;
+        entry.fixedAmount = 1;
+      }
     }
   });
 }
@@ -2043,6 +2141,7 @@ function syncAllItemsFromTemplates(){
       if(template){
         const prevQty = Number(entry.qty || 0) || 0;
         const prevPackageCount = Number(entry.packageCount || 0) || 0;
+        const prevFixedAmount = Number(entry.fixedAmount || 0) || 0;
         entry.name = template.name;
         entry.img = template.img || "";
         entry.room = template.defaultRoom || "";
@@ -2050,12 +2149,20 @@ function syncAllItemsFromTemplates(){
         entry.drawer = template.defaultDrawer || "";
         entry.category = template.category || "";
         entry.unit = template.unit || "";
-        entry.mode = template.mode || "normal";
-        entry.packageCount = entry.mode === "package"
-          ? (prevPackageCount || Number(template.packageCount || template.qty || 0) || 0)
-          : prevPackageCount;
-        entry.fixedAmount = Number(template.fixedAmount || entry.fixedAmount || 1) || 1;
-        entry.qty = prevQty;
+
+        if(entry.isRest){
+          entry.mode = "package";
+          entry.qty = 1;
+          entry.packageCount = 1;
+          entry.fixedAmount = prevFixedAmount;
+        }else{
+          entry.mode = template.mode || "normal";
+          entry.packageCount = entry.mode === "package" ? prevPackageCount : prevQty;
+          entry.fixedAmount = entry.mode === "package"
+            ? (Number(template.fixedAmount || prevFixedAmount || 1) || 1)
+            : 1;
+          entry.qty = prevQty;
+        }
       }
     }
   });
@@ -2598,6 +2705,7 @@ function bindPageLinks(){
 function bootApp(targetPage){
   normalizeRestItems();
   migrateItemsToTemplateIds();
+  syncAllItemsFromTemplates();
   saveState();
   bindPageLinks();
   const page = targetPage || state.currentPage || "home";
