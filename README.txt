@@ -17,3 +17,10 @@ Filer:
 Notering:
 - Hemmet behåller eget antal.
 - Mallen synkar inte längre över qty vid uppstart.
+Firebase:
+1. Öppna js/firebase-config.js
+2. Fyll i dina Firebase-uppgifter
+3. Aktivera Authentication -> Anonymous i Firebase Console
+4. Skapa Firestore Database
+5. Ladda upp filerna igen
+6. Appen kan då synca mellan enheter via Firebase

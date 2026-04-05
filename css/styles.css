@@ -2417,3 +2417,55 @@ img{
   .installBtn{width:100%}
   .installHint{flex:1 1 100%}
 }
+
+
+/* Firebase sync */
+.firebaseSyncCard{
+  margin-top: 10px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.04);
+  border-radius: 16px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+.firebaseSyncHeader{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+}
+.firebaseSyncTitle{
+  font-weight:700;
+}
+.firebaseStatusLine{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color: var(--muted, #cbd5e1);
+  font-size: 14px;
+}
+.firebaseDot{
+  width:10px;
+  height:10px;
+  border-radius:999px;
+  background:#6b7280;
+  display:inline-block;
+  flex:0 0 auto;
+}
+.firebaseDot.ready{ background:#22c55e; }
+.firebaseDot.working{ background:#f59e0b; }
+.firebaseDot.error{ background:#ef4444; }
+.firebaseDot.off{ background:#6b7280; }
+.firebaseSyncActions{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
+@media (max-width: 700px){
+  .firebaseSyncActions{
+    display:grid;
+    grid-template-columns:1fr;
+  }
+}

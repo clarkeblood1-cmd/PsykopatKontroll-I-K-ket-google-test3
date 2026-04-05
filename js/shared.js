@@ -86,6 +86,9 @@ function loadState(){
 }
 function saveState(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if(window.FirebaseSync && typeof window.FirebaseSync.schedulePush === "function"){
+    window.FirebaseSync.schedulePush();
+  }
 }
 function mergeDeep(target, source){
   for(const key in source){
@@ -2797,3 +2800,38 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   });
 }
+
+
+window.getExportableState = function(){
+  return JSON.parse(JSON.stringify(state));
+};
+
+window.applyImportedState = function(newState, options){
+  try{
+    state = mergeDeep(structuredClone(defaultState), newState || {});
+    normalizeRestItems();
+    migrateCategoriesByRoom();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if(options && options.source === "firebase"){
+      // undvik loop – ingen extra saveState här
+    }
+    if(typeof render === "function"){
+      render();
+    }
+    if(typeof updateRecipeCategoryDropdown === "function"){
+      try{ updateRecipeCategoryDropdown(); }catch(e){}
+    }
+    if(typeof populateRoomFilters === "function"){
+      try{ populateRoomFilters(); }catch(e){}
+    }
+  }catch(e){
+    console.error("applyImportedState error", e);
+  }
+};
+
+document.addEventListener("DOMContentLoaded", function(){
+  const syncCard = document.getElementById("firebaseSyncCard");
+  if(syncCard){
+    syncCard.hidden = false;
+  }
+});
