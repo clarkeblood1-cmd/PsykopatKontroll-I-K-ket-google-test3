@@ -1370,6 +1370,7 @@ function cookRecipe(recipeId){
 function getManageUi(){
   state.manageUi ||= { section:"home", roomSearch:"", categorySearch:"", placeSearch:"", drawerSearch:"", currentPlace:"" };
   if(!state.manageUi.section) state.manageUi.section = "home";
+  if(!['home','add','recipes','login'].includes(state.manageUi.section)) state.manageUi.section = 'home';
   return state.manageUi;
 }
 function filteredManageValues(values, search){
@@ -1563,6 +1564,38 @@ function renderManageAddSection(){
   `;
 }
 
+
+function renderManageLoginSection(){
+  return `
+    <div class="manageLoginGrid">
+      <section class="manageSection manageLoginHero">
+        <div class="manageTitleLine"><h3 class="manageBigTitle">Login</h3></div>
+        <h2 class="manageLoginTitle">Google-login för Matlist</h2>
+        <div class="manageLoginText">
+          Här kan du logga in med Google på en egen login-sida inne i Hantera.
+          När du är inloggad kan du använda Firebase-funktioner lättare mellan flera enheter.
+        </div>
+
+        <div class="googleLoginStatusCard">
+          <div class="firebaseSyncHeader">
+            <div class="firebaseSyncTitle">🔐 Google-konto</div>
+            <div class="firebaseStatusLine">
+              <span class="firebaseDot" id="googleLoginStatusDot"></span>
+              <span id="googleLoginStatusText">Förbereder…</span>
+            </div>
+          </div>
+          <div id="manageGoogleLoginPanel" style="margin-top:12px"></div>
+        </div>
+
+        <div class="manageLoginNote">
+          För att detta ska fungera måste du aktivera <strong>Google</strong> i Firebase Authentication och fylla i rätt värden i <code>firebase-config.js</code>.
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+
 function renderManageRecipeSection(){
   const filter = state.filters.recipes || {search:"", category:"Alla Recept Kategori"};
   const recipes = (state.recipes || []).filter(recipe=>{
@@ -1654,6 +1687,7 @@ function renderManage(){
   let content = '';
   if(section === 'add') content = renderManageAddSection();
   else if(section === 'recipes') content = renderManageRecipeSection();
+  else if(section === 'login') content = renderManageLoginSection();
   else content = renderManageHomeSection(ui);
 
   root.innerHTML = `
@@ -1666,6 +1700,7 @@ function renderManage(){
       <button class="manageSubnavBtn ${section==='home' ? 'active' : ''}" onclick="setManageSection('home')">Hemmet</button>
       <button class="manageSubnavBtn ${section==='add' ? 'active' : ''}" onclick="setManageSection('add')">Lägg till</button>
       <button class="manageSubnavBtn ${section==='recipes' ? 'active' : ''}" onclick="setManageSection('recipes')">Recept</button>
+      <button class="manageSubnavBtn ${section==='login' ? 'active' : ''}" onclick="setManageSection('login')">Login</button>
     </div>
 
     ${content}

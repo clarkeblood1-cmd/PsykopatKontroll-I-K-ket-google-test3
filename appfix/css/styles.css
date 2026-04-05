@@ -2469,3 +2469,107 @@ img{
     grid-template-columns:1fr;
   }
 }
+
+
+/* Google login i Hantera */
+.manageLoginGrid{
+  display:grid;
+  gap:16px;
+}
+.manageLoginHero{
+  display:grid;
+  gap:14px;
+}
+.manageLoginTitle{
+  margin:0;
+  font-size:28px;
+  font-weight:900;
+}
+.manageLoginText{
+  color:var(--muted);
+  line-height:1.5;
+}
+.manageLoginNote{
+  color:var(--muted);
+  font-size:14px;
+}
+.googleLoginStatusCard{
+  margin-top:12px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.04);
+  border-radius:16px;
+  padding:12px;
+}
+.googleLoginUserCard,
+.googleLoginGuestCard{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:14px;
+  flex-wrap:wrap;
+}
+.googleLoginUserMain{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-width:0;
+}
+.googleLoginAvatarWrap{
+  flex:0 0 auto;
+}
+.googleLoginAvatar{
+  width:56px;
+  height:56px;
+  border-radius:999px;
+  object-fit:cover;
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.08);
+}
+.googleLoginAvatarFallback{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:900;
+  font-size:24px;
+}
+.googleLoginUserText{
+  min-width:0;
+}
+.googleLoginUserName{
+  font-size:18px;
+  font-weight:800;
+}
+.googleLoginUserEmail{
+  color:var(--muted);
+  overflow-wrap:anywhere;
+}
+.googleLoginGuestTitle{
+  font-size:18px;
+  font-weight:800;
+}
+.googleLoginGuestSub{
+  color:var(--muted);
+}
+.googleLoginActions{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.googleLoginBtn{
+  min-width:220px;
+}
+@media (max-width:700px){
+  .googleLoginBtn{
+    width:100%;
+    min-width:0;
+  }
+  .googleLoginUserCard,
+  .googleLoginGuestCard{
+    align-items:stretch;
+  }
+  .googleLoginActions{
+    width:100%;
+    display:grid;
+    grid-template-columns:1fr;
+  }
+}
