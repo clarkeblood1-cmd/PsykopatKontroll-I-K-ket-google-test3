@@ -1,6 +1,0 @@
-Snabblista sync fix
-- Har hemma / Behöver köpa ändrar inte snabblistan
-- När snabblistan ändras uppdateras matchande Har hemma och Behöver köpa
-- quantity/antal bevaras i Har hemma och Behöver köpa
-- bestBefore/openedDate/openedAmount bevaras i Har hemma
-- patch ligger i quick-template-sync.js
