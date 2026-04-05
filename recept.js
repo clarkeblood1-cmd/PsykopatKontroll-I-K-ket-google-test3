@@ -1,0 +1,1 @@
+bootApp('home');
