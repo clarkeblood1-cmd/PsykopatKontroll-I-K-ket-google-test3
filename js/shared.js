@@ -69,6 +69,7 @@ function normalizeRestItems(){
       item.mode = "package";
       item.qty = 1;
       item.packageCount = 1;
+      item.fixedAmount = Number(item.fixedAmount || 0) || 0;
     }
   });
 }
@@ -354,34 +355,6 @@ function createRestPackageItem(baseItem, restAmount){
     isRest: true
   };
 }
-function getOpenedStorageForItem(template, sourceItem){
-  const sourceRoom = sourceItem?.room || "";
-  const sourcePlace = sourceItem?.place || "";
-  const sourceDrawer = sourceItem?.drawer || "";
-  const defaultRoom = template?.defaultRoom || sourceRoom;
-  const defaultPlace = template?.defaultPlace || sourcePlace;
-  const defaultDrawer = template?.defaultDrawer || sourceDrawer;
-
-  const sourcePlaceLc = String(sourcePlace || "").toLowerCase();
-  const defaultPlaceLc = String(defaultPlace || "").toLowerCase();
-
-  const cameFromFreezer = sourcePlaceLc.includes("frys");
-  const defaultIsFreezer = defaultPlaceLc.includes("frys");
-
-  if(cameFromFreezer && !defaultIsFreezer && defaultPlace){
-    return {
-      room: defaultRoom,
-      place: defaultPlace,
-      drawer: defaultDrawer
-    };
-  }
-
-  return {
-    room: sourceRoom || defaultRoom,
-    place: sourcePlace || defaultPlace,
-    drawer: sourceDrawer || defaultDrawer
-  };
-}
 function renderPackageText(item){
   const mode = item.mode || "normal";
   const packageCount = Number(item.packageCount || item.qty || 0) || 0;
@@ -389,7 +362,11 @@ function renderPackageText(item){
   const qty = Number(item.qty || 0) || 0;
   const unit = item.unit ? " " + escapeHtml(item.unit) : "";
   if(item.isRest){
-    return `Restpaket: ${formatAmount(getItemTotalAmount(item))}${unit}`;
+    const template = item.templateId ? getTemplateById(item.templateId) : null;
+    const originalPackageAmount = Number(template?.fixedAmount || item.originalPackageAmount || 0) || 0;
+    const restAmount = getItemTotalAmount(item);
+    const originalText = originalPackageAmount > 0 ? ` av ${formatAmount(originalPackageAmount)}${unit}` : "";
+    return `Öppnat paket: ${formatAmount(restAmount)}${unit} kvar${originalText}`;
   }
   if(mode === "package"){
     return `${formatAmount(packageCount)} paket × ${formatAmount(fixedAmount)}${unit} = ${formatAmount(getItemTotalAmount(item))}${unit}`;
@@ -1252,7 +1229,23 @@ function cookRecipe(recipeId){
         const availablePackages = Number(item.packageCount || item.qty || 0) || 0;
         if(availablePackages <= 0) continue;
 
-        if(template?.fixedAmount && fixedAmount === Number(template.fixedAmount || 1)){
+        if(item.isRest){
+          const availableAmount = Number(item.fixedAmount || 0) || 0;
+          const deductAmount = Math.min(availableAmount, remaining);
+          const restLeft = Math.max(0, Number((availableAmount - deductAmount).toFixed(2)));
+
+          remaining -= deductAmount;
+
+          if(restLeft > 0){
+            item.packageCount = 1;
+            item.qty = 1;
+            item.fixedAmount = restLeft;
+          }else{
+            item.packageCount = 0;
+            item.qty = 0;
+            item.fixedAmount = 0;
+          }
+        }else if(template?.fixedAmount && fixedAmount === Number(template.fixedAmount || 1)){
           while(remaining > 0 && (Number(item.packageCount || item.qty || 0) || 0) > 0){
             const currentPackages = Number(item.packageCount || item.qty || 0) || 0;
 
@@ -1268,12 +1261,8 @@ function cookRecipe(recipeId){
               const restAmount = fixedAmount - remaining;
               if(restAmount > 0){
                 const restItem = createRestPackageItem(item, Number(restAmount.toFixed(2)));
-                const openedStorage = getOpenedStorageForItem(template, item);
                 restItem.isRest = true;
                 restItem.name = item.name || template?.name || "";
-                restItem.room = openedStorage.room;
-                restItem.place = openedStorage.place;
-                restItem.drawer = openedStorage.drawer;
                 state.homeItems.unshift(restItem);
               }
               remaining = 0;
@@ -2119,21 +2108,31 @@ function syncTemplateToItems(templateId){
 
   [...state.homeItems, ...state.buyItems].forEach(entry=>{
     if(entry.templateId === templateId){
-      const isHomeEntry = state.homeItems.includes(entry);
+      const prevQty = Number(entry.qty || 0) || 0;
+      const prevPackageCount = Number(entry.packageCount || 0) || 0;
+      const prevFixedAmount = Number(entry.fixedAmount || 0) || 0;
       entry.name = template.name;
       entry.img = template.img || "";
-      if(!isHomeEntry || !entry.room) entry.room = template.defaultRoom || entry.room || "";
-      if(!isHomeEntry || !entry.place) entry.place = template.defaultPlace || entry.place || "";
-      if(!isHomeEntry || !entry.drawer) entry.drawer = template.defaultDrawer || entry.drawer || "";
+      entry.room = template.defaultRoom || "";
+      entry.place = template.defaultPlace || "";
+      entry.drawer = template.defaultDrawer || "";
       entry.category = template.category || "";
       entry.unit = template.unit || "";
       entry.mode = template.mode || "normal";
-      if((entry.mode || "normal") === "package"){
-        entry.packageCount = Number(entry.packageCount || template.packageCount || template.qty || entry.qty || 0) || 0;
-        entry.fixedAmount = Number(template.fixedAmount || entry.fixedAmount || 1) || 1;
+
+      if(entry.isRest){
+        entry.mode = "package";
+        entry.qty = 1;
+        entry.packageCount = 1;
+        entry.fixedAmount = prevFixedAmount;
+      }else if(entry.mode === "package"){
+        entry.packageCount = prevPackageCount;
+        entry.qty = prevQty;
+        entry.fixedAmount = Number(template.fixedAmount || prevFixedAmount || 1) || 1;
       }else{
-        entry.packageCount = entry.qty;
-        entry.fixedAmount = Number(entry.fixedAmount || 1) || 1;
+        entry.qty = prevQty;
+        entry.packageCount = prevQty;
+        entry.fixedAmount = 1;
       }
     }
   });
@@ -2146,20 +2145,28 @@ function syncAllItemsFromTemplates(){
       if(template){
         const prevQty = Number(entry.qty || 0) || 0;
         const prevPackageCount = Number(entry.packageCount || 0) || 0;
-        const isHomeEntry = state.homeItems.includes(entry);
+        const prevFixedAmount = Number(entry.fixedAmount || 0) || 0;
         entry.name = template.name;
         entry.img = template.img || "";
-        if(!isHomeEntry || !entry.room) entry.room = template.defaultRoom || entry.room || "";
-        if(!isHomeEntry || !entry.place) entry.place = template.defaultPlace || entry.place || "";
-        if(!isHomeEntry || !entry.drawer) entry.drawer = template.defaultDrawer || entry.drawer || "";
+        entry.room = template.defaultRoom || "";
+        entry.place = template.defaultPlace || "";
+        entry.drawer = template.defaultDrawer || "";
         entry.category = template.category || "";
         entry.unit = template.unit || "";
-        entry.mode = template.mode || "normal";
-        entry.packageCount = entry.mode === "package"
-          ? (prevPackageCount || Number(template.packageCount || template.qty || 0) || 0)
-          : prevPackageCount;
-        entry.fixedAmount = Number(template.fixedAmount || entry.fixedAmount || 1) || 1;
-        entry.qty = prevQty;
+
+        if(entry.isRest){
+          entry.mode = "package";
+          entry.qty = 1;
+          entry.packageCount = 1;
+          entry.fixedAmount = prevFixedAmount;
+        }else{
+          entry.mode = template.mode || "normal";
+          entry.packageCount = entry.mode === "package" ? prevPackageCount : prevQty;
+          entry.fixedAmount = entry.mode === "package"
+            ? (Number(template.fixedAmount || prevFixedAmount || 1) || 1)
+            : 1;
+          entry.qty = prevQty;
+        }
       }
     }
   });
@@ -2702,6 +2709,7 @@ function bindPageLinks(){
 function bootApp(targetPage){
   normalizeRestItems();
   migrateItemsToTemplateIds();
+  syncAllItemsFromTemplates();
   saveState();
   bindPageLinks();
   const page = targetPage || state.currentPage || "home";
