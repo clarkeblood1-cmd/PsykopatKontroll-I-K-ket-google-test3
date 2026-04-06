@@ -70,317 +70,6 @@ if(!state.household){
 migrateCategoriesByRoom();
 let currentEdit = null;
 
-
-function getCurrentUserInfo(){
-  try{
-    const authUser = (typeof firebase !== "undefined" && firebase.auth) ? firebase.auth().currentUser : null;
-    if(authUser){
-      return {
-        uid: authUser.uid || "",
-        name: authUser.displayName || authUser.email || "Användare",
-        email: authUser.email || "",
-        photoURL: authUser.photoURL || "",
-        isAnonymous: !!authUser.isAnonymous
-      };
-    }
-  }catch(e){}
-  return {
-    uid: "",
-    name: "Inte inloggad",
-    email: "",
-    photoURL: "",
-    isAnonymous: true
-  };
-}
-function getCurrentFamilyId(){
-  return state.household && state.household.id ? state.household.id : "";
-}
-function randomCode(len){
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let out = "";
-  for(let i=0;i<len;i++) out += chars[Math.floor(Math.random()*chars.length)];
-  return out;
-}
-function generateHouseholdId(){
-  return "hh-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2,8);
-}
-async function copyHouseholdCode(code){
-  try{
-    await navigator.clipboard.writeText(String(code || ""));
-    alert("Koden kopierades.");
-  }catch(e){
-    alert("Kunde inte kopiera koden.");
-  }
-}
-async function ensureUserDoc(){
-  try{
-    if(typeof firebase === "undefined" || !firebase.firestore || !firebase.auth) return false;
-    const user = firebase.auth().currentUser;
-    if(!user) return false;
-    const info = getCurrentUserInfo();
-    await firebase.firestore().collection("users").doc(user.uid).set({
-      uid: info.uid,
-      name: info.name,
-      email: info.email,
-      photoURL: info.photoURL || "",
-      updatedAt: new Date().toISOString()
-    }, { merge: true });
-    return true;
-  }catch(err){
-    console.error("ensureUserDoc error", err);
-    return false;
-  }
-}
-async function createHousehold(){
-  try{
-    if(typeof firebase === "undefined" || !firebase.firestore || !firebase.auth){
-      alert("Firebase saknas.");
-      return;
-    }
-    const user = firebase.auth().currentUser;
-    if(!user){
-      alert("Logga in först på Hantera → Login.");
-      return;
-    }
-    const nameEl = document.getElementById("household-create-name");
-    const privateEl = document.getElementById("household-create-private");
-    const householdName = String(nameEl ? nameEl.value : "").trim();
-    if(!householdName){
-      alert("Skriv namn på hushåll först.");
-      return;
-    }
-
-    await ensureUserDoc();
-
-    const info = getCurrentUserInfo();
-    const householdId = generateHouseholdId();
-    const inviteCode = randomCode(6);
-    const isPrivate = privateEl ? !!privateEl.checked : true;
-
-    const householdDoc = {
-      name: householdName,
-      ownerUid: info.uid,
-      memberUids: [info.uid],
-      members: [{
-        uid: info.uid,
-        name: info.name,
-        email: info.email,
-        photoURL: info.photoURL || ""
-      }],
-      isPrivate: isPrivate,
-      inviteCode: inviteCode,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    const db = firebase.firestore();
-    await db.collection("households").doc(householdId).set(householdDoc);
-    await db.collection("inviteCodes").doc(inviteCode).set({
-      code: inviteCode,
-      householdId: householdId,
-      isPrivate: isPrivate,
-      ownerUid: info.uid,
-      createdAt: new Date().toISOString()
-    }, { merge: true });
-
-    state.household = {
-      id: householdId,
-      name: householdName,
-      isPrivate: isPrivate,
-      inviteCode: inviteCode,
-      ownerUid: info.uid,
-      memberUids: [info.uid],
-      members: householdDoc.members,
-      joinedAt: new Date().toISOString()
-    };
-    saveState();
-
-    if(window.FirebaseSync && typeof window.FirebaseSync.changeFamilyId === "function"){
-      await window.FirebaseSync.changeFamilyId(householdId, false);
-      await window.FirebaseSync.pushState(true);
-    }
-
-    renderManage();
-    alert("Hushåll skapat.");
-  }catch(err){
-    console.error("createHousehold error", err);
-    alert("Kunde inte skapa hushåll.");
-  }
-}
-async function joinHousehold(){
-  try{
-    if(typeof firebase === "undefined" || !firebase.firestore || !firebase.auth){
-      alert("Firebase saknas.");
-      return;
-    }
-    const user = firebase.auth().currentUser;
-    if(!user){
-      alert("Logga in först på Hantera → Login.");
-      return;
-    }
-    await ensureUserDoc();
-
-    const codeEl = document.getElementById("household-join-code");
-    const joinCode = String(codeEl ? codeEl.value : "").trim().toUpperCase();
-    if(!joinCode){
-      alert("Skriv in kod först.");
-      return;
-    }
-
-    const db = firebase.firestore();
-    const inviteSnap = await db.collection("inviteCodes").doc(joinCode).get();
-    if(!inviteSnap.exists){
-      alert("Koden hittades inte.");
-      return;
-    }
-
-    const invite = inviteSnap.data() || {};
-    const householdId = invite.householdId;
-    if(!householdId){
-      alert("Koden saknar hushåll.");
-      return;
-    }
-
-    const hhRef = db.collection("households").doc(householdId);
-    const hhSnap = await hhRef.get();
-    if(!hhSnap.exists){
-      alert("Hushållet hittades inte.");
-      return;
-    }
-
-    const remote = hhSnap.data() || {};
-    const info = getCurrentUserInfo();
-    const existingUids = Array.isArray(remote.memberUids) ? remote.memberUids.slice() : [];
-    if(!existingUids.includes(info.uid)) existingUids.push(info.uid);
-
-    const existingMembers = Array.isArray(remote.members) ? remote.members.filter(m => m && m.uid !== info.uid) : [];
-    existingMembers.push({
-      uid: info.uid,
-      name: info.name,
-      email: info.email,
-      photoURL: info.photoURL || ""
-    });
-
-    await hhRef.set({
-      ...remote,
-      memberUids: existingUids,
-      members: existingMembers,
-      updatedAt: new Date().toISOString()
-    });
-
-    state.household = {
-      id: householdId,
-      name: remote.name || "Hushåll",
-      isPrivate: !!remote.isPrivate,
-      inviteCode: remote.inviteCode || joinCode,
-      ownerUid: remote.ownerUid || "",
-      memberUids: existingUids,
-      members: existingMembers,
-      joinedAt: new Date().toISOString()
-    };
-    saveState();
-
-    if(window.FirebaseSync && typeof window.FirebaseSync.changeFamilyId === "function"){
-      await window.FirebaseSync.changeFamilyId(householdId, true);
-    }
-
-    renderManage();
-    alert("Du gick med i hushållet.");
-  }catch(err){
-    console.error("joinHousehold error", err);
-    alert("Kunde inte gå med i hushållet.");
-  }
-}
-async function leaveHousehold(){
-  try{
-    if(!(state.household && state.household.id)){
-      alert("Du är inte med i något hushåll.");
-      return;
-    }
-    if(typeof firebase === "undefined" || !firebase.firestore || !firebase.auth){
-      alert("Firebase saknas.");
-      return;
-    }
-    const user = firebase.auth().currentUser;
-    if(!user){
-      alert("Logga in först.");
-      return;
-    }
-    const info = getCurrentUserInfo();
-    const householdId = state.household.id;
-    const db = firebase.firestore();
-    const hhRef = db.collection("households").doc(householdId);
-    const hhSnap = await hhRef.get();
-    if(hhSnap.exists){
-      const remote = hhSnap.data() || {};
-      const nextUids = (remote.memberUids || []).filter(uid => uid !== info.uid);
-      const nextMembers = (remote.members || []).filter(member => member && member.uid !== info.uid);
-      await hhRef.set({
-        ...remote,
-        memberUids: nextUids,
-        members: nextMembers,
-        updatedAt: new Date().toISOString()
-      });
-    }
-    state.household = {
-      id: "",
-      name: "",
-      isPrivate: true,
-      inviteCode: "",
-      ownerUid: "",
-      memberUids: [],
-      members: [],
-      joinedAt: ""
-    };
-    saveState();
-
-    if(window.FirebaseSync && typeof window.FirebaseSync.changeFamilyId === "function"){
-      await window.FirebaseSync.changeFamilyId("", false);
-    }
-
-    renderManage();
-    alert("Du lämnade hushållet.");
-  }catch(err){
-    console.error("leaveHousehold error", err);
-    alert("Kunde inte lämna hushållet.");
-  }
-}
-async function refreshHouseholdFromCloud(){
-  try{
-    if(!(state.household && state.household.id)){
-      alert("Inget hushåll valt.");
-      return;
-    }
-    if(typeof firebase === "undefined" || !firebase.firestore){
-      alert("Firebase saknas.");
-      return;
-    }
-    const snap = await firebase.firestore().collection("households").doc(state.household.id).get();
-    if(!snap.exists){
-      alert("Hushållet hittades inte.");
-      return;
-    }
-    const remote = snap.data() || {};
-    state.household = {
-      id: state.household.id,
-      name: remote.name || state.household.name || "Hushåll",
-      isPrivate: !!remote.isPrivate,
-      inviteCode: remote.inviteCode || state.household.inviteCode || "",
-      ownerUid: remote.ownerUid || state.household.ownerUid || "",
-      memberUids: Array.isArray(remote.memberUids) ? remote.memberUids : [],
-      members: Array.isArray(remote.members) ? remote.members : [],
-      joinedAt: state.household.joinedAt || new Date().toISOString()
-    };
-    saveState();
-    renderManage();
-    alert("Hushållet uppdaterades.");
-  }catch(err){
-    console.error("refreshHouseholdFromCloud error", err);
-    alert("Kunde inte uppdatera hushållet.");
-  }
-}
-
-
 function normalizeRestItems(){
   const normalizeName = (name) => String(name || "")
     .replace(/\s*\((rest|restpaket)\)\s*/gi, "")
@@ -1697,7 +1386,6 @@ function getManageUi(){
   state.manageUi ||= { section:"home", roomSearch:"", categorySearch:"", placeSearch:"", drawerSearch:"", currentPlace:"" };
   if(!state.manageUi.section) state.manageUi.section = "home";
   if(!['home','add','recipes','login','household'].includes(state.manageUi.section)) state.manageUi.section = 'home';
-  if(!['home','add','recipes','login'].includes(state.manageUi.section)) state.manageUi.section = 'home';
   return state.manageUi;
 }
 function filteredManageValues(values, search){
@@ -1893,6 +1581,39 @@ function renderManageAddSection(){
 
 
 
+function getCurrentUserInfo(){
+  try{
+    const authUser = (typeof firebase !== "undefined" && firebase.auth) ? firebase.auth().currentUser : null;
+    if(authUser){
+      return {
+        uid: authUser.uid || "",
+        name: authUser.displayName || authUser.email || "Användare",
+        email: authUser.email || "",
+        photoURL: authUser.photoURL || "",
+        isAnonymous: !!authUser.isAnonymous
+      };
+    }
+  }catch(e){}
+  return {
+    uid: "",
+    name: "Inte inloggad",
+    email: "",
+    photoURL: "",
+    isAnonymous: true
+  };
+}
+
+function copyHouseholdCode(code){
+  const text = String(code || "");
+  if(!text){
+    alert("Ingen kod att kopiera.");
+    return;
+  }
+  navigator.clipboard.writeText(text)
+    .then(()=>alert("Koden kopierades."))
+    .catch(()=>alert("Kunde inte kopiera koden."));
+}
+
 function renderManageHouseholdSection(){
   const hh = state.household || {};
   const inHousehold = !!hh.id;
@@ -1903,24 +1624,18 @@ function renderManageHouseholdSection(){
     return `
       <div class="manageBoard">
         <section class="manageSection">
-          <div class="manageTitleLine"><h3 class="manageBigTitle">Skapa hushåll</h3></div>
-          <div class="manageHouseholdText">Skapa ett hushåll som följer dina Firestore-regler. Sync använder hushållets <code>households/{householdId}/appData/sharedState</code>.</div>
-          <div class="manageInputGrid" style="margin-top:12px">
-            <input id="household-create-name" placeholder="Namn på hushåll">
-            <label class="manageCheckRow">
-              <input id="household-create-private" type="checkbox" checked>
-              <span>Privat hushåll</span>
-            </label>
-            <button class="btn primary" type="button" onclick="createHousehold()">Skapa hushåll</button>
+          <div class="manageTitleLine"><h3 class="manageBigTitle">Hushåll</h3></div>
+          <div class="manageHouseholdText">
+            Du har ännu inget aktivt hushåll valt. Börja med:
           </div>
-        </section>
-
-        <section class="manageSection">
-          <div class="manageTitleLine"><h3 class="manageBigTitle">Gå med i hushåll</h3></div>
-          <div class="manageHouseholdText">Ange inbjudningskoden. För privata hushåll räcker koden för att hitta rätt hushåll och gå med.</div>
-          <div class="manageInputGrid" style="margin-top:12px">
-            <input id="household-join-code" placeholder="Kod, t.ex. ABC123">
-            <button class="btn secondary" type="button" onclick="joinHousehold()">Gå med</button>
+          <div class="manageInfoList">
+            <div class="manageInfoRow">1. Gå till <strong>Login</strong> och logga in med Google</div>
+            <div class="manageInfoRow">2. Skapa eller gå med i ett hushåll</div>
+            <div class="manageInfoRow">3. Sync använder sedan hushållets egna molndata</div>
+          </div>
+          <div class="manageHouseholdEmpty">
+            <div class="manageHouseholdEmptyTitle">Inget hushåll valt ännu</div>
+            <div class="manageHouseholdEmptyText">När hushållsdelen är aktiv kommer hushålls-id, kod och medlemmar visas här.</div>
           </div>
         </section>
       </div>
@@ -1936,14 +1651,10 @@ function renderManageHouseholdSection(){
             <div class="manageHouseholdName">${escapeHtml(hh.name || "Hushåll")}</div>
             <div class="manageHouseholdBadges">
               <span class="manageBadge">${hh.isPrivate ? "Privat hushåll" : "Öppet hushåll"}</span>
-              <span class="manageBadge">${hh.ownerUid === info.uid ? "Ägare" : "Medlem"}</span>
+              <span class="manageBadge">${hh.ownerUid && hh.ownerUid === info.uid ? "Ägare" : "Medlem"}</span>
             </div>
             <div class="manageHouseholdId">Hushåll-id: <code>${escapeHtml(hh.id || "")}</code></div>
-            <div class="manageHouseholdId">Kod: <code>${escapeHtml(hh.inviteCode || "")}</code> <button class="btn ghost mini" type="button" onclick="copyHouseholdCode('${escapeAttr(hh.inviteCode || "")}')">Kopiera</button></div>
-          </div>
-          <div class="manageHouseholdActions">
-            <button class="btn secondary" type="button" onclick="refreshHouseholdFromCloud()">Uppdatera hushåll</button>
-            <button class="btn danger" type="button" onclick="leaveHousehold()">Lämna hushåll</button>
+            <div class="manageHouseholdId">Kod: <code>${escapeHtml(hh.inviteCode || "")}</code> ${hh.inviteCode ? `<button class="btn ghost mini" type="button" onclick="copyHouseholdCode('${escapeAttr(hh.inviteCode || "")}')">Kopiera</button>` : ""}</div>
           </div>
         </div>
       </section>
@@ -1957,9 +1668,9 @@ function renderManageHouseholdSection(){
                 <div class="manageMemberName">${escapeHtml(member.name || "Användare")}${member.uid === info.uid ? " <span class='manageYouTag'>(du)</span>" : ""}</div>
                 <div class="manageMemberSub">${escapeHtml(member.email || "Ingen e-post")}</div>
               </div>
-              <div class="manageMemberRole">${member.uid === hh.ownerUid ? "owner" : "member"}</div>
+              <div class="manageMemberRole">${member.uid && member.uid === hh.ownerUid ? "owner" : "member"}</div>
             </div>
-          `).join("") : `<div class="empty">Inga medlemmar ännu.</div>`}
+          `).join("") : `<div class="manageHouseholdEmptyText">Inga medlemmar visas ännu.</div>`}
         </div>
       </section>
     </div>

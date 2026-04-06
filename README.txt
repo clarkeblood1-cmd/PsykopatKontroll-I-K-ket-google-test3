@@ -34,8 +34,8 @@ Google login i Hantera:
 5. Fyll i apiKey, authDomain, projectId och appId i js/firebase-config.js
 6. Öppna Hantera -> Login
 
-Firestore-regel-fix:
-- sync sparar nu i households/{householdId}/appData/sharedState
-- hushållsdokument använder ownerUid och memberUids
-- Hantera har ny Hushåll-sida för att skapa/gå med enligt dina regler
-- sync kräver nu att ett hushåll är valt
+
+Hushåll-knapp fix:
+- Hushåll finns nu som klickbar flik i Hantera
+- enkel Hushåll-sida visas direkt
+- stöd finns för att visa hushåll-id, kod och medlemmar om state.household redan finns

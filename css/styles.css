@@ -2580,15 +2580,32 @@ img{
   color: var(--muted);
   line-height: 1.55;
 }
-.manageInputGrid{
+.manageInfoList{
   display:grid;
-  gap:12px;
+  gap:8px;
+  margin-top:12px;
 }
-.manageCheckRow{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  color:var(--text);
+.manageInfoRow{
+  padding:12px;
+  border-radius:14px;
+  background:rgba(255,255,255,0.04);
+  border:1px solid rgba(255,255,255,0.08);
+}
+.manageHouseholdEmpty{
+  margin-top:14px;
+  padding:16px;
+  border-radius:16px;
+  background:rgba(255,255,255,0.04);
+  border:1px solid rgba(255,255,255,0.08);
+}
+.manageHouseholdEmptyTitle{
+  font-size:18px;
+  font-weight:800;
+  margin-bottom:6px;
+}
+.manageHouseholdEmptyText{
+  color:var(--muted);
+  line-height:1.5;
 }
 .manageHouseholdHero{
   display:flex;
@@ -2623,11 +2640,6 @@ img{
   color:var(--muted);
   overflow-wrap:anywhere;
 }
-.manageHouseholdActions{
-  display:flex;
-  flex-wrap:wrap;
-  gap:10px;
-}
 .manageList{
   display:grid;
   gap:10px;
@@ -2649,11 +2661,6 @@ img{
 .manageYouTag{ color:var(--green,#22c55e); font-size:12px; }
 .btn.mini{ padding:6px 10px; font-size:12px; }
 @media (max-width:700px){
-  .manageHouseholdActions{
-    width:100%;
-    display:grid;
-    grid-template-columns:1fr;
-  }
   .manageMemberRow{
     align-items:flex-start;
     flex-direction:column;
