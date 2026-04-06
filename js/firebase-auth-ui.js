@@ -1,5 +1,15 @@
 
 (function(){
+  function humanizeAuthError(err){
+    const code = err && err.code ? String(err.code) : "";
+    if(code.includes("popup-blocked")) return "Popup blockerad";
+    if(code.includes("popup-closed-by-user")) return "Popup stängdes";
+    if(code.includes("unauthorized-domain")) return "Domänen är inte godkänd i Firebase";
+    if(code.includes("operation-not-allowed")) return "Google-login är inte aktiverat i Firebase";
+    if(code.includes("network-request-failed")) return "Nätverksfel";
+    return (err && (err.message || err.code)) ? String(err.message || err.code) : "Okänt fel";
+  }
+
   const providerFactory = () => {
     if (typeof firebase === "undefined" || !firebase.auth) return null;
     return new firebase.auth.GoogleAuthProvider();
@@ -22,6 +32,16 @@
       return !!(cfg.apiKey && cfg.projectId && cfg.appId && cfg.authDomain);
     },
 
+    renderStatus(text, mode){
+      const textEl = document.getElementById("googleLoginStatusText");
+      const dotEl = document.getElementById("googleLoginStatusDot");
+      if(textEl) textEl.textContent = text;
+      if(dotEl){
+        dotEl.className = "firebaseDot";
+        if(mode) dotEl.classList.add(mode);
+      }
+    },
+
     async init(){
       if(typeof firebase === "undefined" || !firebase.auth){
         this.renderStatus("Firebase Auth saknas", "error");
@@ -38,27 +58,31 @@
           firebase.initializeApp(window.MATLIST_FIREBASE_CONFIG || {});
         }
 
+        await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.NONE);
+
         this.ready = true;
 
+        try{
+          await firebase.auth().getRedirectResult();
+        }catch(err){
+          console.error("Redirect login error", err);
+          this.renderStatus("Google-login fel: " + humanizeAuthError(err), "error");
+        }
+
+        if(firebase.auth().currentUser && !firebase.auth().currentUser.isAnonymous){
+          await firebase.auth().signOut();
+        }
+
         firebase.auth().onAuthStateChanged((user) => {
-          this.currentUser = user || null;
+          const googleUser = user && !user.isAnonymous ? user : null;
+          this.currentUser = googleUser;
           this.renderManageLoginPanel();
         });
 
         this.renderManageLoginPanel();
       }catch(err){
         console.error("Auth init error", err);
-        this.renderStatus("Google login kunde inte starta", "error");
-      }
-    },
-
-    renderStatus(text, mode){
-      const textEl = document.getElementById("googleLoginStatusText");
-      const dotEl = document.getElementById("googleLoginStatusDot");
-      if(textEl) textEl.textContent = text;
-      if(dotEl){
-        dotEl.className = "firebaseDot";
-        if(mode) dotEl.classList.add(mode);
+        this.renderStatus("Google-login kunde inte starta", "error");
       }
     },
 
@@ -77,15 +101,20 @@
       provider.setCustomParameters({ prompt: "select_account" });
       this.renderStatus("Loggar in med Google…", "working");
 
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
       try{
+        if(isMobile){
+          await firebase.auth().signInWithRedirect(provider);
+          return;
+        }
         await firebase.auth().signInWithPopup(provider);
       }catch(err){
-        console.warn("Popup login failed, trying redirect", err);
+        console.warn("Google popup login failed", err);
         try{
           await firebase.auth().signInWithRedirect(provider);
         }catch(err2){
           console.error("Google login failed", err2);
-          this.renderStatus("Inloggning misslyckades", "error");
+          this.renderStatus("Google-login fel: " + humanizeAuthError(err2 || err), "error");
         }
       }
     },
@@ -94,7 +123,9 @@
       try{
         this.renderStatus("Loggar ut…", "working");
         await firebase.auth().signOut();
-        this.renderStatus("Utloggad", "off");
+        this.currentUser = null;
+        this.renderManageLoginPanel();
+        this.renderStatus("Alltid utloggad", "off");
       }catch(err){
         console.error("Logout failed", err);
         this.renderStatus("Kunde inte logga ut", "error");
@@ -128,16 +159,16 @@
       ` : `
         <div class="googleLoginGuestCard">
           <div class="googleLoginGuestText">
-            <div class="googleLoginGuestTitle">Logga in med Google</div>
-            <div class="googleLoginGuestSub">Använd ditt Google-konto för att koppla din Matlist till Firebase.</div>
+            <div class="googleLoginGuestTitle">Google är alltid utloggad</div>
+            <div class="googleLoginGuestSub">Login sparas inte. Efter omladdning eller ny öppning blir du automatiskt utloggad.</div>
           </div>
           <div class="googleLoginActions">
-            <button class="btn primary googleLoginBtn" type="button" onclick="GoogleLoginUI.signIn()">Fortsätt med Google</button>
+            <button class="btn primary googleLoginBtn" type="button" onclick="GoogleLoginUI.signIn()">Logga in tillfälligt</button>
           </div>
         </div>
       `;
 
-      this.renderStatus(user ? "Inloggad med Google" : "Inte inloggad", user ? "ready" : "off");
+      this.renderStatus(user ? "Tillfälligt inloggad" : "Alltid utloggad", user ? "working" : "off");
     }
   };
 

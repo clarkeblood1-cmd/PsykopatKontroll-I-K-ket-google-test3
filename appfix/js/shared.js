@@ -45,28 +45,13 @@ const defaultState = {
     drawerSearch: "",
     currentPlace: ""
   },
-
-  imageFitMode: "contain",
-  household: {
-    id: "",
-    name: "",
-    isPrivate: true,
-    inviteCode: "",
-    ownerUid: "",
-    memberUids: [],
-    members: [],
-    joinedAt: ""
-  }
-
+  imageFitMode: "contain"
 };
 
 const units = ["Styck","Kg","Gram","Milliliter","Liter","Kryddmått","Tesked","Matsked","Decilitermått"];
 const itemModes = [{value:"normal",label:"Vanlig vara"},{value:"package",label:"Paket + fast mått"}];
 
 let state = loadState();
-if(!state.household){
-  state.household = { id:"", name:"", isPrivate:true, inviteCode:"", ownerUid:"", memberUids:[], members:[], joinedAt:"" };
-}
 migrateCategoriesByRoom();
 let currentEdit = null;
 
@@ -1385,7 +1370,7 @@ function cookRecipe(recipeId){
 function getManageUi(){
   state.manageUi ||= { section:"home", roomSearch:"", categorySearch:"", placeSearch:"", drawerSearch:"", currentPlace:"" };
   if(!state.manageUi.section) state.manageUi.section = "home";
-  if(!['home','add','recipes','login','household'].includes(state.manageUi.section)) state.manageUi.section = 'home';
+  if(!['home','add','recipes','login'].includes(state.manageUi.section)) state.manageUi.section = 'home';
   return state.manageUi;
 }
 function filteredManageValues(values, search){
@@ -1580,104 +1565,6 @@ function renderManageAddSection(){
 }
 
 
-
-function getCurrentUserInfo(){
-  try{
-    const authUser = (typeof firebase !== "undefined" && firebase.auth) ? firebase.auth().currentUser : null;
-    if(authUser){
-      return {
-        uid: authUser.uid || "",
-        name: authUser.displayName || authUser.email || "Användare",
-        email: authUser.email || "",
-        photoURL: authUser.photoURL || "",
-        isAnonymous: !!authUser.isAnonymous
-      };
-    }
-  }catch(e){}
-  return {
-    uid: "",
-    name: "Inte inloggad",
-    email: "",
-    photoURL: "",
-    isAnonymous: true
-  };
-}
-
-function copyHouseholdCode(code){
-  const text = String(code || "");
-  if(!text){
-    alert("Ingen kod att kopiera.");
-    return;
-  }
-  navigator.clipboard.writeText(text)
-    .then(()=>alert("Koden kopierades."))
-    .catch(()=>alert("Kunde inte kopiera koden."));
-}
-
-function renderManageHouseholdSection(){
-  const hh = state.household || {};
-  const inHousehold = !!hh.id;
-  const info = getCurrentUserInfo();
-  const members = Array.isArray(hh.members) ? hh.members : [];
-
-  if(!inHousehold){
-    return `
-      <div class="manageBoard">
-        <section class="manageSection">
-          <div class="manageTitleLine"><h3 class="manageBigTitle">Hushåll</h3></div>
-          <div class="manageHouseholdText">
-            Du har ännu inget aktivt hushåll valt. Börja med:
-          </div>
-          <div class="manageInfoList">
-            <div class="manageInfoRow">1. Gå till <strong>Login</strong> och logga in med Google</div>
-            <div class="manageInfoRow">2. Skapa eller gå med i ett hushåll</div>
-            <div class="manageInfoRow">3. Sync använder sedan hushållets egna molndata</div>
-          </div>
-          <div class="manageHouseholdEmpty">
-            <div class="manageHouseholdEmptyTitle">Inget hushåll valt ännu</div>
-            <div class="manageHouseholdEmptyText">När hushållsdelen är aktiv kommer hushålls-id, kod och medlemmar visas här.</div>
-          </div>
-        </section>
-      </div>
-    `;
-  }
-
-  return `
-    <div class="manageBoard">
-      <section class="manageSection">
-        <div class="manageTitleLine"><h3 class="manageBigTitle">Ditt hushåll</h3></div>
-        <div class="manageHouseholdHero">
-          <div class="manageHouseholdMeta">
-            <div class="manageHouseholdName">${escapeHtml(hh.name || "Hushåll")}</div>
-            <div class="manageHouseholdBadges">
-              <span class="manageBadge">${hh.isPrivate ? "Privat hushåll" : "Öppet hushåll"}</span>
-              <span class="manageBadge">${hh.ownerUid && hh.ownerUid === info.uid ? "Ägare" : "Medlem"}</span>
-            </div>
-            <div class="manageHouseholdId">Hushåll-id: <code>${escapeHtml(hh.id || "")}</code></div>
-            <div class="manageHouseholdId">Kod: <code>${escapeHtml(hh.inviteCode || "")}</code> ${hh.inviteCode ? `<button class="btn ghost mini" type="button" onclick="copyHouseholdCode('${escapeAttr(hh.inviteCode || "")}')">Kopiera</button>` : ""}</div>
-          </div>
-        </div>
-      </section>
-
-      <section class="manageSection">
-        <div class="manageTitleLine"><h3 class="manageBigTitle">Medlemmar</h3></div>
-        <div class="manageList">
-          ${members.length ? members.map(member => `
-            <div class="manageMemberRow">
-              <div class="manageMemberMain">
-                <div class="manageMemberName">${escapeHtml(member.name || "Användare")}${member.uid === info.uid ? " <span class='manageYouTag'>(du)</span>" : ""}</div>
-                <div class="manageMemberSub">${escapeHtml(member.email || "Ingen e-post")}</div>
-              </div>
-              <div class="manageMemberRole">${member.uid && member.uid === hh.ownerUid ? "owner" : "member"}</div>
-            </div>
-          `).join("") : `<div class="manageHouseholdEmptyText">Inga medlemmar visas ännu.</div>`}
-        </div>
-      </section>
-    </div>
-  `;
-}
-
-
 function renderManageLoginSection(){
   return `
     <div class="manageLoginGrid">
@@ -1801,7 +1688,6 @@ function renderManage(){
   if(section === 'add') content = renderManageAddSection();
   else if(section === 'recipes') content = renderManageRecipeSection();
   else if(section === 'login') content = renderManageLoginSection();
-  else if(section === 'household') content = renderManageHouseholdSection();
   else content = renderManageHomeSection(ui);
 
   root.innerHTML = `
@@ -1815,7 +1701,6 @@ function renderManage(){
       <button class="manageSubnavBtn ${section==='add' ? 'active' : ''}" onclick="setManageSection('add')">Lägg till</button>
       <button class="manageSubnavBtn ${section==='recipes' ? 'active' : ''}" onclick="setManageSection('recipes')">Recept</button>
       <button class="manageSubnavBtn ${section==='login' ? 'active' : ''}" onclick="setManageSection('login')">Login</button>
-      <button class="manageSubnavBtn ${section==='household' ? 'active' : ''}" onclick="setManageSection('household')">Hushåll</button>
     </div>
 
     ${content}

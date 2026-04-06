@@ -35,7 +35,7 @@ Google login i Hantera:
 6. Öppna Hantera -> Login
 
 
-Hushåll-knapp fix:
-- Hushåll finns nu som klickbar flik i Hantera
-- enkel Hushåll-sida visas direkt
-- stöd finns för att visa hushåll-id, kod och medlemmar om state.household redan finns
+Google alltid utloggad:
+- Google-login sparas inte längre
+- appen loggar ut Google automatiskt vid ny öppning / omladdning
+- inloggning är bara tillfällig under den aktiva sessionen
