@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lägg till – Matlist</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#07111f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Matlist">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+<div class="app">
+    <div class="topbar">
+      <div class="brand">PsykopatKontroll i Hemmet</div>
+      <div class="nav">
+        <button id="nav-home"  data-page-link="home">Hemmet</button>
+        <button id="nav-buy"  data-page-link="buy">Köpa lista</button>
+        <button id="nav-add"  data-page-link="add">Lägg till</button>
+		<button id="nav-recipes"  data-page-link="recipes">Recept</button>
+        <button id="nav-manage"  data-page-link="manage">Hantera</button>       
+      </div>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <section id="page-home" class="page active"></section>
+    <section id="page-buy" class="page"></section>
+    <section id="page-add" class="page"></section>
+    <section id="page-manage" class="page"></section>
+    <section id="page-recipes" class="page"></section>
+  </div>
+
+  <div class="modalWrap" id="itemModalWrap">
+    <div class="modal">
+      <div class="modalHeader">
+        <div class="modalTitle" id="itemModalTitle">Ändra vara</div>
+        <button class="btn ghost" onclick="closeItemModal()">Stäng</button>
+      </div>
+      <div class="grid2">
+        <div>
+          <label>Läge</label>
+          <select id="edit-mode" onchange="toggleEditModeFields()">
+            <option value="normal">Vanlig vara</option>
+            <option value="package">Paket + fast mått</option>
+          </select>
+        </div>
+        <div>
+          <label>Enhet</label>
+          <select id="edit-unit"></select>
+        </div>
+        <div>
+          <label>Namn</label>
+          <input id="edit-name" />
+        </div>
+        <div id="edit-normal-wrap">
+          <label>Antal</label>
+          <input id="edit-qty" type="number" min="0" step="1" />
+        </div>
+        <div>
+          <label>Rum</label>
+          <select id="edit-room"></select>
+        </div>
+        <div>
+          <label>Plats</label>
+          <select id="edit-place"></select>
+        </div>
+        <div>
+          <label>Låda / Hyllplan</label>
+          <select id="edit-drawer"></select>
+        </div>
+        <div>
+          <label>Kategori</label>
+          <select id="edit-category"></select>
+        </div>
+        <div class="grid2" style="grid-column:1/-1">
+          <div>
+            <label>Bild (.webp eller annan bildlänk)</label>
+            <input id="edit-img" />
+          </div>
+          <div>
+            <label>Anteckning</label>
+            <input id="edit-note" />
+          </div>
+        </div>
+        <div id="edit-package-wrap">
+          <label>Antal paket</label>
+          <input id="edit-package-count" type="number" min="0" step="0.01" />
+          <label style="display:block;margin-top:8px">Fast mått per paket</label>
+          <input id="edit-fixed-amount" type="number" min="0" step="0.01" />
+        </div>
+      </div>
+      <div class="btnRow" style="margin-top:14px">
+        <button class="btn primary" onclick="saveItemModal()">Spara ändring</button>
+        <button class="btn secondary" onclick="moveCurrentItem()">Flytta Hemmet ↔ Köpa lista</button>
+        <button class="btn danger" onclick="deleteCurrentItem()">Ta bort vara</button>
+      </div>
+      
+    </div>
+  </div>
+
+  <div class="modalWrap" id="imageModalWrap">
+    <div class="modal large">
+      <div class="modalHeader">
+        <div class="modalTitle">Bild</div>
+        <div class="fitToggleRow">
+          <span class="fitToggleLabel">Bildläge</span>
+          <button class="btn secondary" id="fit-mode-contain" onclick="setImageFitMode('contain')">Contain / Ingen crop</button>
+          <button class="btn secondary" id="fit-mode-cover" onclick="setImageFitMode('cover')">Cover / Fyll ramen</button>
+          <div class="zoomControlBar">
+            <button class="btn secondary" onclick="zoomOutImage()">−</button>
+            <div class="zoomBadge" id="zoomPercent">100%</div>
+            <button class="btn secondary" onclick="zoomInImage()">+</button>
+            <button class="btn secondary" onclick="resetImageZoom()">Reset</button>
+            <button class="btn ghost" onclick="closeImageModal()">Stäng</button>
+          </div>
+        </div>
+      </div>
+      <div class="imageZoomBox" id="imageZoomBox"></div>
+    </div>
+  </div>
+<script src="js/shared.js"></script>
+<script src="js/lagg-till.js"></script>
+</body>
+</html>
