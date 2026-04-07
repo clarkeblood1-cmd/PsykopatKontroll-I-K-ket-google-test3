@@ -49,7 +49,7 @@ const defaultState = {
   voiceAssistant: {
     text: "",
     lastHeard: "",
-    lastResponse: "Säg t.ex. Var är kaffet?, Har jag mjölk?, Lägg till kaffe, eller Visa köplista.",
+    lastResponse: "Säg t.ex. Var är kaffet?, Har jag mjölk?, Lägg till kaffe från mallen, eller Visa köplista.",
     lastIntent: "tips",
     speakEnabled: true
   }
@@ -319,8 +319,8 @@ function renderSmartAssistantPanel(){
     <div class="assistantPanel">
       <div class="assistantHeader">
         <div>
-          <div class="assistantEyebrow">Smart mic AI</div>
-          <h3 class="assistantTitle">Fråga appen med rösten</h3>
+          <div class="assistantEyebrow">Svensk röstassistent</div>
+          <h3 class="assistantTitle">Fråga appen på svenska</h3>
         </div>
         <div class="assistantHint">Ex: Vad för olika kaffe har jag?</div>
       </div>
@@ -329,17 +329,17 @@ function renderSmartAssistantPanel(){
           <input id="assistant-command-input" placeholder="Säg eller skriv t.ex. Var är kaffet?" value="${escapeAttr(va.text || '')}" oninput="updateAssistantDraft(this.value)" autocomplete="off">
           <button class="micBtn" id="mic-assistant-command-input" type="button" onclick="toggleVoiceAssistant('assistant-command-input')" aria-label="Starta smart mikrofon" title="Smart mikrofon">🎤</button>
         </div>
-        <button class="btn primary assistantRunBtn" type="button" onclick="runAssistantCommand()">Kör</button>
+        <button class="btn primary assistantRunBtn" type="button" onclick="runAssistantCommand()">Kör kommando</button>
       </div>
       <div class="assistantExamples" style="margin-top:12px">
         <span onclick="toggleAssistantSpeech()" style="cursor:pointer">${speakLabel}</span>
         <span onclick="runAssistantCommand('Vad för olika kaffe har jag?')" style="cursor:pointer">Vad för olika kaffe har jag?</span>
-        <span onclick="runAssistantCommand('Lägg till 2 kaffe')" style="cursor:pointer">Lägg till 2 kaffe</span>
+        <span onclick="runAssistantCommand('Lägg till 2 kaffe')" style="cursor:pointer">Lägg till 2 kaffe från mallen</span>
         <span onclick="runAssistantCommand('Ta bort kaffe från köplistan')" style="cursor:pointer">Ta bort kaffe från köplistan</span>
       </div>
       ${heard}
       ${response}
-      <div class="assistantExamples">Fungerar med: <span>Var är kaffet?</span><span>Har jag mjölk?</span><span>Vad för olika kaffe har jag?</span><span>Hur mycket gram har jag av kaffet?</span><span>Lägg till 2 pasta</span><span>Ta bort kaffe från köplistan</span><span>Flytta mjölk till hemmet</span></div>
+      <div class="assistantExamples">Fungerar med svenska kommandon: <span>Var är kaffet?</span><span>Har jag mjölk?</span><span>Vad för olika kaffe har jag?</span><span>Hur mycket gram har jag av kaffet?</span><span>Lägg till 2 pasta från mallen</span><span>Ta bort kaffe från köplistan</span><span>Flytta mjölk till hemmet</span></div>
     </div>
   `;
 }
@@ -688,7 +688,7 @@ function runAssistantCommand(forcedText){
   const raw = String(forcedText != null ? forcedText : (input?.value || state.voiceAssistant?.text || '')).trim();
   updateAssistantDraft(raw);
   if(!raw){
-    finalizeAssistant('Säg t.ex. Var är kaffet?, Har jag mjölk?, Vad för olika kaffe har jag?, Hur mycket gram har jag av kaffet?, eller Lägg till 2 kaffe.', raw, 'tips', false);
+    finalizeAssistant('Säg t.ex. Var är kaffet?, Har jag mjölk?, Vad för olika kaffe har jag?, Hur mycket gram har jag av kaffet?, eller Lägg till 2 kaffe från mallen.', raw, 'tips', false);
     return;
   }
 
@@ -773,13 +773,13 @@ function runAssistantCommand(forcedText){
   m = normalized.match(/^(lagg till|kop|kop hem|behover kopa|behover vi kopa) (.+)$/);
   if(m){
     const parsed = parseAmountAndName(m[2].trim());
-    const template = getBestTemplateForQuery(parsed.name);
+    const cleanedName = cleanVoiceItemQuery(parsed.name.replace(/(fran mallen|fran mall|mallen|mall)/g, ' ').trim());
+    const template = getBestTemplateForQuery(cleanedName);
     if(template){
       for(let i=0;i<parsed.amount;i++) addTemplateTo('buy', template.id);
-      response = `${template.name} lades till i Köpa lista ${parsed.amount > 1 ? parsed.amount + ' gånger' : 'från din mall'}.`;
+      response = `${template.name} lades till i Köpa lista från mallen${parsed.amount > 1 ? ' x' + parsed.amount : ''}.`;
     } else {
-      const item = addGenericBuyItemFromVoice(parsed.name, parsed.amount);
-      response = `${item?.name || parsed.name} lades till i Köpa lista${parsed.amount > 1 ? ' x' + parsed.amount : ''}.`;
+      response = `${cleanedName || parsed.name} finns inte i mallen, så jag lade inte till något i Köpa lista.`;
     }
     state.voiceAssistant.text = '';
     finalizeAssistant(response, raw, 'add-buy', true);
@@ -832,7 +832,7 @@ function runAssistantCommand(forcedText){
     return;
   }
 
-  response = 'Jag förstod inte helt. Testa: Var är kaffet?, Har jag mjölk?, Vad för olika kaffe har jag?, Hur mycket gram har jag av kaffet?, Lägg till 2 kaffe, Ta bort kaffe från köplistan, eller Flytta mjölk till hemmet.';
+  response = 'Jag förstod inte helt. Testa svenska kommandon som: Var är kaffet?, Har jag mjölk?, Vad för olika kaffe har jag?, Hur mycket gram har jag av kaffet?, Lägg till 2 kaffe från mallen, Ta bort kaffe från köplistan, eller Flytta mjölk till hemmet.';
   finalizeAssistant(response, raw, 'fallback', false);
 }
 
