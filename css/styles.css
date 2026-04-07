@@ -2007,3 +2007,111 @@ img{
     font-size:15px;
   }
 }
+
+
+.voiceInputWrap{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 54px;
+  gap:10px;
+  align-items:center;
+}
+.voiceInputWrap input{
+  min-width:0;
+}
+.micBtn{
+  width:54px;
+  height:52px;
+  border:none;
+  border-radius:14px;
+  cursor:pointer;
+  font-size:20px;
+  font-weight:900;
+  color:#fff;
+  background:linear-gradient(180deg,#17385c,#122945);
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:var(--shadow);
+}
+.micBtn.listening{
+  background:linear-gradient(180deg,#ff6974,#d92d3a);
+  box-shadow:0 0 0 2px rgba(255,105,116,.2), 0 16px 40px rgba(0,0,0,.35);
+  animation:micPulse 1s ease-in-out infinite;
+}
+@keyframes micPulse{
+  0%,100%{transform:scale(1)}
+  50%{transform:scale(1.04)}
+}
+
+
+.assistantPanel{
+  margin:0 0 18px;
+  padding:16px;
+  border-radius:22px;
+  background:linear-gradient(180deg,rgba(17,35,61,.96),rgba(10,24,42,.95));
+  border:1px solid rgba(92,172,255,.22);
+  box-shadow:0 18px 40px rgba(0,0,0,.28);
+}
+.assistantHeader{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:12px;
+}
+.assistantEyebrow{
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:#8bc8ff;
+  margin-bottom:4px;
+}
+.assistantTitle{
+  margin:0;
+  font-size:22px;
+  font-weight:900;
+}
+.assistantHint{
+  font-size:12px;
+  color:var(--muted);
+  padding-top:4px;
+}
+.assistantControls{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:10px;
+  align-items:center;
+}
+.assistantRunBtn{min-width:94px;height:52px}
+.assistantHeard{
+  margin-top:12px;
+  color:#b4d8ff;
+  font-size:13px;
+}
+.assistantResponse{
+  margin-top:10px;
+  padding:12px 14px;
+  border-radius:16px;
+  background:rgba(4,16,31,.72);
+  border:1px solid rgba(255,255,255,.07);
+  font-weight:700;
+  line-height:1.45;
+}
+.assistantExamples{
+  margin-top:10px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  font-size:12px;
+  color:var(--muted);
+}
+.assistantExamples span{
+  padding:6px 10px;
+  border-radius:999px;
+  background:#0b1b2e;
+  border:1px solid rgba(255,255,255,.06);
+  color:#dceeff;
+}
+@media (max-width: 640px){
+  .assistantHeader,.assistantControls{grid-template-columns:1fr;display:grid}
+  .assistantRunBtn{width:100%}
+}

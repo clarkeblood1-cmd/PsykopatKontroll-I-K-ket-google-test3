@@ -45,7 +45,13 @@ const defaultState = {
     drawerSearch: "",
     currentPlace: ""
   },
-  imageFitMode: "contain"
+  imageFitMode: "contain",
+  voiceAssistant: {
+    text: "",
+    lastHeard: "",
+    lastResponse: "Säg t.ex. Var är kaffet?, Har jag mjölk?, Lägg till kaffe, eller Visa köplista.",
+    lastIntent: "tips"
+  }
 };
 
 const units = ["Styck","Kg","Gram","Milliliter","Liter","Kryddmått","Tesked","Matsked","Decilitermått"];
@@ -283,7 +289,7 @@ function renderPageToolbar(type, title){
       <h2 class="sectionTitle">${title}</h2>
       <div class="toolbar">
         <div class="filterStack">
-          <input placeholder="Sök i ${title}" value="${escapeHtml(f.search)}" oninput="updateFilter('${type}','search',this.value)">
+          ${renderSearchInputWithMic(`search-${type}`, `Sök i ${title}`, f.search, `updateFilter('${type}','search',this.value)`, `toggleVoiceInputForFilter('${type}','search','search-${type}')`)}
           ${renderFilterRail(type, 'room', roomOptions, f.room)}
           ${renderFilterRail(type, 'place', placeValues, f.place)}
           ${renderFilterRail(type, 'drawer', drawerValues, f.drawer)}
@@ -291,6 +297,349 @@ function renderPageToolbar(type, title){
       </div>
     </div>
   `;
+}
+
+
+function renderSearchInputWithMic(inputId, placeholder, value, onInputCode, micCode, extraInputAttrs=''){
+  return `
+    <div class="voiceInputWrap">
+      <input id="${inputId}" placeholder="${escapeAttr(placeholder)}" value="${escapeAttr(value || '')}" oninput="${onInputCode}" ${extraInputAttrs || ''}>
+      <button class="micBtn" id="mic-${inputId}" type="button" onclick="${micCode}" aria-label="Starta röstinmatning" title="Mikrofon">🎤</button>
+    </div>
+  `;
+}
+
+function renderSmartAssistantPanel(){
+  const va = state.voiceAssistant || {};
+  const heard = va.lastHeard ? `<div class="assistantHeard">Du sa: <strong>${escapeHtml(va.lastHeard)}</strong></div>` : '';
+  const response = va.lastResponse ? `<div class="assistantResponse">${escapeHtml(va.lastResponse)}</div>` : `<div class="assistantResponse">Säg något till mikrofonen.</div>`;
+  return `
+    <div class="assistantPanel">
+      <div class="assistantHeader">
+        <div>
+          <div class="assistantEyebrow">Smart mic AI</div>
+          <h3 class="assistantTitle">Fråga appen med rösten</h3>
+        </div>
+        <div class="assistantHint">Ex: Var är kaffet?</div>
+      </div>
+      <div class="assistantControls">
+        <div class="voiceInputWrap assistantInputRow">
+          <input id="assistant-command-input" placeholder="Säg eller skriv t.ex. Var är kaffet?" value="${escapeAttr(va.text || '')}" oninput="updateAssistantDraft(this.value)" autocomplete="off">
+          <button class="micBtn" id="mic-assistant-command-input" type="button" onclick="toggleVoiceAssistant('assistant-command-input')" aria-label="Starta smart mikrofon" title="Smart mikrofon">🎤</button>
+        </div>
+        <button class="btn primary assistantRunBtn" type="button" onclick="runAssistantCommand()">Kör</button>
+      </div>
+      ${heard}
+      ${response}
+      <div class="assistantExamples">Fungerar med: <span>Var är kaffet?</span><span>Har jag mjölk?</span><span>Lägg till pasta</span><span>Visa köplista</span></div>
+    </div>
+  `;
+}
+
+const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+let activeVoiceRecognition = null;
+let activeVoiceInputId = null;
+
+function setMicButtonState(inputId, listening){
+  const btn = document.getElementById(`mic-${inputId}`);
+  if(!btn) return;
+  btn.classList.toggle('listening', !!listening);
+  btn.setAttribute('aria-pressed', listening ? 'true' : 'false');
+  btn.title = listening ? 'Stoppa mikrofon' : 'Mikrofon';
+}
+
+function stopVoiceInput(){
+  if(activeVoiceRecognition){
+    try{ activeVoiceRecognition.stop(); }catch(e){}
+  }
+  if(activeVoiceInputId){
+    setMicButtonState(activeVoiceInputId, false);
+  }
+  activeVoiceRecognition = null;
+  activeVoiceInputId = null;
+}
+
+function startVoiceInput(inputId, onValue, onFinal){
+  if(!SpeechRecognitionCtor){
+    alert('Mikrofon stöds inte i den här webbläsaren. Testa Chrome eller Edge.');
+    return;
+  }
+  const input = document.getElementById(inputId);
+  if(!input) return;
+
+  if(activeVoiceRecognition){
+    const sameTarget = activeVoiceInputId === inputId;
+    stopVoiceInput();
+    if(sameTarget) return;
+  }
+
+  const recognition = new SpeechRecognitionCtor();
+  recognition.lang = 'sv-SE';
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 1;
+  recognition.continuous = false;
+  let latestTranscript = '';
+  let hadError = false;
+
+  activeVoiceRecognition = recognition;
+  activeVoiceInputId = inputId;
+  setMicButtonState(inputId, true);
+
+  recognition.onresult = function(event){
+    let transcript = '';
+    for(let i = event.resultIndex; i < event.results.length; i++){
+      transcript += event.results[i][0].transcript + ' ';
+    }
+    transcript = transcript.trim();
+    latestTranscript = transcript || latestTranscript;
+    input.value = transcript;
+    if(typeof onValue === 'function') onValue(transcript);
+  };
+
+  recognition.onerror = function(){
+    hadError = true;
+    stopVoiceInput();
+  };
+
+  recognition.onend = function(){
+    const finalText = latestTranscript;
+    stopVoiceInput();
+    if(!hadError && finalText && typeof onFinal === 'function') onFinal(finalText);
+  };
+
+  try{
+    recognition.start();
+  }catch(e){
+    stopVoiceInput();
+    alert('Kunde inte starta mikrofonen just nu.');
+  }
+}
+
+function toggleVoiceInputForFilter(type, field, inputId){
+  if(activeVoiceInputId === inputId){
+    stopVoiceInput();
+    return;
+  }
+  startVoiceInput(inputId, function(value){
+    updateFilter(type, field, value);
+  });
+}
+
+function toggleVoiceInputForRecipes(inputId){
+  if(activeVoiceInputId === inputId){
+    stopVoiceInput();
+    return;
+  }
+  startVoiceInput(inputId, function(value){
+    handleRecipeSearchInput(value);
+  });
+}
+
+function normalizeVoiceText(text){
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9åäö\s]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function prettyLocation(item){
+  const parts = [item.room, item.place, item.drawer].filter(Boolean);
+  return parts.length ? parts.join(' → ') : 'okänd plats';
+}
+function findItemsByName(query, listType){
+  const q = normalizeVoiceText(query);
+  const items = listType === 'buy' ? state.buyItems : state.homeItems;
+  if(!q) return [];
+  return items.filter(item => {
+    const hay = normalizeVoiceText([item.name, item.category, item.note, item.room, item.place, item.drawer].join(' '));
+    return hay.includes(q);
+  });
+}
+function getBestTemplateForQuery(query){
+  const q = normalizeVoiceText(query);
+  const templates = state.templates || [];
+  if(!q) return null;
+  return templates.find(t => normalizeVoiceText(t.name) === q)
+    || templates.find(t => normalizeVoiceText(t.name).includes(q) || q.includes(normalizeVoiceText(t.name)))
+    || null;
+}
+function rememberAssistantResponse(text, heard, intent){
+  if(!state.voiceAssistant) state.voiceAssistant = {};
+  state.voiceAssistant.lastHeard = heard || state.voiceAssistant.lastHeard || '';
+  state.voiceAssistant.lastResponse = text || '';
+  state.voiceAssistant.lastIntent = intent || 'info';
+  saveState();
+  const heardEl = document.querySelector('.assistantHeard');
+  const responseEl = document.querySelector('.assistantResponse');
+  const inputEl = document.getElementById('assistant-command-input');
+  if(inputEl) inputEl.value = state.voiceAssistant.text || '';
+  if(heardEl) heardEl.innerHTML = state.voiceAssistant.lastHeard ? `Du sa: <strong>${escapeHtml(state.voiceAssistant.lastHeard)}</strong>` : '';
+  if(responseEl) responseEl.textContent = state.voiceAssistant.lastResponse || '';
+}
+function updateAssistantDraft(value){
+  if(!state.voiceAssistant) state.voiceAssistant = {};
+  state.voiceAssistant.text = value || '';
+  saveState();
+}
+function toggleVoiceAssistant(inputId){
+  if(activeVoiceInputId === inputId){
+    stopVoiceInput();
+    return;
+  }
+  startVoiceInput(inputId, function(value){
+    updateAssistantDraft(value);
+  }, function(finalText){
+    updateAssistantDraft(finalText);
+    runAssistantCommand(finalText);
+  });
+}
+function addGenericBuyItemFromVoice(name){
+  const cleanName = String(name || '').trim();
+  if(!cleanName) return null;
+  const existing = state.buyItems.find(item => normalizeVoiceText(item.name) === normalizeVoiceText(cleanName));
+  if(existing){
+    existing.qty = (Number(existing.qty) || 0) + 1;
+    saveState();
+    render();
+    return existing;
+  }
+  const item = {
+    id: uid(),
+    name: cleanName.charAt(0).toUpperCase() + cleanName.slice(1),
+    qty: 1,
+    img: '',
+    category: 'Mat',
+    unit: 'Styck',
+    room: 'Köket',
+    place: 'Skafferi 1',
+    drawer: 'Hyllplan 1',
+    note: '',
+    mode: 'normal'
+  };
+  state.buyItems.unshift(item);
+  saveState();
+  render();
+  return item;
+}
+function speakAssistantText(text){
+  if(!('speechSynthesis' in window) || !text) return;
+  try{
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'sv-SE';
+    utter.rate = 1;
+    window.speechSynthesis.speak(utter);
+  }catch(e){}
+}
+function runAssistantCommand(forcedText){
+  const input = document.getElementById('assistant-command-input');
+  const raw = String(forcedText != null ? forcedText : (input?.value || state.voiceAssistant?.text || '')).trim();
+  updateAssistantDraft(raw);
+  if(!raw){
+    rememberAssistantResponse('Säg t.ex. Var är kaffet?, Har jag mjölk? eller Lägg till kaffe.', raw, 'tips');
+    return;
+  }
+
+  const normalized = normalizeVoiceText(raw);
+  let response = '';
+  let shouldSpeak = false;
+
+  const navMap = [
+    {keys:['visa koplista','visa kopa lista','oppna koplista','oppna kopa lista','ga till koplista','ga till kopa lista'], page:'buy'},
+    {keys:['visa hemmet','oppna hemmet','ga till hemmet'], page:'home'},
+    {keys:['visa lagg till','oppna lagg till','ga till lagg till'], page:'add'},
+    {keys:['visa recept','oppna recept','ga till recept'], page:'recipes'},
+    {keys:['visa hantera','oppna hantera','ga till hantera'], page:'manage'}
+  ];
+  const navHit = navMap.find(entry => entry.keys.some(key => normalized.includes(key)));
+  if(navHit){
+    state.voiceAssistant.text = '';
+    rememberAssistantResponse(`Öppnar ${navHit.page === 'buy' ? 'Köpa lista' : navHit.page === 'home' ? 'Hemmet' : navHit.page === 'add' ? 'Lägg till' : navHit.page === 'recipes' ? 'Recept' : 'Hantera'}.`, raw, 'navigate');
+    saveState();
+    const pages = {home:'index.html', buy:'kopa-lista.html', add:'lagg-till.html', recipes:'recept.html', manage:'hantera.html'};
+    window.location.href = pages[navHit.page];
+    return;
+  }
+
+  let m = normalized.match(/^(var ar|vart ar|var finns) (.+)$/);
+  if(m){
+    const query = m[2].trim();
+    const homeMatches = findItemsByName(query, 'home');
+    const buyMatches = findItemsByName(query, 'buy');
+    if(homeMatches.length){
+      const item = homeMatches[0];
+      response = `${item.name} finns i ${prettyLocation(item)}.`;
+      if(homeMatches.length > 1) response += ` Jag hittade ${homeMatches.length} träffar hemma.`;
+      shouldSpeak = true;
+    } else if(buyMatches.length){
+      const item = buyMatches[0];
+      response = `${item.name} finns inte hemma just nu. Den ligger i Köpa lista.`;
+    } else {
+      response = `Jag hittar inte ${query} i Hemmet eller Köpa lista.`;
+    }
+    rememberAssistantResponse(response, raw, 'locate');
+    if(shouldSpeak) speakAssistantText(response);
+    render();
+    return;
+  }
+
+  m = normalized.match(/^(har jag|finns det|har vi) (.+)$/);
+  if(m){
+    const query = m[2].trim();
+    const matches = findItemsByName(query, 'home');
+    if(matches.length){
+      const item = matches[0];
+      response = `Ja. ${item.name} finns hemma i ${prettyLocation(item)}. ${renderPackageText(item).replace(/<[^>]+>/g,'')}`;
+      shouldSpeak = true;
+    } else {
+      response = `Nej, jag hittar inte ${query} hemma.`;
+    }
+    rememberAssistantResponse(response, raw, 'check');
+    if(shouldSpeak) speakAssistantText(response);
+    render();
+    return;
+  }
+
+  m = normalized.match(/^(lagg till|kop|kop hem|behover kopa|behover vi kopa) (.+)$/);
+  if(m){
+    const query = m[2].trim();
+    const template = getBestTemplateForQuery(query);
+    if(template){
+      addTemplateTo('buy', template.id);
+      response = `${template.name} lades till i Köpa lista från din mall.`;
+    } else {
+      const item = addGenericBuyItemFromVoice(query);
+      response = `${item?.name || query} lades till i Köpa lista.`;
+    }
+    state.voiceAssistant.text = '';
+    rememberAssistantResponse(response, raw, 'add-buy');
+    speakAssistantText(response);
+    return;
+  }
+
+  m = normalized.match(/^(sok|sok efter|leta efter) (.+)$/);
+  if(m){
+    const query = m[2].trim();
+    const page = state.currentPage || 'home';
+    if(state.filters[page] && typeof state.filters[page] === 'object' && 'search' in state.filters[page]){
+      state.filters[page].search = query;
+      saveState();
+      render();
+      response = `Söker efter ${query} på sidan ${page === 'buy' ? 'Köpa lista' : page === 'add' ? 'Lägg till' : page === 'recipes' ? 'Recept' : page === 'manage' ? 'Hantera' : 'Hemmet'}.`;
+    } else if(page === 'recipes') {
+      handleRecipeSearchInput(query);
+      response = `Söker efter ${query} i recept.`;
+    } else {
+      response = `Jag kunde inte söka på den här sidan just nu.`;
+    }
+    rememberAssistantResponse(response, raw, 'search');
+    return;
+  }
+
+  response = 'Jag förstod inte helt. Testa: Var är kaffet?, Har jag mjölk?, Lägg till kaffe, eller Visa köplista.';
+  rememberAssistantResponse(response, raw, 'fallback');
 }
 
 let filterHoldTimer = null;
@@ -581,6 +930,7 @@ function renderHome(){
 
   root.innerHTML = `
     ${renderPageToolbar("home", "Hemmet")}
+    ${renderSmartAssistantPanel()}
     <div class="homeHero">
       <div class="homeHeroCard">
         <h2 class="homeHeroTitle">Hemmet</h2>
@@ -632,6 +982,7 @@ function renderBuy(){
 
   root.innerHTML = `
     ${renderPageToolbar("buy", "Köpa lista")}
+    ${renderSmartAssistantPanel()}
 
     <div class="buyHero">
       <div class="buyHeroCard">
@@ -674,10 +1025,11 @@ function renderAdd(){
   });
 
   root.innerHTML = `
+    ${renderSmartAssistantPanel()}
     <div class="section">
       <h2 class="sectionTitle">Lägg till</h2>
       <div class="toolbar">
-        <input placeholder="Sök i Lägg till" value="${escapeHtml(f.search)}" oninput="updateFilter('add','search',this.value)">
+        ${renderSearchInputWithMic('search-add', 'Sök i Lägg till', f.search, `updateFilter('add','search',this.value)`, `toggleVoiceInputForFilter('add','search','search-add')`)}
         <select onchange="updateFilter('add','room',this.value)">
           <option ${f.room==="Alla rum"?"selected":""}>Alla rum</option>
           ${state.rooms.map(r=>`<option ${f.room===r?"selected":""}>${escapeHtml(r)}</option>`).join("")}
@@ -733,11 +1085,12 @@ function renderRecipes(){
   });
 
   root.innerHTML = `
+    ${renderSmartAssistantPanel()}
     <div class="section">
       <h2 class="sectionTitle">Recept</h2>
       <div class="toolbar">
         <div class="recipeSearchInputWrap">
-          <input id="recipe-search-input" placeholder="Sök Recept" autocomplete="off" value="${escapeHtml(filter.search || "")}" oninput="handleRecipeSearchInput(this.value)" onfocus="handleRecipeSearchFocus()">
+          ${renderSearchInputWithMic('recipe-search-input', 'Sök Recept', filter.search || '', `handleRecipeSearchInput(this.value)`, `toggleVoiceInputForRecipes('recipe-search-input')`, 'handleRecipeSearchFocus()')}
           <div id="recipe-search-suggest"></div>
         </div>
         <select onchange="updateRecipeFilter('category',this.value)">
