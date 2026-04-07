@@ -339,7 +339,7 @@ function renderSmartAssistantPanel(){
       </div>
       ${heard}
       ${response}
-      <div class="assistantExamples">Fungerar med: <span>Var är kaffet?</span><span>Har jag mjölk?</span><span>Vad för olika kaffe har jag?</span><span>Lägg till 2 pasta</span><span>Ta bort kaffe från köplistan</span><span>Flytta mjölk till hemmet</span></div>
+      <div class="assistantExamples">Fungerar med: <span>Var är kaffet?</span><span>Har jag mjölk?</span><span>Vad för olika kaffe har jag?</span><span>Hur mycket gram har jag av kaffet?</span><span>Lägg till 2 pasta</span><span>Ta bort kaffe från köplistan</span><span>Flytta mjölk till hemmet</span></div>
     </div>
   `;
 }
@@ -589,6 +589,78 @@ function parseAmountAndName(text){
   if(m) return {amount:spokenNumberToInt(m[1]), name:m[2].trim()};
   return {amount:1, name:normalized.trim()};
 }
+function cleanVoiceItemQuery(text){
+  return String(text || '')
+    .replace(/\b(av|pa|på|for|för|mina|min|mitt)\b/gi, ' ')
+    .replace(/\bkaffet\b/gi, 'kaffe')
+    .replace(/\bmjolken\b/gi, 'mjolk')
+    .replace(/\briset\b/gi, 'ris')
+    .replace(/\bpastan\b/gi, 'pasta')
+    .replace(/\bsockret\b/gi, 'socker')
+    .replace(/\bmjolet\b/gi, 'mjol')
+    .replace(/\bsaltet\b/gi, 'salt')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function parseRequestedUnit(text){
+  const normalized = normalizeVoiceText(text);
+  if(/(^|\s)(kg|kilo)(\s|$)/.test(normalized)) return 'Kg';
+  if(/(^|\s)(gram|g)(\s|$)/.test(normalized)) return 'Gram';
+  if(/(^|\s)(liter|l)(\s|$)/.test(normalized)) return 'Liter';
+  if(/(^|\s)(milliliter|ml)(\s|$)/.test(normalized)) return 'Milliliter';
+  if(/(^|\s)(styck|st)(\s|$)/.test(normalized)) return 'Styck';
+  return '';
+}
+function pickBestSummaryUnit(baseAmount, family){
+  if(family === 'mass') return baseAmount >= 1000 ? 'Kg' : 'Gram';
+  if(family === 'volume') return baseAmount >= 1000 ? 'Liter' : 'Milliliter';
+  if(family === 'count') return 'Styck';
+  return '';
+}
+function computeHomeAmountSummary(matches, requestedUnit, query){
+  if(!matches.length) return { ok:false, text:`Jag hittar ingen ${query} hemma.` };
+  const buckets = { mass:0, volume:0, count:0, other:0 };
+  const unitSeen = new Set();
+  matches.forEach(item => {
+    const total = getItemTotalAmount(item);
+    const unit = item.unit || 'Styck';
+    const family = unitFamily(unit);
+    unitSeen.add(unit);
+    if(family === 'mass') buckets.mass += unitToBase(total, unit);
+    else if(family === 'volume') buckets.volume += unitToBase(total, unit);
+    else if(family === 'count') buckets.count += total;
+    else buckets.other += total;
+  });
+  if(requestedUnit){
+    const family = unitFamily(requestedUnit);
+    if(family === 'mass' && buckets.mass > 0){
+      const amount = baseToUnit(buckets.mass, requestedUnit);
+      return { ok:true, text:`Du har ${formatAmount(amount)} ${requestedUnit.toLowerCase()} ${query} hemma.` };
+    }
+    if(family === 'volume' && buckets.volume > 0){
+      const amount = baseToUnit(buckets.volume, requestedUnit);
+      return { ok:true, text:`Du har ${formatAmount(amount)} ${requestedUnit.toLowerCase()} ${query} hemma.` };
+    }
+    if(family === 'count' && buckets.count > 0){
+      return { ok:true, text:`Du har ${formatAmount(buckets.count)} styck ${query} hemma.` };
+    }
+    return { ok:false, text:`Jag hittar ${query}, men inte i ${requestedUnit.toLowerCase()}. Kontrollera att varan har rätt enhet sparad.` };
+  }
+  if(buckets.mass > 0){
+    const unit = pickBestSummaryUnit(buckets.mass, 'mass');
+    return { ok:true, text:`Du har ${formatAmount(baseToUnit(buckets.mass, unit))} ${unit.toLowerCase()} ${query} hemma.` };
+  }
+  if(buckets.volume > 0){
+    const unit = pickBestSummaryUnit(buckets.volume, 'volume');
+    return { ok:true, text:`Du har ${formatAmount(baseToUnit(buckets.volume, unit))} ${unit.toLowerCase()} ${query} hemma.` };
+  }
+  if(buckets.count > 0){
+    return { ok:true, text:`Du har ${formatAmount(buckets.count)} styck ${query} hemma.` };
+  }
+  const someUnit = Array.from(unitSeen)[0] || 'enheter';
+  return { ok:true, text:`Du har ${formatAmount(buckets.other)} ${String(someUnit).toLowerCase()} ${query} hemma.` };
+}
+
 function buildListResponse(matches, query){
   if(!matches.length) return `Jag hittar ingen ${query} hemma.`;
   const uniqueNames = Array.from(new Set(matches.map(item => item.name)));
@@ -616,7 +688,7 @@ function runAssistantCommand(forcedText){
   const raw = String(forcedText != null ? forcedText : (input?.value || state.voiceAssistant?.text || '')).trim();
   updateAssistantDraft(raw);
   if(!raw){
-    finalizeAssistant('Säg t.ex. Var är kaffet?, Har jag mjölk?, Vad för olika kaffe har jag?, eller Lägg till 2 kaffe.', raw, 'tips', false);
+    finalizeAssistant('Säg t.ex. Var är kaffet?, Har jag mjölk?, Vad för olika kaffe har jag?, Hur mycket gram har jag av kaffet?, eller Lägg till 2 kaffe.', raw, 'tips', false);
     return;
   }
 
@@ -641,9 +713,21 @@ function runAssistantCommand(forcedText){
     return;
   }
 
-  let m = normalized.match(/^(vad for olika|vilka|vad har jag for) (.+?) har jag$/);
+  let m = normalized.match(/^(hur mycket|hur manga) (.+?) har jag$/);
   if(m){
-    const query = m[2].trim();
+    const rawQuery = cleanVoiceItemQuery(m[2].trim());
+    const requestedUnit = parseRequestedUnit(rawQuery);
+    const cleanedQuery = cleanVoiceItemQuery(rawQuery.replace(/(^|\s)(kg|kilo|gram|g|liter|l|milliliter|ml|styck|st)(\s|$)/gi, ' ')).trim() || 'varan';
+    const matches = findItemsByLooseQuery(cleanedQuery, 'home');
+    const summary = computeHomeAmountSummary(matches, requestedUnit, cleanedQuery);
+    finalizeAssistant(summary.text, raw, 'amount-home', true);
+    render();
+    return;
+  }
+
+  m = normalized.match(/^(vad for olika|vilka|vad har jag for) (.+?) har jag$/);
+  if(m){
+    const query = cleanVoiceItemQuery(m[2].trim());
     const matches = findItemsByLooseQuery(query, 'home');
     response = buildListResponse(matches, query);
     finalizeAssistant(response, raw, 'list-home', true);
@@ -653,7 +737,7 @@ function runAssistantCommand(forcedText){
 
   m = normalized.match(/^(var ar|vart ar|var finns) (.+)$/);
   if(m){
-    const query = m[2].trim();
+    const query = cleanVoiceItemQuery(m[2].trim());
     const homeMatches = findItemsByLooseQuery(query, 'home');
     const buyMatches = findItemsByLooseQuery(query, 'buy');
     if(homeMatches.length){
@@ -673,7 +757,7 @@ function runAssistantCommand(forcedText){
 
   m = normalized.match(/^(har jag|finns det|har vi) (.+)$/);
   if(m){
-    const query = m[2].trim();
+    const query = cleanVoiceItemQuery(m[2].trim());
     const matches = findItemsByLooseQuery(query, 'home');
     if(matches.length){
       const item = matches[0];
@@ -704,7 +788,7 @@ function runAssistantCommand(forcedText){
 
   m = normalized.match(/^(ta bort|radera) (.+?) (fran koplistan|fran kopa listan|i koplistan|i kopa listan)$/);
   if(m){
-    const query = m[2].trim();
+    const query = cleanVoiceItemQuery(m[2].trim());
     const removed = removeBuyItemsByQuery(query);
     response = removed.length ? `${removed[0].name}${removed.length > 1 ? ' och fler varor' : ''} togs bort från Köpa lista.` : `Jag hittade ingen ${query} i Köpa lista.`;
     finalizeAssistant(response, raw, 'remove-buy', true);
@@ -713,7 +797,7 @@ function runAssistantCommand(forcedText){
 
   m = normalized.match(/^(flytta) (.+?) (till hemmet|hem till hemmet)$/);
   if(m){
-    const query = m[2].trim();
+    const query = cleanVoiceItemQuery(m[2].trim());
     const moved = moveItemsBetweenLists(query, 'home');
     response = moved.length ? `${moved[0].name}${moved.length > 1 ? ' och fler varor' : ''} flyttades till Hemmet.` : `Jag hittade ingen ${query} i Köpa lista att flytta.`;
     finalizeAssistant(response, raw, 'move-home', true);
@@ -722,7 +806,7 @@ function runAssistantCommand(forcedText){
 
   m = normalized.match(/^(flytta) (.+?) (till koplistan|till kopa listan)$/);
   if(m){
-    const query = m[2].trim();
+    const query = cleanVoiceItemQuery(m[2].trim());
     const moved = moveItemsBetweenLists(query, 'buy');
     response = moved.length ? `${moved[0].name}${moved.length > 1 ? ' och fler varor' : ''} flyttades till Köpa lista.` : `Jag hittade ingen ${query} i Hemmet att flytta.`;
     finalizeAssistant(response, raw, 'move-buy', true);
@@ -748,7 +832,7 @@ function runAssistantCommand(forcedText){
     return;
   }
 
-  response = 'Jag förstod inte helt. Testa: Var är kaffet?, Har jag mjölk?, Vad för olika kaffe har jag?, Lägg till 2 kaffe, Ta bort kaffe från köplistan, eller Flytta mjölk till hemmet.';
+  response = 'Jag förstod inte helt. Testa: Var är kaffet?, Har jag mjölk?, Vad för olika kaffe har jag?, Hur mycket gram har jag av kaffet?, Lägg till 2 kaffe, Ta bort kaffe från köplistan, eller Flytta mjölk till hemmet.';
   finalizeAssistant(response, raw, 'fallback', false);
 }
 
