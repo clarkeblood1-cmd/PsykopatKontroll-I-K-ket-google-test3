@@ -50,7 +50,8 @@ const defaultState = {
     text: "",
     lastHeard: "",
     lastResponse: "Säg t.ex. Var är kaffet?, Har jag mjölk?, Lägg till kaffe, eller Visa köplista.",
-    lastIntent: "tips"
+    lastIntent: "tips",
+    speakEnabled: true
   }
 };
 
@@ -313,6 +314,7 @@ function renderSmartAssistantPanel(){
   const va = state.voiceAssistant || {};
   const heard = va.lastHeard ? `<div class="assistantHeard">Du sa: <strong>${escapeHtml(va.lastHeard)}</strong></div>` : '';
   const response = va.lastResponse ? `<div class="assistantResponse">${escapeHtml(va.lastResponse)}</div>` : `<div class="assistantResponse">Säg något till mikrofonen.</div>`;
+  const speakLabel = va.speakEnabled === false ? 'Prat: AV' : 'Prat: PÅ';
   return `
     <div class="assistantPanel">
       <div class="assistantHeader">
@@ -320,7 +322,7 @@ function renderSmartAssistantPanel(){
           <div class="assistantEyebrow">Smart mic AI</div>
           <h3 class="assistantTitle">Fråga appen med rösten</h3>
         </div>
-        <div class="assistantHint">Ex: Var är kaffet?</div>
+        <div class="assistantHint">Ex: Vad för olika kaffe har jag?</div>
       </div>
       <div class="assistantControls">
         <div class="voiceInputWrap assistantInputRow">
@@ -329,9 +331,15 @@ function renderSmartAssistantPanel(){
         </div>
         <button class="btn primary assistantRunBtn" type="button" onclick="runAssistantCommand()">Kör</button>
       </div>
+      <div class="assistantExamples" style="margin-top:12px">
+        <span onclick="toggleAssistantSpeech()" style="cursor:pointer">${speakLabel}</span>
+        <span onclick="runAssistantCommand('Vad för olika kaffe har jag?')" style="cursor:pointer">Vad för olika kaffe har jag?</span>
+        <span onclick="runAssistantCommand('Lägg till 2 kaffe')" style="cursor:pointer">Lägg till 2 kaffe</span>
+        <span onclick="runAssistantCommand('Ta bort kaffe från köplistan')" style="cursor:pointer">Ta bort kaffe från köplistan</span>
+      </div>
       ${heard}
       ${response}
-      <div class="assistantExamples">Fungerar med: <span>Var är kaffet?</span><span>Har jag mjölk?</span><span>Lägg till pasta</span><span>Visa köplista</span></div>
+      <div class="assistantExamples">Fungerar med: <span>Var är kaffet?</span><span>Har jag mjölk?</span><span>Vad för olika kaffe har jag?</span><span>Lägg till 2 pasta</span><span>Ta bort kaffe från köplistan</span><span>Flytta mjölk till hemmet</span></div>
     </div>
   `;
 }
@@ -457,6 +465,16 @@ function findItemsByName(query, listType){
     return hay.includes(q);
   });
 }
+function findItemsByLooseQuery(query, listType){
+  const q = normalizeVoiceText(query);
+  const items = listType === 'buy' ? state.buyItems : state.homeItems;
+  if(!q) return [];
+  const words = q.split(' ').filter(Boolean);
+  return items.filter(item => {
+    const hay = normalizeVoiceText([item.name, item.category, item.note, item.room, item.place, item.drawer].join(' '));
+    return hay.includes(q) || words.every(word => hay.includes(word));
+  });
+}
 function getBestTemplateForQuery(query){
   const q = normalizeVoiceText(query);
   const templates = state.templates || [];
@@ -483,6 +501,12 @@ function updateAssistantDraft(value){
   state.voiceAssistant.text = value || '';
   saveState();
 }
+function toggleAssistantSpeech(){
+  if(!state.voiceAssistant) state.voiceAssistant = {};
+  state.voiceAssistant.speakEnabled = state.voiceAssistant.speakEnabled === false ? true : false;
+  saveState();
+  render();
+}
 function toggleVoiceAssistant(inputId){
   if(activeVoiceInputId === inputId){
     stopVoiceInput();
@@ -495,12 +519,13 @@ function toggleVoiceAssistant(inputId){
     runAssistantCommand(finalText);
   });
 }
-function addGenericBuyItemFromVoice(name){
+function addGenericBuyItemFromVoice(name, amount){
   const cleanName = String(name || '').trim();
+  const qty = Math.max(1, Number(amount) || 1);
   if(!cleanName) return null;
   const existing = state.buyItems.find(item => normalizeVoiceText(item.name) === normalizeVoiceText(cleanName));
   if(existing){
-    existing.qty = (Number(existing.qty) || 0) + 1;
+    existing.qty = (Number(existing.qty) || 0) + qty;
     saveState();
     render();
     return existing;
@@ -508,7 +533,7 @@ function addGenericBuyItemFromVoice(name){
   const item = {
     id: uid(),
     name: cleanName.charAt(0).toUpperCase() + cleanName.slice(1),
-    qty: 1,
+    qty: qty,
     img: '',
     category: 'Mat',
     unit: 'Styck',
@@ -523,7 +548,56 @@ function addGenericBuyItemFromVoice(name){
   render();
   return item;
 }
+function removeBuyItemsByQuery(query){
+  const matches = findItemsByLooseQuery(query, 'buy');
+  if(!matches.length) return [];
+  const ids = new Set(matches.map(item => item.id));
+  state.buyItems = state.buyItems.filter(item => !ids.has(item.id));
+  saveState();
+  render();
+  return matches;
+}
+function cloneItemForTarget(item){
+  return JSON.parse(JSON.stringify(item));
+}
+function moveItemsBetweenLists(query, targetList){
+  const matches = findItemsByLooseQuery(query, targetList === 'home' ? 'buy' : 'home');
+  if(!matches.length) return [];
+  const ids = new Set(matches.map(item => item.id));
+  if(targetList === 'home'){
+    state.buyItems = state.buyItems.filter(item => !ids.has(item.id));
+    matches.forEach(item => state.homeItems.unshift(cloneItemForTarget(item)));
+  }else{
+    state.homeItems = state.homeItems.filter(item => !ids.has(item.id));
+    matches.forEach(item => state.buyItems.unshift(cloneItemForTarget(item)));
+  }
+  saveState();
+  render();
+  return matches;
+}
+function spokenNumberToInt(word){
+  const map = {
+    'en':1,'ett':1,'tva':2,'två':2,'tre':3,'fyra':4,'fem':5,'sex':6,'sju':7,'atta':8,'åtta':8,'nio':9,'tio':10
+  };
+  return map[word] || 0;
+}
+function parseAmountAndName(text){
+  const normalized = normalizeVoiceText(text);
+  let m = normalized.match(/^(\d+)\s+(.+)$/);
+  if(m) return {amount:Number(m[1]), name:m[2].trim()};
+  m = normalized.match(/^(en|ett|tva|två|tre|fyra|fem|sex|sju|atta|åtta|nio|tio)\s+(.+)$/);
+  if(m) return {amount:spokenNumberToInt(m[1]), name:m[2].trim()};
+  return {amount:1, name:normalized.trim()};
+}
+function buildListResponse(matches, query){
+  if(!matches.length) return `Jag hittar ingen ${query} hemma.`;
+  const uniqueNames = Array.from(new Set(matches.map(item => item.name)));
+  const intro = `Du har ${uniqueNames.length} ${uniqueNames.length === 1 ? 'sort' : 'sorter'} ${query}:`;
+  const details = uniqueNames.slice(0, 8).map(name => `• ${name}`).join(' ');
+  return `${intro} ${details}`;
+}
 function speakAssistantText(text){
+  if(state.voiceAssistant && state.voiceAssistant.speakEnabled === false) return;
   if(!('speechSynthesis' in window) || !text) return;
   try{
     window.speechSynthesis.cancel();
@@ -533,18 +607,21 @@ function speakAssistantText(text){
     window.speechSynthesis.speak(utter);
   }catch(e){}
 }
+function finalizeAssistant(response, raw, intent, speak){
+  rememberAssistantResponse(response, raw, intent);
+  if(speak) speakAssistantText(response);
+}
 function runAssistantCommand(forcedText){
   const input = document.getElementById('assistant-command-input');
   const raw = String(forcedText != null ? forcedText : (input?.value || state.voiceAssistant?.text || '')).trim();
   updateAssistantDraft(raw);
   if(!raw){
-    rememberAssistantResponse('Säg t.ex. Var är kaffet?, Har jag mjölk? eller Lägg till kaffe.', raw, 'tips');
+    finalizeAssistant('Säg t.ex. Var är kaffet?, Har jag mjölk?, Vad för olika kaffe har jag?, eller Lägg till 2 kaffe.', raw, 'tips', false);
     return;
   }
 
   const normalized = normalizeVoiceText(raw);
   let response = '';
-  let shouldSpeak = false;
 
   const navMap = [
     {keys:['visa koplista','visa kopa lista','oppna koplista','oppna kopa lista','ga till koplista','ga till kopa lista'], page:'buy'},
@@ -556,31 +633,40 @@ function runAssistantCommand(forcedText){
   const navHit = navMap.find(entry => entry.keys.some(key => normalized.includes(key)));
   if(navHit){
     state.voiceAssistant.text = '';
-    rememberAssistantResponse(`Öppnar ${navHit.page === 'buy' ? 'Köpa lista' : navHit.page === 'home' ? 'Hemmet' : navHit.page === 'add' ? 'Lägg till' : navHit.page === 'recipes' ? 'Recept' : 'Hantera'}.`, raw, 'navigate');
+    response = `Öppnar ${navHit.page === 'buy' ? 'Köpa lista' : navHit.page === 'home' ? 'Hemmet' : navHit.page === 'add' ? 'Lägg till' : navHit.page === 'recipes' ? 'Recept' : 'Hantera'}.`;
+    finalizeAssistant(response, raw, 'navigate', true);
     saveState();
     const pages = {home:'index.html', buy:'kopa-lista.html', add:'lagg-till.html', recipes:'recept.html', manage:'hantera.html'};
     window.location.href = pages[navHit.page];
     return;
   }
 
-  let m = normalized.match(/^(var ar|vart ar|var finns) (.+)$/);
+  let m = normalized.match(/^(vad for olika|vilka|vad har jag for) (.+?) har jag$/);
   if(m){
     const query = m[2].trim();
-    const homeMatches = findItemsByName(query, 'home');
-    const buyMatches = findItemsByName(query, 'buy');
+    const matches = findItemsByLooseQuery(query, 'home');
+    response = buildListResponse(matches, query);
+    finalizeAssistant(response, raw, 'list-home', true);
+    render();
+    return;
+  }
+
+  m = normalized.match(/^(var ar|vart ar|var finns) (.+)$/);
+  if(m){
+    const query = m[2].trim();
+    const homeMatches = findItemsByLooseQuery(query, 'home');
+    const buyMatches = findItemsByLooseQuery(query, 'buy');
     if(homeMatches.length){
       const item = homeMatches[0];
       response = `${item.name} finns i ${prettyLocation(item)}.`;
       if(homeMatches.length > 1) response += ` Jag hittade ${homeMatches.length} träffar hemma.`;
-      shouldSpeak = true;
     } else if(buyMatches.length){
       const item = buyMatches[0];
       response = `${item.name} finns inte hemma just nu. Den ligger i Köpa lista.`;
     } else {
       response = `Jag hittar inte ${query} i Hemmet eller Köpa lista.`;
     }
-    rememberAssistantResponse(response, raw, 'locate');
-    if(shouldSpeak) speakAssistantText(response);
+    finalizeAssistant(response, raw, 'locate', true);
     render();
     return;
   }
@@ -588,34 +674,58 @@ function runAssistantCommand(forcedText){
   m = normalized.match(/^(har jag|finns det|har vi) (.+)$/);
   if(m){
     const query = m[2].trim();
-    const matches = findItemsByName(query, 'home');
+    const matches = findItemsByLooseQuery(query, 'home');
     if(matches.length){
       const item = matches[0];
       response = `Ja. ${item.name} finns hemma i ${prettyLocation(item)}. ${renderPackageText(item).replace(/<[^>]+>/g,'')}`;
-      shouldSpeak = true;
     } else {
       response = `Nej, jag hittar inte ${query} hemma.`;
     }
-    rememberAssistantResponse(response, raw, 'check');
-    if(shouldSpeak) speakAssistantText(response);
+    finalizeAssistant(response, raw, 'check', true);
     render();
     return;
   }
 
   m = normalized.match(/^(lagg till|kop|kop hem|behover kopa|behover vi kopa) (.+)$/);
   if(m){
-    const query = m[2].trim();
-    const template = getBestTemplateForQuery(query);
+    const parsed = parseAmountAndName(m[2].trim());
+    const template = getBestTemplateForQuery(parsed.name);
     if(template){
-      addTemplateTo('buy', template.id);
-      response = `${template.name} lades till i Köpa lista från din mall.`;
+      for(let i=0;i<parsed.amount;i++) addTemplateTo('buy', template.id);
+      response = `${template.name} lades till i Köpa lista ${parsed.amount > 1 ? parsed.amount + ' gånger' : 'från din mall'}.`;
     } else {
-      const item = addGenericBuyItemFromVoice(query);
-      response = `${item?.name || query} lades till i Köpa lista.`;
+      const item = addGenericBuyItemFromVoice(parsed.name, parsed.amount);
+      response = `${item?.name || parsed.name} lades till i Köpa lista${parsed.amount > 1 ? ' x' + parsed.amount : ''}.`;
     }
     state.voiceAssistant.text = '';
-    rememberAssistantResponse(response, raw, 'add-buy');
-    speakAssistantText(response);
+    finalizeAssistant(response, raw, 'add-buy', true);
+    return;
+  }
+
+  m = normalized.match(/^(ta bort|radera) (.+?) (fran koplistan|fran kopa listan|i koplistan|i kopa listan)$/);
+  if(m){
+    const query = m[2].trim();
+    const removed = removeBuyItemsByQuery(query);
+    response = removed.length ? `${removed[0].name}${removed.length > 1 ? ' och fler varor' : ''} togs bort från Köpa lista.` : `Jag hittade ingen ${query} i Köpa lista.`;
+    finalizeAssistant(response, raw, 'remove-buy', true);
+    return;
+  }
+
+  m = normalized.match(/^(flytta) (.+?) (till hemmet|hem till hemmet)$/);
+  if(m){
+    const query = m[2].trim();
+    const moved = moveItemsBetweenLists(query, 'home');
+    response = moved.length ? `${moved[0].name}${moved.length > 1 ? ' och fler varor' : ''} flyttades till Hemmet.` : `Jag hittade ingen ${query} i Köpa lista att flytta.`;
+    finalizeAssistant(response, raw, 'move-home', true);
+    return;
+  }
+
+  m = normalized.match(/^(flytta) (.+?) (till koplistan|till kopa listan)$/);
+  if(m){
+    const query = m[2].trim();
+    const moved = moveItemsBetweenLists(query, 'buy');
+    response = moved.length ? `${moved[0].name}${moved.length > 1 ? ' och fler varor' : ''} flyttades till Köpa lista.` : `Jag hittade ingen ${query} i Hemmet att flytta.`;
+    finalizeAssistant(response, raw, 'move-buy', true);
     return;
   }
 
@@ -634,12 +744,12 @@ function runAssistantCommand(forcedText){
     } else {
       response = `Jag kunde inte söka på den här sidan just nu.`;
     }
-    rememberAssistantResponse(response, raw, 'search');
+    finalizeAssistant(response, raw, 'search', true);
     return;
   }
 
-  response = 'Jag förstod inte helt. Testa: Var är kaffet?, Har jag mjölk?, Lägg till kaffe, eller Visa köplista.';
-  rememberAssistantResponse(response, raw, 'fallback');
+  response = 'Jag förstod inte helt. Testa: Var är kaffet?, Har jag mjölk?, Vad för olika kaffe har jag?, Lägg till 2 kaffe, Ta bort kaffe från köplistan, eller Flytta mjölk till hemmet.';
+  finalizeAssistant(response, raw, 'fallback', false);
 }
 
 let filterHoldTimer = null;
