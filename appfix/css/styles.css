@@ -2020,3 +2020,5 @@ img{
 .authBadge.warn{background:rgba(245,158,11,.10);border-color:rgba(245,158,11,.22);}
 .authMini{font-size:12px;color:var(--muted);}
 @media (max-width: 720px){.authPanel{flex-direction:column;align-items:flex-start;}.authActions{width:100%;justify-content:flex-start;}}
+
+.authHousehold{margin-top:6px;color:#cbd5e1;font-size:.92rem}.authBadge.owner{background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.45);color:#dcfce7}.authBadge.member{background:rgba(59,130,246,.16);border-color:rgba(59,130,246,.38);color:#dbeafe}

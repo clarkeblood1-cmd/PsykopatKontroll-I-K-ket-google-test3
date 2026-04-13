@@ -9,6 +9,9 @@ window.MATLIST_FIREBASE_CONFIG = {
 
 window.MATLIST_FIREBASE_OPTIONS = {
   enableCloudSync: true,
-  stateDocumentPath: "matlist/state",
+  useHouseholds: true,
+  householdCollection: "households",
+  userCollection: "users",
+  defaultHouseholdName: "Mitt hushåll",
   popupRedirectFallback: false
 };

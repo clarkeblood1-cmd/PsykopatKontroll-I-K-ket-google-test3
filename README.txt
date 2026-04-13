@@ -18,3 +18,10 @@ Filer som lagts till:
 OBS:
 - Utan Firebase-config fungerar appen lokalt som vanligt
 - Med config kan användaren logga in med Google och synka state till Firestore
+
+
+HUSHÅLLSLÄGE
+- Appen använder nu households/{householdId}/app/state när useHouseholds är true.
+- Första användaren som loggar in blir automatiskt ägare till sitt hushåll.
+- Överst i appen visas nu om hushållet är "Mitt hushåll" eller om du bara är medlem i ett delat hushåll.
+- users/{uid}.householdId används för att koppla användaren till rätt hushåll.
