@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 const config = window.MATLIST_FIREBASE_CONFIG || {};
 const options = window.MATLIST_FIREBASE_OPTIONS || {};
@@ -18,6 +18,18 @@ function updateMetaCloudEnabled(enabled){
     window.state.meta.cloudEnabled = !!enabled;
     localStorage.setItem(window.STORAGE_KEY, JSON.stringify(window.state));
   }
+}
+
+
+function generateJoinCode(){
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let out = "";
+  for(let i=0;i<6;i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
+function normalizeJoinCode(value){
+  return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
 }
 
 function renderNoConfig(){
@@ -72,10 +84,13 @@ if(!hasConfig){
     async function ensurePersonalHousehold(){
       const personalId = currentUid;
       const householdRef = doc(db, householdCollection, personalId);
+      const personalJoinCode = userProfile?.personalJoinCode || generateJoinCode();
       const householdData = {
         name: options.defaultHouseholdName || `${user.displayName || "Mitt"} hushåll`,
         ownerUid: currentUid,
         ownerName: user.displayName || user.email || "Ägare",
+        joinCode: personalJoinCode,
+        joinCodeNormalized: normalizeJoinCode(personalJoinCode),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       };
@@ -83,12 +98,13 @@ if(!hasConfig){
       await setDoc(userRef, {
         householdId: personalId,
         personalHouseholdId: personalId,
+        personalJoinCode,
         householdRole: "owner",
         email: user.email || "",
         displayName: user.displayName || "",
         updatedAt: serverTimestamp()
       }, { merge: true });
-      userProfile = { ...userProfile, householdId: personalId, personalHouseholdId: personalId, householdRole: "owner", email: user.email || "", displayName: user.displayName || "" };
+      userProfile = { ...userProfile, householdId: personalId, personalHouseholdId: personalId, personalJoinCode, householdRole: "owner", email: user.email || "", displayName: user.displayName || "" };
       return { id: personalId, ...householdData, isOwner: true };
     }
 
@@ -161,6 +177,47 @@ if(!hasConfig){
     }
   }
 
+  async function showJoinCode(){
+    if(!currentHousehold?.id) return;
+    try{
+      const householdSnap = await getDoc(doc(db, householdCollection, currentHousehold.id));
+      const data = householdSnap.exists() ? (householdSnap.data() || {}) : {};
+      const code = data.joinCode || userProfile?.personalJoinCode || "saknas";
+      window.alert(`Din hushållskod: ${code}`);
+      setStatus(`Hushållskoden visades: ${code}`);
+    }catch(err){
+      console.error(err);
+      setStatus("Det gick inte att läsa hushållskoden just nu.");
+    }
+  }
+
+  async function joinHouseholdByCode(){
+    if(!currentUid) return;
+    const raw = window.prompt("Skriv hushållskoden du vill gå med i:", "");
+    const code = normalizeJoinCode(raw);
+    if(!code) return;
+    try{
+      setStatus("Söker efter hushållskoden...");
+      const q = query(collection(db, householdCollection), where("joinCodeNormalized", "==", code));
+      const snap = await getDocs(q);
+      if(snap.empty){
+        setStatus("Ingen hushållskod hittades. Kontrollera koden och försök igen.");
+        return;
+      }
+      const householdDoc = snap.docs[0];
+      const householdData = householdDoc.data() || {};
+      if(householdDoc.id === currentHousehold?.id){
+        setStatus("Du är redan inne i det hushållet.");
+        return;
+      }
+      await switchHousehold(householdDoc.id);
+      setStatus(`Du gick med i hushållet ${householdData.name || householdDoc.id}.`);
+    }catch(err){
+      console.error(err);
+      setStatus("Det gick inte att gå med i hushåll via kod just nu.");
+    }
+  }
+
   function renderHousehold(user){
     if(!useHouseholds){
       setHousehold("Hushåll: avstängt, endast personligt molnläge");
@@ -187,6 +244,10 @@ if(!hasConfig){
     if(isPersonalHousehold && userProfile?.lastJoinedHouseholdId){
       buttons.push(`<button class="btn secondary" id="switchToSavedHouseholdBtn">Öppna sparat hushåll</button>`);
     }
+    buttons.push('<button class="btn secondary" id="joinHouseholdByCodeBtn">Gå med via kod</button>');
+    if(currentHousehold.isOwner){
+      buttons.push('<button class="btn secondary" id="showJoinCodeBtn">Visa hushållskod</button>');
+    }
     buttons.push('<button class="btn secondary" id="forceCloudSyncBtn">Synka nu</button>');
     buttons.push('<button class="btn ghost" id="googleLogoutBtn">Logga ut</button>');
 
@@ -200,6 +261,8 @@ if(!hasConfig){
     document.getElementById("googleLogoutBtn")?.addEventListener("click", startLogout);
     document.getElementById("switchToMineBtn")?.addEventListener("click", switchToPersonalHousehold);
     document.getElementById("switchToSavedHouseholdBtn")?.addEventListener("click", switchToLastJoinedHousehold);
+    document.getElementById("joinHouseholdByCodeBtn")?.addEventListener("click", joinHouseholdByCode);
+    document.getElementById("showJoinCodeBtn")?.addEventListener("click", showJoinCode);
   }
 
   async function uploadState(){
