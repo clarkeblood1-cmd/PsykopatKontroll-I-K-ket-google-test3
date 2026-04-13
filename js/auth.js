@@ -172,9 +172,17 @@ if(!hasConfig){
 
     currentHousehold = await ensureHousehold(currentUser);
     stateRef = getStateRef();
-    await loadHouseholdMembers();
+    householdMembers = [];
     renderHousehold(currentUser);
-    await syncInitialState({ preferRemoteOnHouseholdSwitch: true });
+    setStatus("Byter hushåll...");
+    setTimeout(async () => {
+      try{
+        await syncInitialState({ preferRemoteOnHouseholdSwitch: true });
+      }catch(err){
+        console.error(err);
+        setStatus("Hushåll bytt, men molnsynken tog längre tid än väntat.");
+      }
+    }, 30);
   }
 
   async function switchToPersonalHousehold(){
@@ -434,7 +442,7 @@ if(!hasConfig){
           if(member.isMe) return `${member.name} (du)`;
           return member.name;
         }).join(" · ")
-      : "Läser in medlemmar...";
+      : "Tryck Medlemmar";
 
     setActions(`
       <span class="authBadge">${user.displayName || user.email || "Google-konto"}</span>
@@ -555,9 +563,17 @@ if(!hasConfig){
     try{
       currentHousehold = await ensureHousehold(user);
       stateRef = getStateRef();
-      await loadHouseholdMembers();
+      householdMembers = [];
       renderHousehold(user);
-      await syncInitialState();
+      setStatus("Inloggad. Appen är klar. Synk körs i bakgrunden...");
+      setTimeout(async () => {
+        try{
+          await syncInitialState();
+        }catch(err){
+          console.error(err);
+          setStatus("Inloggad. Appen fungerar, men första molnsynken tog längre tid än väntat.");
+        }
+      }, 30);
     }catch(err){
       console.error(err);
       setStatus("Inloggad, men hushåll eller första molnsynken misslyckades. Kontrollera Firestore-regler och config.");
