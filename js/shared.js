@@ -46,12 +46,10 @@ const defaultState = {
     currentPlace: ""
   },
   imageFitMode: "contain",
-  voiceAssistant: {
-    text: "",
-    lastHeard: "",
-    lastResponse: "Säg t.ex. Var är kaffet?, Har jag mjölk?, Lägg till kaffe från mallen, eller Visa köplista.",
-    lastIntent: "tips",
-    speakEnabled: true
+  meta: {
+    updatedAt: 0,
+    version: "google-login-ready",
+    cloudEnabled: false
   }
 };
 
@@ -92,7 +90,27 @@ function loadState(){
   }
 }
 function saveState(){
+  state.meta ||= {};
+  state.meta.updatedAt = Date.now();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if(window.matlistCloud && typeof window.matlistCloud.scheduleSync === "function"){
+    window.matlistCloud.scheduleSync();
+  }
+}
+function replaceAppState(nextState, options={}){
+  const merged = mergeDeep(structuredClone(defaultState), nextState || {});
+  Object.keys(state).forEach(key => delete state[key]);
+  Object.assign(state, merged);
+  migrateCategoriesByRoom();
+  if(!options.skipSave){
+    saveState();
+  }
+  if(typeof render === "function"){
+    render();
+  }
+}
+function getSerializableState(){
+  return JSON.parse(JSON.stringify(state));
 }
 function mergeDeep(target, source){
   for(const key in source){
@@ -290,7 +308,7 @@ function renderPageToolbar(type, title){
       <h2 class="sectionTitle">${title}</h2>
       <div class="toolbar">
         <div class="filterStack">
-          ${renderSearchInputWithMic(`search-${type}`, `Sök i ${title}`, f.search, `updateFilter('${type}','search',this.value)`, `toggleVoiceInputForFilter('${type}','search','search-${type}')`)}
+          <input placeholder="Sök i ${title}" value="${escapeHtml(f.search)}" oninput="updateFilter('${type}','search',this.value)">
           ${renderFilterRail(type, 'room', roomOptions, f.room)}
           ${renderFilterRail(type, 'place', placeValues, f.place)}
           ${renderFilterRail(type, 'drawer', drawerValues, f.drawer)}
@@ -298,542 +316,6 @@ function renderPageToolbar(type, title){
       </div>
     </div>
   `;
-}
-
-
-function renderSearchInputWithMic(inputId, placeholder, value, onInputCode, micCode, extraInputAttrs=''){
-  return `
-    <div class="voiceInputWrap">
-      <input id="${inputId}" placeholder="${escapeAttr(placeholder)}" value="${escapeAttr(value || '')}" oninput="${onInputCode}" ${extraInputAttrs || ''}>
-      <button class="micBtn" id="mic-${inputId}" type="button" onclick="${micCode}" aria-label="Starta röstinmatning" title="Mikrofon">🎤</button>
-    </div>
-  `;
-}
-
-function renderSmartAssistantPanel(){
-  const va = state.voiceAssistant || {};
-  const heard = va.lastHeard ? `<div class="assistantHeard">Du sa: <strong>${escapeHtml(va.lastHeard)}</strong></div>` : '';
-  const response = va.lastResponse ? `<div class="assistantResponse">${escapeHtml(va.lastResponse)}</div>` : `<div class="assistantResponse">Säg något till mikrofonen.</div>`;
-  const speakLabel = va.speakEnabled === false ? 'Prat: AV' : 'Prat: PÅ';
-  return `
-    <div class="assistantPanel">
-      <div class="assistantHeader">
-        <div>
-          <div class="assistantEyebrow">Svensk röstassistent</div>
-          <h3 class="assistantTitle">Fråga appen på svenska</h3>
-        </div>
-        <div class="assistantHint">Ex: Vad för olika kaffe har jag?</div>
-      </div>
-      <div class="assistantControls">
-        <div class="voiceInputWrap assistantInputRow">
-          <input id="assistant-command-input" placeholder="Säg eller skriv t.ex. Var är kaffet?" value="${escapeAttr(va.text || '')}" oninput="updateAssistantDraft(this.value)" autocomplete="off">
-          <button class="micBtn" id="mic-assistant-command-input" type="button" onclick="toggleVoiceAssistant('assistant-command-input')" aria-label="Starta smart mikrofon" title="Smart mikrofon">🎤</button>
-        </div>
-        <button class="btn primary assistantRunBtn" type="button" onclick="runAssistantCommand()">Kör kommando</button>
-      </div>
-      <div class="assistantExamples" style="margin-top:12px">
-        <span onclick="toggleAssistantSpeech()" style="cursor:pointer">${speakLabel}</span>
-        <span onclick="runAssistantCommand('Vad för olika kaffe har jag?')" style="cursor:pointer">Vad för olika kaffe har jag?</span>
-        <span onclick="runAssistantCommand('Lägg till 2 kaffe')" style="cursor:pointer">Lägg till 2 kaffe från mallen</span>
-        <span onclick="runAssistantCommand('Ta bort kaffe från köplistan')" style="cursor:pointer">Ta bort kaffe från köplistan</span>
-      </div>
-      ${heard}
-      ${response}
-      <div class="assistantExamples">Fungerar med svenska kommandon: <span>Var är kaffet?</span><span>Har jag mjölk?</span><span>Vad för olika kaffe har jag?</span><span>Hur mycket gram har jag av kaffet?</span><span>Lägg till 2 pasta från mallen</span><span>Ta bort kaffe från köplistan</span><span>Flytta mjölk till hemmet</span></div>
-    </div>
-  `;
-}
-
-const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition || null;
-let activeVoiceRecognition = null;
-let activeVoiceInputId = null;
-
-function setMicButtonState(inputId, listening){
-  const btn = document.getElementById(`mic-${inputId}`);
-  if(!btn) return;
-  btn.classList.toggle('listening', !!listening);
-  btn.setAttribute('aria-pressed', listening ? 'true' : 'false');
-  btn.title = listening ? 'Stoppa mikrofon' : 'Mikrofon';
-}
-
-function stopVoiceInput(){
-  if(activeVoiceRecognition){
-    try{ activeVoiceRecognition.stop(); }catch(e){}
-  }
-  if(activeVoiceInputId){
-    setMicButtonState(activeVoiceInputId, false);
-  }
-  activeVoiceRecognition = null;
-  activeVoiceInputId = null;
-}
-
-function startVoiceInput(inputId, onValue, onFinal){
-  if(!SpeechRecognitionCtor){
-    alert('Mikrofon stöds inte i den här webbläsaren. Testa Chrome eller Edge.');
-    return;
-  }
-  const input = document.getElementById(inputId);
-  if(!input) return;
-
-  if(activeVoiceRecognition){
-    const sameTarget = activeVoiceInputId === inputId;
-    stopVoiceInput();
-    if(sameTarget) return;
-  }
-
-  const recognition = new SpeechRecognitionCtor();
-  recognition.lang = 'sv-SE';
-  recognition.interimResults = true;
-  recognition.maxAlternatives = 1;
-  recognition.continuous = false;
-  let latestTranscript = '';
-  let hadError = false;
-
-  activeVoiceRecognition = recognition;
-  activeVoiceInputId = inputId;
-  setMicButtonState(inputId, true);
-
-  recognition.onresult = function(event){
-    let transcript = '';
-    for(let i = event.resultIndex; i < event.results.length; i++){
-      transcript += event.results[i][0].transcript + ' ';
-    }
-    transcript = transcript.trim();
-    latestTranscript = transcript || latestTranscript;
-    input.value = transcript;
-    if(typeof onValue === 'function') onValue(transcript);
-  };
-
-  recognition.onerror = function(){
-    hadError = true;
-    stopVoiceInput();
-  };
-
-  recognition.onend = function(){
-    const finalText = latestTranscript;
-    stopVoiceInput();
-    if(!hadError && finalText && typeof onFinal === 'function') onFinal(finalText);
-  };
-
-  try{
-    recognition.start();
-  }catch(e){
-    stopVoiceInput();
-    alert('Kunde inte starta mikrofonen just nu.');
-  }
-}
-
-function toggleVoiceInputForFilter(type, field, inputId){
-  if(activeVoiceInputId === inputId){
-    stopVoiceInput();
-    return;
-  }
-  startVoiceInput(inputId, function(value){
-    updateFilter(type, field, value);
-  });
-}
-
-function toggleVoiceInputForRecipes(inputId){
-  if(activeVoiceInputId === inputId){
-    stopVoiceInput();
-    return;
-  }
-  startVoiceInput(inputId, function(value){
-    handleRecipeSearchInput(value);
-  });
-}
-
-function normalizeVoiceText(text){
-  return String(text || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9åäö\s]/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-function prettyLocation(item){
-  const parts = [item.room, item.place, item.drawer].filter(Boolean);
-  return parts.length ? parts.join(' → ') : 'okänd plats';
-}
-function findItemsByName(query, listType){
-  const q = normalizeVoiceText(query);
-  const items = listType === 'buy' ? state.buyItems : state.homeItems;
-  if(!q) return [];
-  return items.filter(item => {
-    const hay = normalizeVoiceText([item.name, item.category, item.note, item.room, item.place, item.drawer].join(' '));
-    return hay.includes(q);
-  });
-}
-function findItemsByLooseQuery(query, listType){
-  const q = normalizeVoiceText(query);
-  const items = listType === 'buy' ? state.buyItems : state.homeItems;
-  if(!q) return [];
-  const words = q.split(' ').filter(Boolean);
-  return items.filter(item => {
-    const hay = normalizeVoiceText([item.name, item.category, item.note, item.room, item.place, item.drawer].join(' '));
-    return hay.includes(q) || words.every(word => hay.includes(word));
-  });
-}
-function getBestTemplateForQuery(query){
-  const q = normalizeVoiceText(query);
-  const templates = state.templates || [];
-  if(!q) return null;
-  return templates.find(t => normalizeVoiceText(t.name) === q)
-    || templates.find(t => normalizeVoiceText(t.name).includes(q) || q.includes(normalizeVoiceText(t.name)))
-    || null;
-}
-function rememberAssistantResponse(text, heard, intent){
-  if(!state.voiceAssistant) state.voiceAssistant = {};
-  state.voiceAssistant.lastHeard = heard || state.voiceAssistant.lastHeard || '';
-  state.voiceAssistant.lastResponse = text || '';
-  state.voiceAssistant.lastIntent = intent || 'info';
-  saveState();
-  const heardEl = document.querySelector('.assistantHeard');
-  const responseEl = document.querySelector('.assistantResponse');
-  const inputEl = document.getElementById('assistant-command-input');
-  if(inputEl) inputEl.value = state.voiceAssistant.text || '';
-  if(heardEl) heardEl.innerHTML = state.voiceAssistant.lastHeard ? `Du sa: <strong>${escapeHtml(state.voiceAssistant.lastHeard)}</strong>` : '';
-  if(responseEl) responseEl.textContent = state.voiceAssistant.lastResponse || '';
-}
-function updateAssistantDraft(value){
-  if(!state.voiceAssistant) state.voiceAssistant = {};
-  state.voiceAssistant.text = value || '';
-  saveState();
-}
-function toggleAssistantSpeech(){
-  if(!state.voiceAssistant) state.voiceAssistant = {};
-  state.voiceAssistant.speakEnabled = state.voiceAssistant.speakEnabled === false ? true : false;
-  saveState();
-  render();
-}
-function toggleVoiceAssistant(inputId){
-  if(activeVoiceInputId === inputId){
-    stopVoiceInput();
-    return;
-  }
-  startVoiceInput(inputId, function(value){
-    updateAssistantDraft(value);
-  }, function(finalText){
-    updateAssistantDraft(finalText);
-    runAssistantCommand(finalText);
-  });
-}
-function addGenericBuyItemFromVoice(name, amount){
-  const cleanName = String(name || '').trim();
-  const qty = Math.max(1, Number(amount) || 1);
-  if(!cleanName) return null;
-  const existing = state.buyItems.find(item => normalizeVoiceText(item.name) === normalizeVoiceText(cleanName));
-  if(existing){
-    existing.qty = (Number(existing.qty) || 0) + qty;
-    saveState();
-    render();
-    return existing;
-  }
-  const item = {
-    id: uid(),
-    name: cleanName.charAt(0).toUpperCase() + cleanName.slice(1),
-    qty: qty,
-    img: '',
-    category: 'Mat',
-    unit: 'Styck',
-    room: 'Köket',
-    place: 'Skafferi 1',
-    drawer: 'Hyllplan 1',
-    note: '',
-    mode: 'normal'
-  };
-  state.buyItems.unshift(item);
-  saveState();
-  render();
-  return item;
-}
-function removeBuyItemsByQuery(query){
-  const matches = findItemsByLooseQuery(query, 'buy');
-  if(!matches.length) return [];
-  const ids = new Set(matches.map(item => item.id));
-  state.buyItems = state.buyItems.filter(item => !ids.has(item.id));
-  saveState();
-  render();
-  return matches;
-}
-function cloneItemForTarget(item){
-  return JSON.parse(JSON.stringify(item));
-}
-function moveItemsBetweenLists(query, targetList){
-  const matches = findItemsByLooseQuery(query, targetList === 'home' ? 'buy' : 'home');
-  if(!matches.length) return [];
-  const ids = new Set(matches.map(item => item.id));
-  if(targetList === 'home'){
-    state.buyItems = state.buyItems.filter(item => !ids.has(item.id));
-    matches.forEach(item => state.homeItems.unshift(cloneItemForTarget(item)));
-  }else{
-    state.homeItems = state.homeItems.filter(item => !ids.has(item.id));
-    matches.forEach(item => state.buyItems.unshift(cloneItemForTarget(item)));
-  }
-  saveState();
-  render();
-  return matches;
-}
-function spokenNumberToInt(word){
-  const map = {
-    'en':1,'ett':1,'tva':2,'två':2,'tre':3,'fyra':4,'fem':5,'sex':6,'sju':7,'atta':8,'åtta':8,'nio':9,'tio':10
-  };
-  return map[word] || 0;
-}
-function parseAmountAndName(text){
-  const normalized = normalizeVoiceText(text);
-  let m = normalized.match(/^(\d+)\s+(.+)$/);
-  if(m) return {amount:Number(m[1]), name:m[2].trim()};
-  m = normalized.match(/^(en|ett|tva|två|tre|fyra|fem|sex|sju|atta|åtta|nio|tio)\s+(.+)$/);
-  if(m) return {amount:spokenNumberToInt(m[1]), name:m[2].trim()};
-  return {amount:1, name:normalized.trim()};
-}
-function cleanVoiceItemQuery(text){
-  return String(text || '')
-    .replace(/\b(av|pa|på|for|för|mina|min|mitt)\b/gi, ' ')
-    .replace(/\bkaffet\b/gi, 'kaffe')
-    .replace(/\bmjolken\b/gi, 'mjolk')
-    .replace(/\briset\b/gi, 'ris')
-    .replace(/\bpastan\b/gi, 'pasta')
-    .replace(/\bsockret\b/gi, 'socker')
-    .replace(/\bmjolet\b/gi, 'mjol')
-    .replace(/\bsaltet\b/gi, 'salt')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-function parseRequestedUnit(text){
-  const normalized = normalizeVoiceText(text);
-  if(/(^|\s)(kg|kilo)(\s|$)/.test(normalized)) return 'Kg';
-  if(/(^|\s)(gram|g)(\s|$)/.test(normalized)) return 'Gram';
-  if(/(^|\s)(liter|l)(\s|$)/.test(normalized)) return 'Liter';
-  if(/(^|\s)(milliliter|ml)(\s|$)/.test(normalized)) return 'Milliliter';
-  if(/(^|\s)(styck|st)(\s|$)/.test(normalized)) return 'Styck';
-  return '';
-}
-function pickBestSummaryUnit(baseAmount, family){
-  if(family === 'mass') return baseAmount >= 1000 ? 'Kg' : 'Gram';
-  if(family === 'volume') return baseAmount >= 1000 ? 'Liter' : 'Milliliter';
-  if(family === 'count') return 'Styck';
-  return '';
-}
-function computeHomeAmountSummary(matches, requestedUnit, query){
-  if(!matches.length) return { ok:false, text:`Jag hittar ingen ${query} hemma.` };
-  const buckets = { mass:0, volume:0, count:0, other:0 };
-  const unitSeen = new Set();
-  matches.forEach(item => {
-    const total = getItemTotalAmount(item);
-    const unit = item.unit || 'Styck';
-    const family = unitFamily(unit);
-    unitSeen.add(unit);
-    if(family === 'mass') buckets.mass += unitToBase(total, unit);
-    else if(family === 'volume') buckets.volume += unitToBase(total, unit);
-    else if(family === 'count') buckets.count += total;
-    else buckets.other += total;
-  });
-  if(requestedUnit){
-    const family = unitFamily(requestedUnit);
-    if(family === 'mass' && buckets.mass > 0){
-      const amount = baseToUnit(buckets.mass, requestedUnit);
-      return { ok:true, text:`Du har ${formatAmount(amount)} ${requestedUnit.toLowerCase()} ${query} hemma.` };
-    }
-    if(family === 'volume' && buckets.volume > 0){
-      const amount = baseToUnit(buckets.volume, requestedUnit);
-      return { ok:true, text:`Du har ${formatAmount(amount)} ${requestedUnit.toLowerCase()} ${query} hemma.` };
-    }
-    if(family === 'count' && buckets.count > 0){
-      return { ok:true, text:`Du har ${formatAmount(buckets.count)} styck ${query} hemma.` };
-    }
-    return { ok:false, text:`Jag hittar ${query}, men inte i ${requestedUnit.toLowerCase()}. Kontrollera att varan har rätt enhet sparad.` };
-  }
-  if(buckets.mass > 0){
-    const unit = pickBestSummaryUnit(buckets.mass, 'mass');
-    return { ok:true, text:`Du har ${formatAmount(baseToUnit(buckets.mass, unit))} ${unit.toLowerCase()} ${query} hemma.` };
-  }
-  if(buckets.volume > 0){
-    const unit = pickBestSummaryUnit(buckets.volume, 'volume');
-    return { ok:true, text:`Du har ${formatAmount(baseToUnit(buckets.volume, unit))} ${unit.toLowerCase()} ${query} hemma.` };
-  }
-  if(buckets.count > 0){
-    return { ok:true, text:`Du har ${formatAmount(buckets.count)} styck ${query} hemma.` };
-  }
-  const someUnit = Array.from(unitSeen)[0] || 'enheter';
-  return { ok:true, text:`Du har ${formatAmount(buckets.other)} ${String(someUnit).toLowerCase()} ${query} hemma.` };
-}
-
-function buildListResponse(matches, query){
-  if(!matches.length) return `Jag hittar ingen ${query} hemma.`;
-  const uniqueNames = Array.from(new Set(matches.map(item => item.name)));
-  const intro = `Du har ${uniqueNames.length} ${uniqueNames.length === 1 ? 'sort' : 'sorter'} ${query}:`;
-  const details = uniqueNames.slice(0, 8).map(name => `• ${name}`).join(' ');
-  return `${intro} ${details}`;
-}
-function speakAssistantText(text){
-  if(state.voiceAssistant && state.voiceAssistant.speakEnabled === false) return;
-  if(!('speechSynthesis' in window) || !text) return;
-  try{
-    window.speechSynthesis.cancel();
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = 'sv-SE';
-    utter.rate = 1;
-    window.speechSynthesis.speak(utter);
-  }catch(e){}
-}
-function finalizeAssistant(response, raw, intent, speak){
-  rememberAssistantResponse(response, raw, intent);
-  if(speak) speakAssistantText(response);
-}
-function runAssistantCommand(forcedText){
-  const input = document.getElementById('assistant-command-input');
-  const raw = String(forcedText != null ? forcedText : (input?.value || state.voiceAssistant?.text || '')).trim();
-  updateAssistantDraft(raw);
-  if(!raw){
-    finalizeAssistant('Säg t.ex. Var är kaffet?, Har jag mjölk?, Vad för olika kaffe har jag?, Hur mycket gram har jag av kaffet?, eller Lägg till 2 kaffe från mallen.', raw, 'tips', false);
-    return;
-  }
-
-  const normalized = normalizeVoiceText(raw);
-  let response = '';
-
-  const navMap = [
-    {keys:['visa koplista','visa kopa lista','oppna koplista','oppna kopa lista','ga till koplista','ga till kopa lista'], page:'buy'},
-    {keys:['visa hemmet','oppna hemmet','ga till hemmet'], page:'home'},
-    {keys:['visa lagg till','oppna lagg till','ga till lagg till'], page:'add'},
-    {keys:['visa recept','oppna recept','ga till recept'], page:'recipes'},
-    {keys:['visa hantera','oppna hantera','ga till hantera'], page:'manage'}
-  ];
-  const navHit = navMap.find(entry => entry.keys.some(key => normalized.includes(key)));
-  if(navHit){
-    state.voiceAssistant.text = '';
-    response = `Öppnar ${navHit.page === 'buy' ? 'Köpa lista' : navHit.page === 'home' ? 'Hemmet' : navHit.page === 'add' ? 'Lägg till' : navHit.page === 'recipes' ? 'Recept' : 'Hantera'}.`;
-    finalizeAssistant(response, raw, 'navigate', true);
-    saveState();
-    const pages = {home:'index.html', buy:'kopa-lista.html', add:'lagg-till.html', recipes:'recept.html', manage:'hantera.html'};
-    window.location.href = pages[navHit.page];
-    return;
-  }
-
-  let m = normalized.match(/^(hur mycket|hur manga) (.+?) har jag$/);
-  if(m){
-    const rawQuery = cleanVoiceItemQuery(m[2].trim());
-    const requestedUnit = parseRequestedUnit(rawQuery);
-    const cleanedQuery = cleanVoiceItemQuery(rawQuery.replace(/(^|\s)(kg|kilo|gram|g|liter|l|milliliter|ml|styck|st)(\s|$)/gi, ' ')).trim() || 'varan';
-    const matches = findItemsByLooseQuery(cleanedQuery, 'home');
-    const summary = computeHomeAmountSummary(matches, requestedUnit, cleanedQuery);
-    finalizeAssistant(summary.text, raw, 'amount-home', true);
-    render();
-    return;
-  }
-
-  m = normalized.match(/^(vad for olika|vilka|vad har jag for) (.+?) har jag$/);
-  if(m){
-    const query = cleanVoiceItemQuery(m[2].trim());
-    const matches = findItemsByLooseQuery(query, 'home');
-    response = buildListResponse(matches, query);
-    finalizeAssistant(response, raw, 'list-home', true);
-    render();
-    return;
-  }
-
-  m = normalized.match(/^(var ar|vart ar|var finns) (.+)$/);
-  if(m){
-    const query = cleanVoiceItemQuery(m[2].trim());
-    const homeMatches = findItemsByLooseQuery(query, 'home');
-    const buyMatches = findItemsByLooseQuery(query, 'buy');
-    if(homeMatches.length){
-      const item = homeMatches[0];
-      response = `${item.name} finns i ${prettyLocation(item)}.`;
-      if(homeMatches.length > 1) response += ` Jag hittade ${homeMatches.length} träffar hemma.`;
-    } else if(buyMatches.length){
-      const item = buyMatches[0];
-      response = `${item.name} finns inte hemma just nu. Den ligger i Köpa lista.`;
-    } else {
-      response = `Jag hittar inte ${query} i Hemmet eller Köpa lista.`;
-    }
-    finalizeAssistant(response, raw, 'locate', true);
-    render();
-    return;
-  }
-
-  m = normalized.match(/^(har jag|finns det|har vi) (.+)$/);
-  if(m){
-    const query = cleanVoiceItemQuery(m[2].trim());
-    const matches = findItemsByLooseQuery(query, 'home');
-    if(matches.length){
-      const item = matches[0];
-      response = `Ja. ${item.name} finns hemma i ${prettyLocation(item)}. ${renderPackageText(item).replace(/<[^>]+>/g,'')}`;
-    } else {
-      response = `Nej, jag hittar inte ${query} hemma.`;
-    }
-    finalizeAssistant(response, raw, 'check', true);
-    render();
-    return;
-  }
-
-  m = normalized.match(/^(lagg till|kop|kop hem|behover kopa|behover vi kopa) (.+)$/);
-  if(m){
-    const parsed = parseAmountAndName(m[2].trim());
-    const cleanedName = cleanVoiceItemQuery(parsed.name.replace(/(fran mallen|fran mall|mallen|mall)/g, ' ').trim());
-    const template = getBestTemplateForQuery(cleanedName);
-    if(template){
-      for(let i=0;i<parsed.amount;i++) addTemplateTo('buy', template.id);
-      response = `${template.name} lades till i Köpa lista från mallen${parsed.amount > 1 ? ' x' + parsed.amount : ''}.`;
-    } else {
-      response = `${cleanedName || parsed.name} finns inte i mallen, så jag lade inte till något i Köpa lista.`;
-    }
-    state.voiceAssistant.text = '';
-    finalizeAssistant(response, raw, 'add-buy', true);
-    return;
-  }
-
-  m = normalized.match(/^(ta bort|radera) (.+?) (fran koplistan|fran kopa listan|i koplistan|i kopa listan)$/);
-  if(m){
-    const query = cleanVoiceItemQuery(m[2].trim());
-    const removed = removeBuyItemsByQuery(query);
-    response = removed.length ? `${removed[0].name}${removed.length > 1 ? ' och fler varor' : ''} togs bort från Köpa lista.` : `Jag hittade ingen ${query} i Köpa lista.`;
-    finalizeAssistant(response, raw, 'remove-buy', true);
-    return;
-  }
-
-  m = normalized.match(/^(flytta) (.+?) (till hemmet|hem till hemmet)$/);
-  if(m){
-    const query = cleanVoiceItemQuery(m[2].trim());
-    const moved = moveItemsBetweenLists(query, 'home');
-    response = moved.length ? `${moved[0].name}${moved.length > 1 ? ' och fler varor' : ''} flyttades till Hemmet.` : `Jag hittade ingen ${query} i Köpa lista att flytta.`;
-    finalizeAssistant(response, raw, 'move-home', true);
-    return;
-  }
-
-  m = normalized.match(/^(flytta) (.+?) (till koplistan|till kopa listan)$/);
-  if(m){
-    const query = cleanVoiceItemQuery(m[2].trim());
-    const moved = moveItemsBetweenLists(query, 'buy');
-    response = moved.length ? `${moved[0].name}${moved.length > 1 ? ' och fler varor' : ''} flyttades till Köpa lista.` : `Jag hittade ingen ${query} i Hemmet att flytta.`;
-    finalizeAssistant(response, raw, 'move-buy', true);
-    return;
-  }
-
-  m = normalized.match(/^(sok|sok efter|leta efter) (.+)$/);
-  if(m){
-    const query = m[2].trim();
-    const page = state.currentPage || 'home';
-    if(state.filters[page] && typeof state.filters[page] === 'object' && 'search' in state.filters[page]){
-      state.filters[page].search = query;
-      saveState();
-      render();
-      response = `Söker efter ${query} på sidan ${page === 'buy' ? 'Köpa lista' : page === 'add' ? 'Lägg till' : page === 'recipes' ? 'Recept' : page === 'manage' ? 'Hantera' : 'Hemmet'}.`;
-    } else if(page === 'recipes') {
-      handleRecipeSearchInput(query);
-      response = `Söker efter ${query} i recept.`;
-    } else {
-      response = `Jag kunde inte söka på den här sidan just nu.`;
-    }
-    finalizeAssistant(response, raw, 'search', true);
-    return;
-  }
-
-  response = 'Jag förstod inte helt. Testa svenska kommandon som: Var är kaffet?, Har jag mjölk?, Vad för olika kaffe har jag?, Hur mycket gram har jag av kaffet?, Lägg till 2 kaffe från mallen, Ta bort kaffe från köplistan, eller Flytta mjölk till hemmet.';
-  finalizeAssistant(response, raw, 'fallback', false);
 }
 
 let filterHoldTimer = null;
@@ -1124,7 +606,6 @@ function renderHome(){
 
   root.innerHTML = `
     ${renderPageToolbar("home", "Hemmet")}
-    ${renderSmartAssistantPanel()}
     <div class="homeHero">
       <div class="homeHeroCard">
         <h2 class="homeHeroTitle">Hemmet</h2>
@@ -1176,7 +657,6 @@ function renderBuy(){
 
   root.innerHTML = `
     ${renderPageToolbar("buy", "Köpa lista")}
-    ${renderSmartAssistantPanel()}
 
     <div class="buyHero">
       <div class="buyHeroCard">
@@ -1219,11 +699,10 @@ function renderAdd(){
   });
 
   root.innerHTML = `
-    ${renderSmartAssistantPanel()}
     <div class="section">
       <h2 class="sectionTitle">Lägg till</h2>
       <div class="toolbar">
-        ${renderSearchInputWithMic('search-add', 'Sök i Lägg till', f.search, `updateFilter('add','search',this.value)`, `toggleVoiceInputForFilter('add','search','search-add')`)}
+        <input placeholder="Sök i Lägg till" value="${escapeHtml(f.search)}" oninput="updateFilter('add','search',this.value)">
         <select onchange="updateFilter('add','room',this.value)">
           <option ${f.room==="Alla rum"?"selected":""}>Alla rum</option>
           ${state.rooms.map(r=>`<option ${f.room===r?"selected":""}>${escapeHtml(r)}</option>`).join("")}
@@ -1279,12 +758,11 @@ function renderRecipes(){
   });
 
   root.innerHTML = `
-    ${renderSmartAssistantPanel()}
     <div class="section">
       <h2 class="sectionTitle">Recept</h2>
       <div class="toolbar">
         <div class="recipeSearchInputWrap">
-          ${renderSearchInputWithMic('recipe-search-input', 'Sök Recept', filter.search || '', `handleRecipeSearchInput(this.value)`, `toggleVoiceInputForRecipes('recipe-search-input')`, 'handleRecipeSearchFocus()')}
+          <input id="recipe-search-input" placeholder="Sök Recept" autocomplete="off" value="${escapeHtml(filter.search || "")}" oninput="handleRecipeSearchInput(this.value)" onfocus="handleRecipeSearchFocus()">
           <div id="recipe-search-suggest"></div>
         </div>
         <select onchange="updateRecipeFilter('category',this.value)">
@@ -3252,6 +2730,14 @@ function bindPageLinks(){
     });
   });
 }
+
+window.STORAGE_KEY = STORAGE_KEY;
+window.defaultState = defaultState;
+window.getSerializableState = getSerializableState;
+window.replaceAppState = replaceAppState;
+window.saveState = saveState;
+window.render = render;
+window.state = state;
 
 function bootApp(targetPage){
   normalizeRestItems();

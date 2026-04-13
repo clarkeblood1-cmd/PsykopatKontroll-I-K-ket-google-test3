@@ -1,5 +1,7 @@
 const CACHE = "matlist-split-v1";
 const ASSETS = [
+  "js/firebase-config.js",
+  "js/auth.js",
   "./",
   "./index.html",
   "./kopa-lista.html",
