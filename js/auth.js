@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs, limit } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 const config = window.MATLIST_FIREBASE_CONFIG || {};
 const options = window.MATLIST_FIREBASE_OPTIONS || {};
@@ -57,6 +57,7 @@ if(!hasConfig){
   let currentHousehold = null;
   let userProfile = null;
   let currentUser = null;
+  let householdMembers = [];
 
   function getStateRef(){
     if(useHouseholds && currentHousehold?.id){
@@ -148,6 +149,7 @@ if(!hasConfig){
 
     currentHousehold = await ensureHousehold(currentUser);
     stateRef = getStateRef();
+    await loadHouseholdMembers();
     renderHousehold(currentUser);
     await syncInitialState({ preferRemoteOnHouseholdSwitch: true });
   }
@@ -174,6 +176,123 @@ if(!hasConfig){
     }catch(err){
       console.error(err);
       setStatus("Det gick inte att öppna ditt sparade delade hushåll. Kontrollera att det fortfarande finns kvar.");
+    }
+  }
+
+  async function copyJoinCode(){
+    if(!currentHousehold?.id) return;
+    try{
+      const householdSnap = await getDoc(doc(db, householdCollection, currentHousehold.id));
+      const data = householdSnap.exists() ? (householdSnap.data() || {}) : {};
+      const code = data.joinCode || userProfile?.personalJoinCode || "";
+      if(!code){
+        setStatus("Det finns ingen hushållskod att kopiera ännu.");
+        return;
+      }
+      if(navigator.clipboard?.writeText){
+        await navigator.clipboard.writeText(code);
+        setStatus(`Hushållskoden ${code} kopierades.`);
+      } else {
+        window.prompt("Kopiera hushållskoden här:", code);
+        setStatus(`Hushållskoden visas så att du kan kopiera den: ${code}`);
+      }
+    }catch(err){
+      console.error(err);
+      setStatus("Det gick inte att kopiera hushållskoden just nu.");
+    }
+  }
+
+  async function renameCurrentHousehold(){
+    if(!currentHousehold?.id || !currentHousehold?.isOwner) return;
+    const currentName = currentHousehold.name || "Mitt hushåll";
+    const nextName = String(window.prompt("Nytt namn på hushållet:", currentName) || "").trim().slice(0, 60);
+    if(!nextName || nextName === currentName) return;
+    try{
+      await setDoc(doc(db, householdCollection, currentHousehold.id), {
+        name: nextName,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      currentHousehold = { ...currentHousehold, name: nextName };
+      if(userProfile?.lastJoinedHouseholdId === currentHousehold.id){
+        userProfile = { ...userProfile, lastJoinedHouseholdName: nextName };
+      }
+      renderHousehold(currentUser);
+      setStatus(`Hushållet heter nu ${nextName}.`);
+    }catch(err){
+      console.error(err);
+      setStatus("Det gick inte att byta namn på hushållet just nu.");
+    }
+  }
+
+  async function loadHouseholdMembers(){
+    if(!useHouseholds || !currentHousehold?.id) return [];
+    try{
+      const q = query(collection(db, userCollection), where("householdId", "==", currentHousehold.id), limit(12));
+      const snap = await getDocs(q);
+      householdMembers = snap.docs.map((memberDoc) => {
+        const data = memberDoc.data() || {};
+        const name = data.displayName || data.email || memberDoc.id;
+        const isOwner = memberDoc.id === currentHousehold.ownerUid;
+        const isMe = memberDoc.id === currentUid;
+        return {
+          id: memberDoc.id,
+          name,
+          isOwner,
+          isMe
+        };
+      }).sort((a, b) => {
+        if(a.isOwner && !b.isOwner) return -1;
+        if(!a.isOwner && b.isOwner) return 1;
+        if(a.isMe && !b.isMe) return -1;
+        if(!a.isMe && b.isMe) return 1;
+        return a.name.localeCompare(b.name, "sv");
+      });
+      return householdMembers;
+    }catch(err){
+      console.error(err);
+      householdMembers = [];
+      return [];
+    }
+  }
+
+  async function showMembers(){
+    if(!currentHousehold?.id) return;
+    try{
+      setStatus("Läser in medlemmar...");
+      const members = await loadHouseholdMembers();
+      if(!members.length){
+        setStatus("Inga medlemmar hittades ännu i hushållet.");
+        return;
+      }
+      const lines = members.map((member) => {
+        const tags = [];
+        if(member.isOwner) tags.push("ägare");
+        if(member.isMe) tags.push("du");
+        return `• ${member.name}${tags.length ? ` (${tags.join(", ")})` : ""}`;
+      });
+      window.alert(`Medlemmar i ${currentHousehold.name || "hushållet"}:\n\n${lines.join("\n")}`);
+      setStatus(`Visar ${members.length} medlem${members.length === 1 ? "" : "mar"} i hushållet.`);
+    }catch(err){
+      console.error(err);
+      setStatus("Det gick inte att läsa hushållets medlemmar just nu.");
+    }
+  }
+
+  async function leaveSharedHousehold(){
+    if(!currentUid || !currentHousehold?.id) return;
+    if(currentHousehold.id === currentUid){
+      setStatus("Du är redan i ditt eget hushåll.");
+      return;
+    }
+    const ok = window.confirm(`Lämna hushållet ${currentHousehold.name || currentHousehold.id} och gå tillbaka till ditt eget hushåll?`);
+    if(!ok) return;
+    try{
+      setStatus("Lämnar delat hushåll...");
+      await switchHousehold(currentUid);
+      setStatus("Du lämnade det delade hushållet och kan öppna det igen senare via sparat hushåll.");
+    }catch(err){
+      console.error(err);
+      setStatus("Det gick inte att lämna hushållet just nu.");
     }
   }
 
@@ -244,16 +363,31 @@ if(!hasConfig){
     if(isPersonalHousehold && userProfile?.lastJoinedHouseholdId){
       buttons.push(`<button class="btn secondary" id="switchToSavedHouseholdBtn">Öppna sparat hushåll</button>`);
     }
+    if(!isPersonalHousehold){
+      buttons.push('<button class="btn secondary" id="leaveSharedHouseholdBtn">Lämna hushåll</button>');
+    }
     buttons.push('<button class="btn secondary" id="joinHouseholdByCodeBtn">Gå med via kod</button>');
+    buttons.push('<button class="btn secondary" id="showMembersBtn">Medlemmar</button>');
     if(currentHousehold.isOwner){
       buttons.push('<button class="btn secondary" id="showJoinCodeBtn">Visa hushållskod</button>');
+      buttons.push('<button class="btn secondary" id="copyJoinCodeBtn">Kopiera kod</button>');
+      buttons.push('<button class="btn secondary" id="renameHouseholdBtn">Byt hushållsnamn</button>');
     }
     buttons.push('<button class="btn secondary" id="forceCloudSyncBtn">Synka nu</button>');
     buttons.push('<button class="btn ghost" id="googleLogoutBtn">Logga ut</button>');
 
+    const memberSummary = householdMembers.length
+      ? householdMembers.slice(0, 4).map((member) => {
+          if(member.isOwner) return `${member.name} (ägare)`;
+          if(member.isMe) return `${member.name} (du)`;
+          return member.name;
+        }).join(" · ")
+      : "Läser in medlemmar...";
+
     setActions(`
       <span class="authBadge">${user.displayName || user.email || "Google-konto"}</span>
       <span class="authBadge ${accountBadgeClass}">${currentHousehold.isOwner ? (isPersonalHousehold ? "Mitt hushåll" : "Ägare") : "Medlem"}</span>
+      <span class="authMini">Medlemmar: ${memberSummary}</span>
       ${userProfile?.lastJoinedHouseholdId && isPersonalHousehold ? `<span class="authMini">Sparat delat hushåll: ${savedSharedName}</span>` : ""}
       ${buttons.join("")}
     `);
@@ -261,8 +395,12 @@ if(!hasConfig){
     document.getElementById("googleLogoutBtn")?.addEventListener("click", startLogout);
     document.getElementById("switchToMineBtn")?.addEventListener("click", switchToPersonalHousehold);
     document.getElementById("switchToSavedHouseholdBtn")?.addEventListener("click", switchToLastJoinedHousehold);
+    document.getElementById("leaveSharedHouseholdBtn")?.addEventListener("click", leaveSharedHousehold);
     document.getElementById("joinHouseholdByCodeBtn")?.addEventListener("click", joinHouseholdByCode);
     document.getElementById("showJoinCodeBtn")?.addEventListener("click", showJoinCode);
+    document.getElementById("copyJoinCodeBtn")?.addEventListener("click", copyJoinCode);
+    document.getElementById("renameHouseholdBtn")?.addEventListener("click", renameCurrentHousehold);
+    document.getElementById("showMembersBtn")?.addEventListener("click", showMembers);
   }
 
   async function uploadState(){
@@ -365,6 +503,7 @@ if(!hasConfig){
     try{
       currentHousehold = await ensureHousehold(user);
       stateRef = getStateRef();
+      await loadHouseholdMembers();
       renderHousehold(user);
       await syncInitialState();
     }catch(err){
