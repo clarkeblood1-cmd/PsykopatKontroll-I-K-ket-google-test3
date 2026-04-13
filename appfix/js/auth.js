@@ -74,11 +74,34 @@ if(!hasConfig){
     userProfile = userData;
     let householdId = userData.householdId || null;
 
+    async function ensureHouseholdJoinCode(id, data = {}, fallbackCode = ""){
+      const existingCode = normalizeJoinCode(data.joinCode);
+      if(existingCode){
+        if(data.joinCodeNormalized !== existingCode){
+          await setDoc(doc(db, householdCollection, id), {
+            joinCode: existingCode,
+            joinCodeNormalized: existingCode,
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        }
+        return { ...data, joinCode: existingCode, joinCodeNormalized: existingCode };
+      }
+
+      const nextCode = normalizeJoinCode(fallbackCode) || generateJoinCode();
+      await setDoc(doc(db, householdCollection, id), {
+        joinCode: nextCode,
+        joinCodeNormalized: nextCode,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      return { ...data, joinCode: nextCode, joinCodeNormalized: nextCode };
+    }
+
     async function buildHouseholdInfo(id){
       const householdRef = doc(db, householdCollection, id);
       const householdSnap = await getDoc(householdRef);
       if(!householdSnap.exists()) return null;
-      const data = householdSnap.data() || {};
+      let data = householdSnap.data() || {};
+      data = await ensureHouseholdJoinCode(id, data, id === currentUid ? (userData.personalJoinCode || "") : "");
       return { id, ...data, isOwner: data.ownerUid === currentUid };
     }
 
@@ -179,12 +202,43 @@ if(!hasConfig){
     }
   }
 
+  async function getOrCreateJoinCodeForHousehold(){
+    if(!currentHousehold?.id) return "";
+    const householdRef = doc(db, householdCollection, currentHousehold.id);
+    const householdSnap = await getDoc(householdRef);
+    const data = householdSnap.exists() ? (householdSnap.data() || {}) : {};
+    let code = normalizeJoinCode(data.joinCode || userProfile?.personalJoinCode || "");
+
+    if(!code){
+      code = generateJoinCode();
+      await setDoc(householdRef, {
+        joinCode: code,
+        joinCodeNormalized: code,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    } else if(data.joinCodeNormalized !== code){
+      await setDoc(householdRef, {
+        joinCode: code,
+        joinCodeNormalized: code,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    }
+
+    currentHousehold = { ...currentHousehold, joinCode: code, joinCodeNormalized: code };
+    if(currentHousehold.id === currentUid){
+      await setDoc(doc(db, userCollection, currentUid), {
+        personalJoinCode: code,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      userProfile = { ...(userProfile || {}), personalJoinCode: code };
+    }
+    return code;
+  }
+
   async function copyJoinCode(){
     if(!currentHousehold?.id) return;
     try{
-      const householdSnap = await getDoc(doc(db, householdCollection, currentHousehold.id));
-      const data = householdSnap.exists() ? (householdSnap.data() || {}) : {};
-      const code = data.joinCode || userProfile?.personalJoinCode || "";
+      const code = await getOrCreateJoinCodeForHousehold();
       if(!code){
         setStatus("Det finns ingen hushållskod att kopiera ännu.");
         return;
@@ -299,11 +353,9 @@ if(!hasConfig){
   async function showJoinCode(){
     if(!currentHousehold?.id) return;
     try{
-      const householdSnap = await getDoc(doc(db, householdCollection, currentHousehold.id));
-      const data = householdSnap.exists() ? (householdSnap.data() || {}) : {};
-      const code = data.joinCode || userProfile?.personalJoinCode || "saknas";
-      window.alert(`Din hushållskod: ${code}`);
-      setStatus(`Hushållskoden visades: ${code}`);
+      const code = await getOrCreateJoinCodeForHousehold();
+      window.alert(`Din hushållskod: ${code || "saknas"}`);
+      setStatus(`Hushållskoden visades: ${code || "saknas"}`);
     }catch(err){
       console.error(err);
       setStatus("Det gick inte att läsa hushållskoden just nu.");
