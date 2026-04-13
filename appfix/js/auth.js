@@ -43,6 +43,8 @@ if(!hasConfig){
   let initialSyncDone = false;
   let stateRef = null;
   let currentHousehold = null;
+  let userProfile = null;
+  let currentUser = null;
 
   function getStateRef(){
     if(useHouseholds && currentHousehold?.id){
@@ -55,35 +57,108 @@ if(!hasConfig){
     if(!useHouseholds || !currentUid) return null;
     const userRef = doc(db, userCollection, currentUid);
     const userSnap = await getDoc(userRef);
-    let householdId = userSnap.exists() ? userSnap.data()?.householdId : null;
+    const userData = userSnap.exists() ? (userSnap.data() || {}) : {};
+    userProfile = userData;
+    let householdId = userData.householdId || null;
+
+    async function buildHouseholdInfo(id){
+      const householdRef = doc(db, householdCollection, id);
+      const householdSnap = await getDoc(householdRef);
+      if(!householdSnap.exists()) return null;
+      const data = householdSnap.data() || {};
+      return { id, ...data, isOwner: data.ownerUid === currentUid };
+    }
+
+    async function ensurePersonalHousehold(){
+      const personalId = currentUid;
+      const householdRef = doc(db, householdCollection, personalId);
+      const householdData = {
+        name: options.defaultHouseholdName || `${user.displayName || "Mitt"} hushåll`,
+        ownerUid: currentUid,
+        ownerName: user.displayName || user.email || "Ägare",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+      await setDoc(householdRef, householdData, { merge: true });
+      await setDoc(userRef, {
+        householdId: personalId,
+        personalHouseholdId: personalId,
+        householdRole: "owner",
+        email: user.email || "",
+        displayName: user.displayName || "",
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      userProfile = { ...userProfile, householdId: personalId, personalHouseholdId: personalId, householdRole: "owner", email: user.email || "", displayName: user.displayName || "" };
+      return { id: personalId, ...householdData, isOwner: true };
+    }
 
     if(householdId){
-      const householdRef = doc(db, householdCollection, householdId);
-      const householdSnap = await getDoc(householdRef);
-      if(householdSnap.exists()){
-        const data = householdSnap.data() || {};
-        return { id: householdId, ...data, isOwner: data.ownerUid === currentUid };
+      const existing = await buildHouseholdInfo(householdId);
+      if(existing){
+        if(!userData.personalHouseholdId){
+          await setDoc(userRef, { personalHouseholdId: currentUid, updatedAt: serverTimestamp() }, { merge: true });
+          userProfile = { ...userProfile, personalHouseholdId: currentUid };
+        }
+        return existing;
       }
     }
 
-    householdId = currentUid;
-    const householdRef = doc(db, householdCollection, householdId);
-    const householdData = {
-      name: options.defaultHouseholdName || `${user.displayName || "Mitt"} hushåll`,
-      ownerUid: currentUid,
-      ownerName: user.displayName || user.email || "Ägare",
-      createdAt: serverTimestamp(),
+    return await ensurePersonalHousehold();
+  }
+
+  async function switchHousehold(targetHouseholdId, meta = {}){
+    if(!useHouseholds || !currentUid || !targetHouseholdId) return;
+    const userRef = doc(db, userCollection, currentUid);
+    const previousHousehold = currentHousehold;
+    const leavingShared = previousHousehold && previousHousehold.id !== currentUid && targetHouseholdId === currentUid;
+    const updates = {
+      householdId: targetHouseholdId,
+      personalHouseholdId: currentUid,
       updatedAt: serverTimestamp()
     };
-    await setDoc(householdRef, householdData, { merge: true });
-    await setDoc(userRef, {
-      householdId,
-      householdRole: "owner",
-      email: user.email || "",
-      displayName: user.displayName || "",
-      updatedAt: serverTimestamp()
-    }, { merge: true });
-    return { id: householdId, ...householdData, isOwner: true };
+
+    if(leavingShared && previousHousehold?.id){
+      updates.lastJoinedHouseholdId = previousHousehold.id;
+      updates.lastJoinedHouseholdName = previousHousehold.name || "Delat hushåll";
+    }
+
+    if(meta.clearLastJoined){
+      updates.lastJoinedHouseholdId = "";
+      updates.lastJoinedHouseholdName = "";
+    }
+
+    await setDoc(userRef, updates, { merge: true });
+    userProfile = { ...(userProfile || {}), ...Object.fromEntries(Object.entries(updates).filter(([_,v]) => typeof v !== 'object')) };
+
+    currentHousehold = await ensureHousehold(currentUser);
+    stateRef = getStateRef();
+    renderHousehold(currentUser);
+    await syncInitialState({ preferRemoteOnHouseholdSwitch: true });
+  }
+
+  async function switchToPersonalHousehold(){
+    if(!currentUid) return;
+    try{
+      setStatus("Byter till ditt hushåll...");
+      await switchHousehold(currentUid);
+      setStatus("Du är tillbaka i ditt hushåll. Senaste delade hushåll är sparat.");
+    }catch(err){
+      console.error(err);
+      setStatus("Det gick inte att byta tillbaka till ditt hushåll just nu.");
+    }
+  }
+
+  async function switchToLastJoinedHousehold(){
+    const targetId = userProfile?.lastJoinedHouseholdId;
+    if(!targetId || !currentUid) return;
+    try{
+      setStatus("Öppnar ditt sparade delade hushåll...");
+      await switchHousehold(targetId);
+      setStatus("Du är nu inne i ditt sparade delade hushåll igen.");
+    }catch(err){
+      console.error(err);
+      setStatus("Det gick inte att öppna ditt sparade delade hushåll. Kontrollera att det fortfarande finns kvar.");
+    }
   }
 
   function renderHousehold(user){
@@ -95,20 +170,36 @@ if(!hasConfig){
       setHousehold("Hushåll: inte kopplat ännu");
       return;
     }
-    const roleText = currentHousehold.isOwner ? "Ditt hushåll" : "Delat hushåll";
-    const ownerText = currentHousehold.isOwner ? "du är ägare" : `ägare: ${currentHousehold.ownerName || currentHousehold.ownerUid || "okänd"}`;
+    const isPersonalHousehold = currentHousehold.id === currentUid;
+    const roleText = currentHousehold.isOwner ? (isPersonalHousehold ? "Mitt hushåll" : "Ägare") : "Delat hushåll";
+    const ownerText = currentHousehold.isOwner
+      ? (isPersonalHousehold ? "detta är ditt eget hushåll" : "du äger detta hushåll")
+      : `ägare: ${currentHousehold.ownerName || currentHousehold.ownerUid || "okänd"}`;
     const label = currentHousehold.name || "Hushåll";
+    const savedSharedName = userProfile?.lastJoinedHouseholdName || "senaste delade hushåll";
     setHousehold(`Hushåll: ${label} · ${roleText} · ${ownerText}`);
 
     const accountBadgeClass = currentHousehold.isOwner ? "owner" : "member";
+    const buttons = [];
+    if(!isPersonalHousehold){
+      buttons.push('<button class="btn secondary" id="switchToMineBtn">Till mitt hushåll</button>');
+    }
+    if(isPersonalHousehold && userProfile?.lastJoinedHouseholdId){
+      buttons.push(`<button class="btn secondary" id="switchToSavedHouseholdBtn">Öppna sparat hushåll</button>`);
+    }
+    buttons.push('<button class="btn secondary" id="forceCloudSyncBtn">Synka nu</button>');
+    buttons.push('<button class="btn ghost" id="googleLogoutBtn">Logga ut</button>');
+
     setActions(`
       <span class="authBadge">${user.displayName || user.email || "Google-konto"}</span>
-      <span class="authBadge ${accountBadgeClass}">${currentHousehold.isOwner ? "Mitt hushåll" : "Medlem"}</span>
-      <button class="btn secondary" id="forceCloudSyncBtn">Synka nu</button>
-      <button class="btn ghost" id="googleLogoutBtn">Logga ut</button>
+      <span class="authBadge ${accountBadgeClass}">${currentHousehold.isOwner ? (isPersonalHousehold ? "Mitt hushåll" : "Ägare") : "Medlem"}</span>
+      ${userProfile?.lastJoinedHouseholdId && isPersonalHousehold ? `<span class="authMini">Sparat delat hushåll: ${savedSharedName}</span>` : ""}
+      ${buttons.join("")}
     `);
     document.getElementById("forceCloudSyncBtn")?.addEventListener("click", () => uploadState().then(() => setStatus("Synkat till molnet.")));
     document.getElementById("googleLogoutBtn")?.addEventListener("click", startLogout);
+    document.getElementById("switchToMineBtn")?.addEventListener("click", switchToPersonalHousehold);
+    document.getElementById("switchToSavedHouseholdBtn")?.addEventListener("click", switchToLastJoinedHousehold);
   }
 
   async function uploadState(){
@@ -131,18 +222,20 @@ if(!hasConfig){
     return snap.exists() ? snap.data() : null;
   }
 
-  async function syncInitialState(){
+  async function syncInitialState(optionsArg = {}){
     const localState = window.getSerializableState ? window.getSerializableState() : null;
     const remoteState = await downloadState();
     const localUpdated = Number(localState?.meta?.updatedAt || 0);
     const remoteUpdated = Number(remoteState?.meta?.updatedAt || 0);
 
-    if(remoteState && remoteUpdated > localUpdated && window.replaceAppState){
+    const preferRemote = !!optionsArg.preferRemoteOnHouseholdSwitch;
+
+    if(remoteState && (preferRemote || remoteUpdated > localUpdated) && window.replaceAppState){
       window.replaceAppState(remoteState);
-      setStatus("Inloggad. Molndata laddad.");
+      setStatus(preferRemote ? "Hushåll bytt. Molndata laddad." : "Inloggad. Molndata laddad.");
     } else {
       await uploadState();
-      setStatus("Inloggad. Lokal data synkad till molnet.");
+      setStatus(preferRemote ? "Hushåll bytt. Lokal data synkad till valt hushåll." : "Inloggad. Lokal data synkad till molnet.");
     }
     initialSyncDone = true;
   }
@@ -186,6 +279,8 @@ if(!hasConfig){
   onAuthStateChanged(auth, async (user) => {
     if(!user){
       currentUid = null;
+      currentUser = null;
+      userProfile = null;
       initialSyncDone = false;
       currentHousehold = null;
       stateRef = null;
@@ -201,6 +296,7 @@ if(!hasConfig){
     }
 
     currentUid = user.uid;
+    currentUser = user;
     updateMetaCloudEnabled(true);
 
     try{
