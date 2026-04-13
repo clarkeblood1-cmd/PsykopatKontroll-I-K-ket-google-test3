@@ -49,7 +49,8 @@ const defaultState = {
   meta: {
     updatedAt: 0,
     version: "google-login-ready",
-    cloudEnabled: false
+    cloudEnabled: false,
+    clientId: ""
   }
 };
 
@@ -57,6 +58,7 @@ const units = ["Styck","Kg","Gram","Milliliter","Liter","Kryddmått","Tesked","M
 const itemModes = [{value:"normal",label:"Vanlig vara"},{value:"package",label:"Paket + fast mått"}];
 
 let state = loadState();
+ensureClientMeta();
 migrateCategoriesByRoom();
 let currentEdit = null;
 
@@ -77,6 +79,17 @@ function normalizeRestItems(){
       item.fixedAmount = Number(item.fixedAmount || 0) || 0;
     }
   });
+}
+
+
+function ensureClientMeta(){
+  state.meta ||= {};
+  if(!state.meta.clientId){
+    state.meta.clientId = `client_${Date.now().toString(36)}${Math.random().toString(36).slice(2,8)}`;
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }catch(e){}
+  }
 }
 
 function loadState(){

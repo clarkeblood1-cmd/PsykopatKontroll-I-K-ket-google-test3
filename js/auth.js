@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs, limit } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 const config = window.MATLIST_FIREBASE_CONFIG || {};
 const options = window.MATLIST_FIREBASE_OPTIONS || {};
@@ -58,6 +58,47 @@ if(!hasConfig){
   let userProfile = null;
   let currentUser = null;
   let householdMembers = [];
+  let unsubscribeStateListener = null;
+  let remoteApplyInProgress = false;
+  let lastAppliedRemoteAt = 0;
+
+  function stopStateListener(){
+    if(typeof unsubscribeStateListener === "function") {
+      unsubscribeStateListener();
+      unsubscribeStateListener = null;
+    }
+  }
+
+  function startStateListener(){
+    if(!currentUid || !options.enableCloudSync) return;
+    const ref = stateRef || getStateRef();
+    stopStateListener();
+    unsubscribeStateListener = onSnapshot(ref, (snap) => {
+      if(!snap.exists() || !window.replaceAppState || !window.getSerializableState) return;
+      const remoteState = snap.data() || {};
+      const remoteUpdated = Number(remoteState?.meta?.updatedAt || 0);
+      const remoteClientId = String(remoteState?.meta?.clientId || "");
+      const localState = window.getSerializableState();
+      const localUpdated = Number(localState?.meta?.updatedAt || 0);
+      const localClientId = String(localState?.meta?.clientId || "");
+
+      if(remoteApplyInProgress) return;
+      if(remoteClientId && remoteClientId === localClientId && remoteUpdated <= localUpdated) return;
+      if(remoteUpdated && remoteUpdated <= Math.max(localUpdated, lastAppliedRemoteAt)) return;
+
+      remoteApplyInProgress = true;
+      lastAppliedRemoteAt = remoteUpdated || Date.now();
+      try{
+        window.replaceAppState(remoteState, { skipSave: true });
+        setStatus("Live-sync: ändringar från annan enhet laddades in.");
+      } finally {
+        remoteApplyInProgress = false;
+      }
+    }, (err) => {
+      console.error("Realtime listener failed", err);
+      setStatus("Live-sync tappade kontakten tillfälligt.");
+    });
+  }
 
   function getStateRef(){
     if(useHouseholds && currentHousehold?.id){
@@ -174,6 +215,7 @@ if(!hasConfig){
     stateRef = getStateRef();
     householdMembers = [];
     renderHousehold(currentUser);
+    startStateListener();
     setStatus("Byter hushåll...");
     setTimeout(async () => {
       try{
@@ -474,6 +516,7 @@ if(!hasConfig){
       payload.meta.householdOwnerUid = currentHousehold.ownerUid || null;
       payload.meta.householdIsOwner = !!currentHousehold.isOwner;
     }
+    payload.meta.clientId = payload.meta.clientId || window.getSerializableState?.()?.meta?.clientId || "";
     await setDoc(stateRef || getStateRef(), payload, { merge: true });
   }
 
@@ -505,11 +548,12 @@ if(!hasConfig){
     if(!currentUid || !initialSyncDone || !options.enableCloudSync) return;
     clearTimeout(syncTimer);
     syncTimer = setTimeout(() => {
+      if(remoteApplyInProgress) return;
       uploadState().catch(err => {
         console.error("Cloud sync failed", err);
         setStatus("Inloggad, men synk misslyckades tillfälligt.");
       });
-    }, 700);
+    }, 120);
   }
 
   async function startLogin(){
@@ -545,6 +589,7 @@ if(!hasConfig){
       initialSyncDone = false;
       currentHousehold = null;
       stateRef = null;
+      stopStateListener();
       updateMetaCloudEnabled(false);
       setStatus("Inte inloggad. Appen fungerar fortfarande lokalt.");
       setHousehold(useHouseholds ? "Hushåll: logga in för att se om det är ditt hushåll" : "Hushåll: avstängt");
@@ -565,6 +610,7 @@ if(!hasConfig){
       stateRef = getStateRef();
       householdMembers = [];
       renderHousehold(user);
+      startStateListener();
       setStatus("Inloggad. Appen är klar. Synk körs i bakgrunden...");
       setTimeout(async () => {
         try{
