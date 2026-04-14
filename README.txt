@@ -1,31 +1,15 @@
-MATLIST MAX
+Matlist Max Realtime
 
-Detta är en ren "max version" av projektet.
+Detta är realtime-versionen av appen.
 
-INGÅR
-- Offline först
-- Google-login via Firebase
-- Realtidssynk mellan enheter
-- Hushåll med egen kod
-- Byt tillbaka till ditt hushåll
-- Öppna senast sparat delat hushåll igen
-- Exportera backup till JSON
-- Importera backup från JSON
-- Nollställ lokal data på enheten
+Nyheter i denna version:
+- BroadcastChannel + storage-event för direkt sync mellan öppna flikar/fönster på samma enhet
+- Firebase Firestore onSnapshot för live-sync mellan olika enheter
+- Offline-cache i localStorage
+- Köad molnsync när nätet försvinner och automatisk återupptagning när nätet kommer tillbaka
+- Hushållsläge med personlig hushållskod och byte mellan hushåll
 
-FILER
-- index.html = Hemmet
-- kopa-lista.html = Köplista
-- lagg-till.html = Lägg till
-- recept.html = Recept
-- hantera.html = Hantera
-
-FIREBASE
-Din Firebase-config är redan ifylld i js/firebase-config.js.
-Om du ska köra på en egen domän måste den domänen vara godkänd i Firebase Authentication.
-Firestore behöver också vara aktiverat.
-
-TIPS
-- Kör appen från en vanlig webbserver eller GitHub Pages.
-- Öppna inte bara filer direkt som file:// om du vill att allt ska fungera stabilt med service worker.
-- Använd Exportera backup innan större ändringar.
+För bästa resultat:
+- Kör via webbserver eller GitHub Pages
+- Logga in med Google för molnsync
+- Använd Firestore Rules och Storage Rules som matchar hushållsmodellen
