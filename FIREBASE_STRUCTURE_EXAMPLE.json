@@ -1,0 +1,29 @@
+{
+  "users/exampleUid": {
+    "displayName": "Kevin",
+    "email": "user@example.com",
+    "activeHouseholdId": "ABC123",
+    "savedHouseholds": ["ABC123"],
+    "personalHouseholdId": "exampleUid"
+  },
+  "households/ABC123": {
+    "name": "Mitt hushåll",
+    "joinCode": "ABC123",
+    "joinCodeNormalized": "ABC123",
+    "members": ["exampleUid"],
+    "memberProfiles": {
+      "exampleUid": { "name": "Kevin", "role": "owner" }
+    },
+    "createdBy": "exampleUid",
+    "ownerUid": "exampleUid"
+  },
+  "households/ABC123/state/main": {
+    "homeItems": [],
+    "buyItems": [],
+    "templates": [],
+    "recipes": [],
+    "meta": {
+      "schemaVersion": "users-households-state-main-v2"
+    }
+  }
+}

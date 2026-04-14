@@ -1,4 +1,4 @@
-const STORAGE_KEY = "matlist_max_realtime_v1";
+const STORAGE_KEY = "matlist_firebase_realtime_v2";
 
 const defaultState = {
   currentPage: "home",
@@ -48,7 +48,7 @@ const defaultState = {
   imageFitMode: "contain",
   meta: {
     updatedAt: 0,
-    version: "max-realtime-version",
+    version: "firebase-realtime-v2",
     cloudEnabled: false,
     clientId: "",
     pendingSync: false,
@@ -65,74 +65,6 @@ let state = loadState();
 ensureClientMeta();
 migrateCategoriesByRoom();
 let currentEdit = null;
-const LOCAL_SYNC_CHANNEL = "matlist-realtime-sync";
-let localSyncChannel = null;
-let suppressRealtimeBroadcast = false;
-
-function getClientId(){
-  return String(state?.meta?.clientId || "");
-}
-
-function ensureRealtimeChannel(){
-  if(localSyncChannel || typeof BroadcastChannel === "undefined") return localSyncChannel;
-  try{
-    localSyncChannel = new BroadcastChannel(LOCAL_SYNC_CHANNEL);
-    localSyncChannel.addEventListener("message", (event) => {
-      const data = event?.data || {};
-      if(!data || data.type !== "state-update") return;
-      if(data.clientId && data.clientId === getClientId()) return;
-      applyIncomingLocalState(data.state, { source: "broadcast" });
-    });
-  }catch(e){
-    localSyncChannel = null;
-  }
-  return localSyncChannel;
-}
-
-function emitRealtimeState(reason = "state-update"){
-  if(suppressRealtimeBroadcast) return;
-  const payload = getSerializableState();
-  const message = {
-    type: "state-update",
-    reason,
-    clientId: getClientId(),
-    sentAt: Date.now(),
-    state: payload
-  };
-  const channel = ensureRealtimeChannel();
-  if(channel){
-    try{ channel.postMessage(message); }catch(e){}
-  }
-}
-
-function applyIncomingLocalState(nextState, options = {}){
-  if(!nextState) return false;
-  const incoming = mergeDeep(structuredClone(defaultState), nextState || {});
-  const incomingUpdated = Number(incoming?.meta?.updatedAt || 0);
-  const localUpdated = Number(state?.meta?.updatedAt || 0);
-  const incomingClientId = String(incoming?.meta?.clientId || "");
-  if(incomingClientId && incomingClientId === getClientId()) return false;
-  if(incomingUpdated && incomingUpdated <= localUpdated) return false;
-  suppressRealtimeBroadcast = true;
-  try{
-    replaceAppState(incoming, { skipSave: true });
-    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
-  } finally {
-    suppressRealtimeBroadcast = false;
-  }
-  if(window.matlistCloud && typeof window.matlistCloud.flushSyncQueue === "function" && state?.meta?.cloudEnabled && navigator.onLine){
-    window.matlistCloud.flushSyncQueue();
-  }
-  return true;
-}
-
-window.addEventListener("storage", (event) => {
-  if(event.key !== STORAGE_KEY || !event.newValue) return;
-  try{
-    const incoming = JSON.parse(event.newValue);
-    applyIncomingLocalState(incoming, { source: "storage" });
-  }catch(e){}
-});
 
 function normalizeRestItems(){
   const normalizeName = (name) => String(name || "")
@@ -181,7 +113,6 @@ function saveState(){
   state.meta.pendingSync = !!state.meta.cloudEnabled;
   state.meta.syncError = "";
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  emitRealtimeState("save");
   if(window.matlistCloud && typeof window.matlistCloud.scheduleSync === "function"){
     window.matlistCloud.scheduleSync();
   }
@@ -189,7 +120,6 @@ function saveState(){
 function persistStateMeta(){
   try{
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    emitRealtimeState("meta");
   }catch(e){}
 }
 function replaceAppState(nextState, options={}){
@@ -2835,7 +2765,6 @@ window.render = render;
 window.state = state;
 
 function bootApp(targetPage){
-  ensureRealtimeChannel();
   normalizeRestItems();
   migrateItemsToTemplateIds();
   syncAllItemsFromTemplates();

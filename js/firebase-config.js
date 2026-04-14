@@ -13,5 +13,7 @@ window.MATLIST_FIREBASE_OPTIONS = {
   householdCollection: "households",
   userCollection: "users",
   defaultHouseholdName: "Mitt hushåll",
-  popupRedirectFallback: false
+  popupRedirectFallback: false,
+  stateSubcollection: "state",
+  stateDocumentId: "main"
 };
