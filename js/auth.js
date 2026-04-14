@@ -61,6 +61,104 @@ if(!hasConfig){
   let unsubscribeStateListener = null;
   let remoteApplyInProgress = false;
   let lastAppliedRemoteAt = 0;
+  let isOnline = navigator.onLine !== false;
+  let syncInFlight = false;
+  let pendingSyncRequested = false;
+  let retryDelay = 1200;
+  let retryTimer = null;
+
+  function getSyncState(){
+    const meta = window.state?.meta || {};
+    return {
+      isOnline,
+      pendingSync: !!meta.pendingSync,
+      syncError: String(meta.syncError || ""),
+      lastCloudAckAt: Number(meta.lastCloudAckAt || 0),
+      lastLocalChangeAt: Number(meta.lastLocalChangeAt || 0)
+    };
+  }
+
+  function formatTime(ts){
+    if(!ts) return "";
+    try{
+      return new Date(ts).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    }catch(e){
+      return "";
+    }
+  }
+
+  function updateSyncMeta(patch = {}){
+    if(!window.state) return;
+    window.state.meta ||= {};
+    Object.assign(window.state.meta, patch);
+    if(typeof window.persistStateMeta === "function") window.persistStateMeta();
+  }
+
+  function syncSummaryText(){
+    const syncState = getSyncState();
+    if(!syncState.isOnline){
+      return syncState.pendingSync ? "Offline · ändringar sparade lokalt" : "Offline · bara lokal data";
+    }
+    if(syncState.pendingSync){
+      return "Synkar… lokala ändringar väntar";
+    }
+    if(syncState.syncError){
+      return "Molnsynk väntar på nytt försök";
+    }
+    if(syncState.lastCloudAckAt){
+      return `Moln sparat ${formatTime(syncState.lastCloudAckAt)}`;
+    }
+    return "Molnsynk redo";
+  }
+
+  function stopRetryTimer(){
+    if(retryTimer){
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+  }
+
+  function scheduleRetry(){
+    stopRetryTimer();
+    retryTimer = setTimeout(() => {
+      flushSyncQueue();
+    }, retryDelay);
+    retryDelay = Math.min(retryDelay * 2, 20000);
+  }
+
+  function refreshHouseholdPanel(){
+    if(currentUser) renderHousehold(currentUser);
+  }
+
+  async function flushSyncQueue(force = false){
+    if(!currentUid || !initialSyncDone || !options.enableCloudSync) return;
+    if(syncInFlight) return;
+    const meta = window.state?.meta || {};
+    const hasPending = !!meta.pendingSync || pendingSyncRequested || force;
+    if(!hasPending) return;
+    if(!isOnline){
+      updateSyncMeta({ pendingSync: true, syncError: "offline" });
+      refreshHouseholdPanel();
+      return;
+    }
+    syncInFlight = true;
+    pendingSyncRequested = false;
+    stopRetryTimer();
+    try{
+      await uploadState();
+      retryDelay = 1200;
+      updateSyncMeta({ pendingSync: false, syncError: "", lastCloudAckAt: Number(window.state?.meta?.updatedAt || Date.now()) });
+      refreshHouseholdPanel();
+    }catch(err){
+      console.error("Cloud sync failed", err);
+      pendingSyncRequested = true;
+      updateSyncMeta({ pendingSync: true, syncError: err?.message || "sync_failed" });
+      refreshHouseholdPanel();
+      scheduleRetry();
+    } finally {
+      syncInFlight = false;
+    }
+  }
 
   function stopStateListener(){
     if(typeof unsubscribeStateListener === "function") {
@@ -82,15 +180,19 @@ if(!hasConfig){
       const localUpdated = Number(localState?.meta?.updatedAt || 0);
       const localClientId = String(localState?.meta?.clientId || "");
 
+      const localPending = !!(window.state?.meta?.pendingSync);
       if(remoteApplyInProgress) return;
       if(remoteClientId && remoteClientId === localClientId && remoteUpdated <= localUpdated) return;
+      if(localPending && localUpdated > remoteUpdated) return;
       if(remoteUpdated && remoteUpdated <= Math.max(localUpdated, lastAppliedRemoteAt)) return;
 
       remoteApplyInProgress = true;
       lastAppliedRemoteAt = remoteUpdated || Date.now();
       try{
         window.replaceAppState(remoteState, { skipSave: true });
+        updateSyncMeta({ pendingSync: false, syncError: "", lastCloudAckAt: remoteUpdated || Date.now() });
         setStatus("Live-sync: ändringar från annan enhet laddades in.");
+        refreshHouseholdPanel();
       } finally {
         remoteApplyInProgress = false;
       }
@@ -478,6 +580,8 @@ if(!hasConfig){
     buttons.push('<button class="btn secondary" id="forceCloudSyncBtn">Synka nu</button>');
     buttons.push('<button class="btn ghost" id="googleLogoutBtn">Logga ut</button>');
 
+    const syncState = getSyncState();
+    const syncBadgeClass = !syncState.isOnline ? "warn" : (syncState.pendingSync || syncState.syncError ? "member" : "owner");
     const memberSummary = householdMembers.length
       ? householdMembers.slice(0, 4).map((member) => {
           if(member.isOwner) return `${member.name} (ägare)`;
@@ -490,6 +594,8 @@ if(!hasConfig){
       <span class="authBadge">${user.displayName || user.email || "Google-konto"}</span>
       <span class="authBadge ${accountBadgeClass}">${currentHousehold.isOwner ? (isPersonalHousehold ? "Mitt hushåll" : "Ägare") : "Medlem"}</span>
       <span class="authMini">Medlemmar: ${memberSummary}</span>
+      <span class="authBadge ${syncBadgeClass}">${!syncState.isOnline ? "Offline" : (syncState.pendingSync ? "Väntar på sync" : (syncState.syncError ? "Återförsök" : "Synkad"))}</span>
+      <span class="authMini">${syncSummaryText()}</span>
       ${userProfile?.lastJoinedHouseholdId && isPersonalHousehold ? `<span class="authMini">Sparat delat hushåll: ${savedSharedName}</span>` : ""}
       ${buttons.join("")}
     `);
@@ -507,6 +613,7 @@ if(!hasConfig){
 
   async function uploadState(){
     if(!currentUid || !options.enableCloudSync || !window.getSerializableState) return;
+    if(!isOnline) throw new Error("offline");
     const payload = window.getSerializableState();
     payload.meta ||= {};
     payload.meta.updatedAt = Date.now();
@@ -521,13 +628,20 @@ if(!hasConfig){
   }
 
   async function downloadState(){
-    if(!currentUid) return null;
+    if(!currentUid || !isOnline) return null;
     const snap = await getDoc(stateRef || getStateRef());
     return snap.exists() ? snap.data() : null;
   }
 
   async function syncInitialState(optionsArg = {}){
     const localState = window.getSerializableState ? window.getSerializableState() : null;
+    if(!isOnline){
+      updateSyncMeta({ pendingSync: !!window.state?.meta?.pendingSync, syncError: "offline" });
+      setStatus("Offline-läge: lokal data används direkt. Molnsynk fortsätter när nät finns igen.");
+      refreshHouseholdPanel();
+      initialSyncDone = true;
+      return;
+    }
     const remoteState = await downloadState();
     const localUpdated = Number(localState?.meta?.updatedAt || 0);
     const remoteUpdated = Number(remoteState?.meta?.updatedAt || 0);
@@ -536,9 +650,11 @@ if(!hasConfig){
 
     if(remoteState && (preferRemote || remoteUpdated > localUpdated) && window.replaceAppState){
       window.replaceAppState(remoteState);
+      updateSyncMeta({ pendingSync: false, syncError: "", lastCloudAckAt: remoteUpdated || Date.now() });
       setStatus(preferRemote ? "Hushåll bytt. Molndata laddad." : "Inloggad. Molndata laddad.");
     } else {
       await uploadState();
+      updateSyncMeta({ pendingSync: false, syncError: "", lastCloudAckAt: Number(window.state?.meta?.updatedAt || Date.now()) });
       setStatus(preferRemote ? "Hushåll bytt. Lokal data synkad till valt hushåll." : "Inloggad. Lokal data synkad till molnet.");
     }
     initialSyncDone = true;
@@ -546,14 +662,14 @@ if(!hasConfig){
 
   function scheduleSync(){
     if(!currentUid || !initialSyncDone || !options.enableCloudSync) return;
+    pendingSyncRequested = true;
+    updateSyncMeta({ pendingSync: true, syncError: isOnline ? "" : "offline" });
+    refreshHouseholdPanel();
     clearTimeout(syncTimer);
     syncTimer = setTimeout(() => {
       if(remoteApplyInProgress) return;
-      uploadState().catch(err => {
-        console.error("Cloud sync failed", err);
-        setStatus("Inloggad, men synk misslyckades tillfälligt.");
-      });
-    }, 120);
+      flushSyncQueue();
+    }, 160);
   }
 
   async function startLogin(){
@@ -579,7 +695,23 @@ if(!hasConfig){
     }
   }
 
-  window.matlistCloud = { scheduleSync, uploadState };
+  function handleConnectionChange(nextOnline){
+    isOnline = !!nextOnline;
+    if(isOnline){
+      setStatus("Nät tillbaka. Fortsätter sync i bakgrunden...");
+      updateSyncMeta({ syncError: "" });
+      flushSyncQueue(true);
+    } else {
+      setStatus("Offline-läge aktivt. Ändringar sparas lokalt och skickas senare.");
+      updateSyncMeta({ pendingSync: !!window.state?.meta?.pendingSync, syncError: "offline" });
+    }
+    refreshHouseholdPanel();
+  }
+
+  window.addEventListener("online", () => handleConnectionChange(true));
+  window.addEventListener("offline", () => handleConnectionChange(false));
+
+  window.matlistCloud = { scheduleSync, uploadState, flushSyncQueue, getSyncState };
 
   onAuthStateChanged(auth, async (user) => {
     if(!user){
@@ -587,6 +719,8 @@ if(!hasConfig){
       currentUser = null;
       userProfile = null;
       initialSyncDone = false;
+      pendingSyncRequested = false;
+      stopRetryTimer();
       currentHousehold = null;
       stateRef = null;
       stopStateListener();
@@ -611,7 +745,7 @@ if(!hasConfig){
       householdMembers = [];
       renderHousehold(user);
       startStateListener();
-      setStatus("Inloggad. Appen är klar. Synk körs i bakgrunden...");
+      setStatus(isOnline ? "Inloggad. Appen är klar. Synk körs i bakgrunden..." : "Inloggad offline. Lokal data används tills nät finns igen.");
       setTimeout(async () => {
         try{
           await syncInitialState();

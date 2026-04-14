@@ -2022,3 +2022,18 @@ img{
 @media (max-width: 720px){.authPanel{flex-direction:column;align-items:flex-start;}.authActions{width:100%;justify-content:flex-start;}}
 
 .authHousehold{margin-top:6px;color:#cbd5e1;font-size:.92rem}.authBadge.owner{background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.45);color:#dcfce7}.authBadge.member{background:rgba(59,130,246,.16);border-color:rgba(59,130,246,.38);color:#dbeafe}
+
+.utilityPanel{margin-bottom:16px}
+.utilityHeader{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.brandSub{color:var(--muted);font-size:13px;margin-top:4px}
+.authPanel{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:16px;padding:14px 16px;border-radius:20px;border:1px solid var(--line);background:linear-gradient(180deg,var(--panel),var(--panel2));box-shadow:var(--shadow)}
+.authTitle{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:4px}
+.authStatus,.authHousehold{font-size:14px}
+.authActions{display:flex;gap:8px;flex-wrap:wrap}
+.authBadge{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border-radius:999px;background:#0b1b2e;border:1px solid rgba(255,255,255,.08);font-size:12px;color:#dceeff;font-weight:800}
+.authBadge.owner{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.28)}
+.authBadge.member{background:rgba(61,164,255,.12);border-color:rgba(61,164,255,.28)}
+.authBadge.warn{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.32)}
+.authBadge.good{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.32)}
+.authBadge.secondary{background:rgba(255,255,255,.05)}
+.authMini{display:inline-block;color:var(--muted);font-size:12px;margin-left:6px}

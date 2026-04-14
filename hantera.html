@@ -15,7 +15,7 @@
 <body>
 <div class="app">
     <div class="topbar">
-      <div class="brandWrap"><div class="brand">PsykopatKontroll i Hemmet</div><div class="brandSub">Offline först · Google login redo</div></div>
+      <div class="brandWrap"><div class="brand">Matlist Max</div><div class="brandSub">Offline först · hushåll · live-sync · backup</div></div>
       <div class="nav">
         <button id="nav-home"  data-page-link="home">Hemmet</button>
         <button id="nav-buy"  data-page-link="buy">Köpa lista</button>
@@ -35,6 +35,22 @@
     </div>
 
     <div class="stats" id="stats"></div>
+
+    <div class="utilityPanel section">
+      <div class="utilityHeader">
+        <div>
+          <div class="sectionTitle" style="margin:0">Verktyg</div>
+          <div class="small">Backup, återställning och snabb export/import av hela appen.</div>
+        </div>
+        <div class="btnRow">
+          <button class="btn secondary" onclick="exportAppBackup()">Exportera backup</button>
+          <button class="btn secondary" onclick="triggerImportAppBackup()">Importera backup</button>
+          <button class="btn ghost" onclick="resetAppData()">Nollställ lokal data</button>
+        </div>
+        <input type="file" id="appBackupInput" accept="application/json,.json" style="display:none" onchange="importAppBackupFromInput(event)">
+      </div>
+    </div>
+
 
     <section id="page-home" class="page active"></section>
     <section id="page-buy" class="page"></section>

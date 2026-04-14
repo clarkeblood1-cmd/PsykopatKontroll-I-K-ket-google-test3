@@ -48,9 +48,13 @@ const defaultState = {
   imageFitMode: "contain",
   meta: {
     updatedAt: 0,
-    version: "google-login-ready",
+    version: "max-offline-version",
     cloudEnabled: false,
-    clientId: ""
+    clientId: "",
+    pendingSync: false,
+    syncError: "",
+    lastCloudAckAt: 0,
+    lastLocalChangeAt: 0
   }
 };
 
@@ -105,10 +109,18 @@ function loadState(){
 function saveState(){
   state.meta ||= {};
   state.meta.updatedAt = Date.now();
+  state.meta.lastLocalChangeAt = state.meta.updatedAt;
+  state.meta.pendingSync = !!state.meta.cloudEnabled;
+  state.meta.syncError = "";
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   if(window.matlistCloud && typeof window.matlistCloud.scheduleSync === "function"){
     window.matlistCloud.scheduleSync();
   }
+}
+function persistStateMeta(){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }catch(e){}
 }
 function replaceAppState(nextState, options={}){
   const merged = mergeDeep(structuredClone(defaultState), nextState || {});

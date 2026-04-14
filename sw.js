@@ -1,4 +1,4 @@
-const CACHE = "matlist-split-v1";
+const CACHE = "matlist-max-v2";
 const ASSETS = [
   "js/firebase-config.js",
   "js/auth.js",

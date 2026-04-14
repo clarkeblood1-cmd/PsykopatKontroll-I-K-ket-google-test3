@@ -1,4 +1,4 @@
-const STORAGE_KEY = "psykopatkontroll_v4_room_system_safe";
+const STORAGE_KEY = "matlist_max_v1";
 
 const defaultState = {
   currentPage: "home",
@@ -48,9 +48,13 @@ const defaultState = {
   imageFitMode: "contain",
   meta: {
     updatedAt: 0,
-    version: "google-login-ready",
+    version: "matlist-max-v1",
     cloudEnabled: false,
-    clientId: ""
+    clientId: "",
+    pendingSync: false,
+    syncError: "",
+    lastCloudAckAt: 0,
+    lastLocalChangeAt: 0
   }
 };
 
@@ -105,10 +109,18 @@ function loadState(){
 function saveState(){
   state.meta ||= {};
   state.meta.updatedAt = Date.now();
+  state.meta.lastLocalChangeAt = state.meta.updatedAt;
+  state.meta.pendingSync = !!state.meta.cloudEnabled;
+  state.meta.syncError = "";
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   if(window.matlistCloud && typeof window.matlistCloud.scheduleSync === "function"){
     window.matlistCloud.scheduleSync();
   }
+}
+function persistStateMeta(){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }catch(e){}
 }
 function replaceAppState(nextState, options={}){
   const merged = mergeDeep(structuredClone(defaultState), nextState || {});
@@ -2751,6 +2763,10 @@ window.replaceAppState = replaceAppState;
 window.saveState = saveState;
 window.render = render;
 window.state = state;
+window.exportAppBackup = exportAppBackup;
+window.triggerImportAppBackup = triggerImportAppBackup;
+window.importAppBackupFromInput = importAppBackupFromInput;
+window.resetAppData = resetAppData;
 
 function bootApp(targetPage){
   normalizeRestItems();
@@ -2766,4 +2782,61 @@ if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   });
+}
+
+
+function exportAppBackup(){
+  try{
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      app: "Matlist Max",
+      version: window.state?.meta?.version || "matlist-max-v1",
+      storageKey: STORAGE_KEY,
+      state: getSerializableState()
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    a.href = url;
+    a.download = `matlist-backup-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }catch(e){
+    alert("Det gick inte att exportera backup just nu.");
+  }
+}
+function triggerImportAppBackup(){
+  document.getElementById("appBackupInput")?.click();
+}
+function importAppBackupFromInput(event){
+  const file = event?.target?.files?.[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const parsed = JSON.parse(String(reader.result || "{}"));
+      const nextState = parsed?.state || parsed;
+      if(!nextState || typeof nextState !== "object") throw new Error("invalid");
+      replaceAppState(nextState);
+      alert("Backup importerad.");
+    }catch(e){
+      alert("Filen gick inte att läsa som en Matlist-backup.");
+    }finally{
+      event.target.value = "";
+    }
+  };
+  reader.onerror = () => {
+    alert("Det gick inte att läsa filen.");
+    event.target.value = "";
+  };
+  reader.readAsText(file);
+}
+function resetAppData(){
+  const ok = confirm("Nollställ all lokal Matlist-data på den här enheten? Molndata påverkas inte förrän du synkar igen.");
+  if(!ok) return;
+  replaceAppState(structuredClone(defaultState));
+  alert("Lokal data är nollställd.");
 }

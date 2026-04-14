@@ -1,27 +1,31 @@
-MATLIST MED GOOGLE-LOGIN (FIREBASE)
+MATLIST MAX
 
-Den här versionen fungerar fortfarande lokalt/offline.
-Google-login och molnsynk aktiveras när du fyller i:
-js/firebase-config.js
+Detta är en ren "max version" av projektet.
 
-Gör så här:
-1. Skapa ett Firebase-projekt
-2. Aktivera Authentication -> Google
-3. Aktivera Firestore Database
-4. Lägg till din domän i Authentication -> Settings -> Authorized domains
-5. Fyll i js/firebase-config.js
+INGÅR
+- Offline först
+- Google-login via Firebase
+- Realtidssynk mellan enheter
+- Hushåll med egen kod
+- Byt tillbaka till ditt hushåll
+- Öppna senast sparat delat hushåll igen
+- Exportera backup till JSON
+- Importera backup från JSON
+- Nollställ lokal data på enheten
 
-Filer som lagts till:
-- js/firebase-config.js
-- js/auth.js
+FILER
+- index.html = Hemmet
+- kopa-lista.html = Köplista
+- lagg-till.html = Lägg till
+- recept.html = Recept
+- hantera.html = Hantera
 
-OBS:
-- Utan Firebase-config fungerar appen lokalt som vanligt
-- Med config kan användaren logga in med Google och synka state till Firestore
+FIREBASE
+Din Firebase-config är redan ifylld i js/firebase-config.js.
+Om du ska köra på en egen domän måste den domänen vara godkänd i Firebase Authentication.
+Firestore behöver också vara aktiverat.
 
-
-HUSHÅLLSLÄGE
-- Appen använder nu households/{householdId}/app/state när useHouseholds är true.
-- Första användaren som loggar in blir automatiskt ägare till sitt hushåll.
-- Överst i appen visas nu om hushållet är "Mitt hushåll" eller om du bara är medlem i ett delat hushåll.
-- users/{uid}.householdId används för att koppla användaren till rätt hushåll.
+TIPS
+- Kör appen från en vanlig webbserver eller GitHub Pages.
+- Öppna inte bara filer direkt som file:// om du vill att allt ska fungera stabilt med service worker.
+- Använd Exportera backup innan större ändringar.
