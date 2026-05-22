@@ -1,0 +1,6 @@
+Sync fixes made:
+- First cloud sync now runs before the realtime listener starts.
+- Switching household now stops listener, runs initial sync, then starts listener.
+- App state uploads now replace the Firestore state document instead of merge:true.
+- Remote/live-sync changes are persisted to localStorage without re-upload loop.
+- Same fixes applied to both root app and appfix copy.

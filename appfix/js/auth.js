@@ -190,6 +190,7 @@ if(!hasConfig){
       lastAppliedRemoteAt = remoteUpdated || Date.now();
       try{
         window.replaceAppState(remoteState, { skipSave: true });
+        if(typeof window.persistStateMeta === "function") window.persistStateMeta();
         updateSyncMeta({ pendingSync: false, syncError: "", lastCloudAckAt: remoteUpdated || Date.now() });
         setStatus("Live-sync: ändringar från annan enhet laddades in.");
         refreshHouseholdPanel();
@@ -316,17 +317,17 @@ if(!hasConfig){
     currentHousehold = await ensureHousehold(currentUser);
     stateRef = getStateRef();
     householdMembers = [];
+    stopStateListener();
     renderHousehold(currentUser);
+    setStatus("Byter hushåll och laddar molndata...");
+    try{
+      await syncInitialState({ preferRemoteOnHouseholdSwitch: true });
+    }catch(err){
+      console.error(err);
+      initialSyncDone = true;
+      setStatus("Hushåll bytt, men molnsynken misslyckades just nu.");
+    }
     startStateListener();
-    setStatus("Byter hushåll...");
-    setTimeout(async () => {
-      try{
-        await syncInitialState({ preferRemoteOnHouseholdSwitch: true });
-      }catch(err){
-        console.error(err);
-        setStatus("Hushåll bytt, men molnsynken tog längre tid än väntat.");
-      }
-    }, 30);
   }
 
   async function switchToPersonalHousehold(){
@@ -624,7 +625,7 @@ if(!hasConfig){
       payload.meta.householdIsOwner = !!currentHousehold.isOwner;
     }
     payload.meta.clientId = payload.meta.clientId || window.getSerializableState?.()?.meta?.clientId || "";
-    await setDoc(stateRef || getStateRef(), payload, { merge: true });
+    await setDoc(stateRef || getStateRef(), payload);
   }
 
   async function downloadState(){
@@ -649,7 +650,8 @@ if(!hasConfig){
     const preferRemote = !!optionsArg.preferRemoteOnHouseholdSwitch;
 
     if(remoteState && (preferRemote || remoteUpdated > localUpdated) && window.replaceAppState){
-      window.replaceAppState(remoteState);
+      window.replaceAppState(remoteState, { skipSave: true });
+      if(typeof window.persistStateMeta === "function") window.persistStateMeta();
       updateSyncMeta({ pendingSync: false, syncError: "", lastCloudAckAt: remoteUpdated || Date.now() });
       setStatus(preferRemote ? "Hushåll bytt. Molndata laddad." : "Inloggad. Molndata laddad.");
     } else {
@@ -744,16 +746,17 @@ if(!hasConfig){
       stateRef = getStateRef();
       householdMembers = [];
       renderHousehold(user);
-      startStateListener();
-      setStatus(isOnline ? "Inloggad. Appen är klar. Synk körs i bakgrunden..." : "Inloggad offline. Lokal data används tills nät finns igen.");
-      setTimeout(async () => {
-        try{
-          await syncInitialState();
-        }catch(err){
-          console.error(err);
-          setStatus("Inloggad. Appen fungerar, men första molnsynken tog längre tid än väntat.");
-        }
-      }, 30);
+      setStatus(isOnline ? "Inloggad. Kör första molnsynk..." : "Inloggad offline. Lokal data används tills nät finns igen.");
+      try{
+        await syncInitialState();
+        startStateListener();
+        setStatus(isOnline ? "Inloggad. Appen är klar och live-sync är aktiv." : "Inloggad offline. Lokal data används tills nät finns igen.");
+      }catch(err){
+        console.error(err);
+        initialSyncDone = true;
+        startStateListener();
+        setStatus("Inloggad. Appen fungerar, men första molnsynken misslyckades.");
+      }
     }catch(err){
       console.error(err);
       setStatus("Inloggad, men hushåll eller första molnsynken misslyckades. Kontrollera Firestore-regler och config.");

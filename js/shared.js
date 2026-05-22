@@ -1,4 +1,4 @@
-const STORAGE_KEY = "matlist_firebase_realtime_v2";
+const STORAGE_KEY = "psykopatkontroll_v4_room_system_safe";
 
 const defaultState = {
   currentPage: "home",
@@ -48,7 +48,7 @@ const defaultState = {
   imageFitMode: "contain",
   meta: {
     updatedAt: 0,
-    version: "firebase-realtime-v2",
+    version: "max-offline-version",
     cloudEnabled: false,
     clientId: "",
     pendingSync: false,
@@ -2760,6 +2760,7 @@ window.STORAGE_KEY = STORAGE_KEY;
 window.defaultState = defaultState;
 window.getSerializableState = getSerializableState;
 window.replaceAppState = replaceAppState;
+window.persistStateMeta = persistStateMeta;
 window.saveState = saveState;
 window.render = render;
 window.state = state;

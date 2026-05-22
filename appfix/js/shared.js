@@ -2760,6 +2760,7 @@ window.STORAGE_KEY = STORAGE_KEY;
 window.defaultState = defaultState;
 window.getSerializableState = getSerializableState;
 window.replaceAppState = replaceAppState;
+window.persistStateMeta = persistStateMeta;
 window.saveState = saveState;
 window.render = render;
 window.state = state;

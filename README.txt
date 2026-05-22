@@ -1,26 +1,27 @@
-Matlist Firebase Realtime v2
+MATLIST MED GOOGLE-LOGIN (FIREBASE)
 
-Detta är en ren ZIP-version byggd från appfix med tydligare Firebase-struktur.
+Den här versionen fungerar fortfarande lokalt/offline.
+Google-login och molnsynk aktiveras när du fyller i:
+js/firebase-config.js
 
-Ny struktur:
-- users/{uid}
-- households/{householdId}
-- households/{householdId}/state/main
+Gör så här:
+1. Skapa ett Firebase-projekt
+2. Aktivera Authentication -> Google
+3. Aktivera Firestore Database
+4. Lägg till din domän i Authentication -> Settings -> Authorized domains
+5. Fyll i js/firebase-config.js
 
-Vad som är förbättrat:
-- tydligare hushållsmodell
-- aktivt hushåll sparas som activeHouseholdId
-- sparade hushåll i savedHouseholds
-- hushållsmedlemmar läses från household-dokumentet
-- state sparas i state/main i stället för app/state
-- lokal cache + realtime-sync finns kvar
+Filer som lagts till:
+- js/firebase-config.js
+- js/auth.js
 
-Filer i denna ZIP:
-- FIRESTORE_RULES.txt
-- STORAGE_RULES.txt
-- FIREBASE_STRUCTURE_EXAMPLE.json
+OBS:
+- Utan Firebase-config fungerar appen lokalt som vanligt
+- Med config kan användaren logga in med Google och synka state till Firestore
 
-Viktigt:
-- kör via webbserver eller GitHub Pages, inte file://
-- kontrollera Authorized domains i Firebase Authentication
-- om äldre data redan finns i Firestore kan du behöva flytta state från app/state till state/main
+
+HUSHÅLLSLÄGE
+- Appen använder nu households/{householdId}/app/state när useHouseholds är true.
+- Första användaren som loggar in blir automatiskt ägare till sitt hushåll.
+- Överst i appen visas nu om hushållet är "Mitt hushåll" eller om du bara är medlem i ett delat hushåll.
+- users/{uid}.householdId används för att koppla användaren till rätt hushåll.
